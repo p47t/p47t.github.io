@@ -1,0 +1,110 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/web/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2011-12-03 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>LiveReload and Octopress</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-03-livereload/</link>
+      <pubDate>Sat, 03 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-03-livereload/</guid>
+      <description>&lt;p&gt;雖然平常沒什麼時間寫 blog，但總是希望寫的時候能夠專注在所寫的內容，而不必被發佈 blog 的一些瑣事而干擾，例如現在雖然已經習慣用 &lt;a href=&#34;http://pow.cx/&#34;&gt;Pow&lt;/a&gt; 了，然後把 &lt;code&gt;rake watch&lt;/code&gt; 開著，但要預覽時還是要回 Chrome 按一下 Reload 才能預覽目前的內容，有點小煩，所以看到有 &lt;a href=&#34;https://github.com/mockko/livereload&#34;&gt;LiveReload&lt;/a&gt; 這種好東西當然要拿來用啊。&lt;/p&gt;
+&lt;p&gt;簡單描述一下安裝的步驟:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;安裝 &lt;code&gt;guard-livereload&lt;/code&gt;:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ gem install guard-livereload&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;修改 &lt;code&gt;Gemfile&lt;/code&gt; 把下列這一行加進去 &amp;lsquo;guard-livereload&amp;rsquo;:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ gem &#39;guard-livereload&#39;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;再來是改完 &lt;code&gt;Gemfile&lt;/code&gt; 後的標準步驟:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ bundle install&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;產生一份基本的 &lt;code&gt;Guardfile&lt;/code&gt;:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ guard init livereload&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;再來要修改 &lt;code&gt;Rakefile&lt;/code&gt; 把啟動 guard 的動作放到 &lt;code&gt;rake watch&lt;/code&gt; 裡面:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;ruby&#34;&gt;desc &#34;Watch the site and regenerate when it changes&#34;
+task :watch do
+  raise &#34;### You haven&#39;t set anything up yet. First run `rake install` to set up an Octopress theme.&#34; unless File.directory?(source_dir)
+  puts &#34;Starting to watch source with Jekyll and Compass.&#34;
+  system &#34;compass compile --css-dir #{source_dir}/stylesheets&#34; unless File.exist?(&#34;#{source_dir}/stylesheets/screen.css&#34;)
+  jekyllPid = Process.spawn(&#34;jekyll --auto&#34;)
+  compassPid = Process.spawn(&#34;compass watch&#34;)
+  guardPid = Process.spawn(&#34;guard&#34;)
+
+  trap(&#34;INT&#34;) {
+    [jekyllPid, compassPid, guardPid].each { |pid| Process.kill(9, pid) rescue Errno::ESRCH }
+    exit 0
+  }
+
+  [jekyllPid, compassPid, guardPid].each { |pid| Process.wait(pid) }
+end&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;然後執行 &lt;code&gt;rake watch&lt;/code&gt;:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ rake watch
+Starting to watch source with Jekyll and Compass.
+Please install growl_notify or growl gem for Mac OS X notification support and add it to your Gemfile
+Guard is now watching at &#39;/Users/patrick/src/simplypatrick.heroku.com&#39;
+LiveReload 1.6 is waiting for a browser to connect.
+Configuration from /Users/patrick/src/simplypatrick.heroku.com/_config.yml
+Auto-regenerating enabled: source -&gt; public
+[2011-12-03 22:53:07] regeneration: 118 files changed
+&gt;&gt;&gt; Compass is watching for changes. Press Ctrl-C to Stop.&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;安裝 LiveReload extension (Chrome &lt;a href=&#34;https://chrome.google.com/webstore/detail/jnihajbhpnppcggbcgedagnkighmdlei&#34;&gt;請按這&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;最後打開會修改的網頁，如果是使用 Chrome 要記得把網址列旁的 LR 按鍵按下才會生效喔，我在這裡卡了有點小久。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在 27&amp;quot; 螢幕上，左半邊寫文章，右半邊瀏覽器即時預覽，這樣的感覺太好了！&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>On New Web Applications...</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-08-21-336/</link>
+      <pubDate>Mon, 21 Aug 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-08-21-336/</guid>
+      <description>&lt;p&gt;Joel 跟 Paul Graham 分別對一些新興 web application 的看法：&lt;/p&gt;
+&lt;p&gt;&lt;a title=&#34;Joel on Software&#34; href=&#34;http://www.joelonsoftware.com/items/2006/02/08.html&#34;&gt;Joel on Software - Too Many Ajax Calendars&lt;/a&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+They&#39;re building calendar companies to sell to Yahoo!, which, for some reason, has given up on the old concept of hiring programmers to write code, and is going with this new age concept of buying entire companies on the hopes that they might contain a good programmer or two, which, by the way, is a sure sign of trouble for a technology company.
+&lt;/blockquote&gt;
+&lt;p&gt;&lt;a href=&#34;http://paulgraham.infogami.com/blog/kiko&#34;&gt;Paul Graham - The Kiko Affair&lt;/a&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+Google may be even more dangerous than Microsoft, because unlike Microsoft it&#39;s the favorite of technically minded users. When Microsoft launched an application to compete with yours, the first users they&#39;d get would alway be the least sophisticated-- the ones who just used whatever happened to be already installed on their computer. But a startup that tries to compete with Google will have to fight for the early adopters that startups can ordinarily treat as their birthright.
+&lt;/blockquote&gt;
+&lt;p&gt;結論是：如果你不能像 &lt;a href=&#34;http://www.youtube.com&#34;&gt;YouTube&lt;/a&gt; 有自己獨特的經營方式，跟 Google 硬碰硬或是等著被收購都不是個明智的選擇。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

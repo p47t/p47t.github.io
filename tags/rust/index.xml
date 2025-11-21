@@ -1,0 +1,446 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/rust/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2021-01-02 18:42:35 -0800 PST</updated>
+    
+    <item>
+      <title>建置 Jupyter Notebook 的 Rust 運作環境</title>
+      <link>https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/</link>
+      <pubDate>Sat, 02 Jan 2021 18:42:35 PST</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/</guid>
+      <description>&lt;p&gt;最近重新安裝了 macOS Big Sur，想試試 Jupyter Notebook 的 Rust 環境，再加上這幾天放假比較有時間，就把安裝的過程記錄下來。&lt;/p&gt;
+&lt;h3 id=&#34;安裝-miniconda&#34;&gt;安裝 Miniconda&lt;/h3&gt;
+&lt;p&gt;過去一直覺得 Anaconda 有點肥大，所以這次決定先從安裝比較精簡的 miniconda 開始:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ brew install --cask miniconda&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;新增 &lt;code&gt;conda-forge&lt;/code&gt; channel 以便安裝需要的套件如 &lt;code&gt;jupyterlab&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ conda config --add channels conda-forge
+$ conda config --set channel_priority strict&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然後需要初始化 conda 的 base 環境，一般都是跑 &lt;code&gt;conda init&lt;/code&gt;，但它會加一段不是很通用的設定到我個人的 &lt;code&gt;.zshrc&lt;/code&gt;，我不是很喜歡這種做法，所以就先只套用在目前的 shell 裡:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ eval `conda shell.zsh hook`&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;創建新的-conda-環境&#34;&gt;創建新的 conda 環境&lt;/h3&gt;
+&lt;p&gt;創建一個新的環境叫 &lt;code&gt;rust-notebook&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(base) $ conda create -n rust-notebook python=3
+(base) $ conda activate rust-notebook&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;安裝-jupyterlab&#34;&gt;安裝 JupyterLab&lt;/h3&gt;
+&lt;p&gt;在新的環境指定安裝 jupyterlab 版本 2.2.9，因為最新的 3.0 似乎與最新的 &lt;code&gt;jupyterlab-plotly&lt;/code&gt; 不相容:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ conda install jupyterlab=2.2.9&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然後安裝 &lt;code&gt;jupyterlab-plotly&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ jupyter labextension install jupyterlab-plotly&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;安裝-evcxr_jupyter&#34;&gt;安裝 evcxr_jupyter&lt;/h3&gt;
+&lt;p&gt;假設 Rust 已經安裝完成，直接用 Cargo 安裝 Rust 的 Jupyter kernel:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ cargo install evcxr_jupyter
+$ evcxr_jupyter --install&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;啟動 JupyterLab:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ jupyter lab&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;如果可以看到下列 Rust 圖示應該就是成功了:&lt;/p&gt;
+
+
+&lt;img src=&#34;https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/new-notebook.png&#34; alt=&#34;new-notebook.png&#34; class=&#34;img-responsive post-image&#34;&gt;
+
+&lt;h3 id=&#34;範例執行結果&#34;&gt;範例執行結果&lt;/h3&gt;
+&lt;p&gt;試一下:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;Rust&#34;&gt;println!(&#34;Hello, Jupyter!&#34;);&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Hello, Jupyter!
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;來畫個圖:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;Rust&#34;&gt;:dep plotters = { git = &#34;https://github.com/38/plotters&#34;, default_features = false, features = [&#34;evcxr&#34;, &#34;line_series&#34;] }
+extern crate plotters;
+use plotters::prelude::*;
+use plotters::series::*;
+
+let figure = evcxr_figure((640, 480), |root| {
+    root.fill(&amp;WHITE);
+    let mut chart = ChartBuilder::on(&amp;root)
+        .caption(&#34;y=x^2&#34;, (&#34;Arial&#34;, 50).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(-1f32..1f32, -0.1f32..1f32)?;
+
+    chart.configure_mesh().draw()?;
+
+    chart.draw_series(LineSeries::new(
+        (-50..=50).map(|x| x as f32 / 50.0).map(|x| (x, x * x)),
+        &amp;RED,
+    )).unwrap()
+        .label(&#34;y = x^2&#34;)
+        .legend(|(x,y)| PathElement::new(vec![(x,y), (x + 20,y)], &amp;RED));
+
+    chart.configure_series_labels()
+        .background_style(&amp;WHITE.mix(0.8))
+        .border_style(&amp;BLACK)
+        .draw()?;
+    Ok(())
+});
+figure&lt;/code&gt;&lt;/pre&gt;
+
+&lt;div style=&#34;&#34;&gt;&lt;svg width=&#34;640&#34; height=&#34;480&#34; viewBox=&#34;0 0 640 480&#34; xmlns=&#34;http://www.w3.org/2000/svg&#34;&gt;
+&lt;rect x=&#34;0&#34; y=&#34;0&#34; width=&#34;639&#34; height=&#34;479&#34; opacity=&#34;1&#34; fill=&#34;#FFFFFF&#34; stroke=&#34;none&#34;/&gt;
+&lt;text x=&#34;320&#34; y=&#34;10&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;Arial&#34; font-size=&#34;40.32258064516129&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+y=x^2
+&lt;/text&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;41&#34; y1=&#34;444&#34; x2=&#34;41&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;47&#34; y1=&#34;444&#34; x2=&#34;47&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;53&#34; y1=&#34;444&#34; x2=&#34;53&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;59&#34; y1=&#34;444&#34; x2=&#34;59&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;65&#34; y1=&#34;444&#34; x2=&#34;65&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;71&#34; y1=&#34;444&#34; x2=&#34;71&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;77&#34; y1=&#34;444&#34; x2=&#34;77&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;83&#34; y1=&#34;444&#34; x2=&#34;83&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;89&#34; y1=&#34;444&#34; x2=&#34;89&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;95&#34; y1=&#34;444&#34; x2=&#34;95&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;101&#34; y1=&#34;444&#34; x2=&#34;101&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;107&#34; y1=&#34;444&#34; x2=&#34;107&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;113&#34; y1=&#34;444&#34; x2=&#34;113&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;119&#34; y1=&#34;444&#34; x2=&#34;119&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;125&#34; y1=&#34;444&#34; x2=&#34;125&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;131&#34; y1=&#34;444&#34; x2=&#34;131&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;137&#34; y1=&#34;444&#34; x2=&#34;137&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;143&#34; y1=&#34;444&#34; x2=&#34;143&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;149&#34; y1=&#34;444&#34; x2=&#34;149&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;155&#34; y1=&#34;444&#34; x2=&#34;155&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;161&#34; y1=&#34;444&#34; x2=&#34;161&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;167&#34; y1=&#34;444&#34; x2=&#34;167&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;173&#34; y1=&#34;444&#34; x2=&#34;173&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;179&#34; y1=&#34;444&#34; x2=&#34;179&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;185&#34; y1=&#34;444&#34; x2=&#34;185&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;191&#34; y1=&#34;444&#34; x2=&#34;191&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;197&#34; y1=&#34;444&#34; x2=&#34;197&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;203&#34; y1=&#34;444&#34; x2=&#34;203&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;209&#34; y1=&#34;444&#34; x2=&#34;209&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;215&#34; y1=&#34;444&#34; x2=&#34;215&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;221&#34; y1=&#34;444&#34; x2=&#34;221&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;227&#34; y1=&#34;444&#34; x2=&#34;227&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;233&#34; y1=&#34;444&#34; x2=&#34;233&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;239&#34; y1=&#34;444&#34; x2=&#34;239&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;245&#34; y1=&#34;444&#34; x2=&#34;245&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;251&#34; y1=&#34;444&#34; x2=&#34;251&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;257&#34; y1=&#34;444&#34; x2=&#34;257&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;263&#34; y1=&#34;444&#34; x2=&#34;263&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;269&#34; y1=&#34;444&#34; x2=&#34;269&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;275&#34; y1=&#34;444&#34; x2=&#34;275&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;281&#34; y1=&#34;444&#34; x2=&#34;281&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;287&#34; y1=&#34;444&#34; x2=&#34;287&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;293&#34; y1=&#34;444&#34; x2=&#34;293&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;299&#34; y1=&#34;444&#34; x2=&#34;299&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;305&#34; y1=&#34;444&#34; x2=&#34;305&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;311&#34; y1=&#34;444&#34; x2=&#34;311&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;317&#34; y1=&#34;444&#34; x2=&#34;317&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;323&#34; y1=&#34;444&#34; x2=&#34;323&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;329&#34; y1=&#34;444&#34; x2=&#34;329&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;335&#34; y1=&#34;444&#34; x2=&#34;335&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;341&#34; y1=&#34;444&#34; x2=&#34;341&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;347&#34; y1=&#34;444&#34; x2=&#34;347&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;353&#34; y1=&#34;444&#34; x2=&#34;353&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;359&#34; y1=&#34;444&#34; x2=&#34;359&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;365&#34; y1=&#34;444&#34; x2=&#34;365&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;371&#34; y1=&#34;444&#34; x2=&#34;371&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;377&#34; y1=&#34;444&#34; x2=&#34;377&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;383&#34; y1=&#34;444&#34; x2=&#34;383&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;389&#34; y1=&#34;444&#34; x2=&#34;389&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;395&#34; y1=&#34;444&#34; x2=&#34;395&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;401&#34; y1=&#34;444&#34; x2=&#34;401&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;407&#34; y1=&#34;444&#34; x2=&#34;407&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;413&#34; y1=&#34;444&#34; x2=&#34;413&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;419&#34; y1=&#34;444&#34; x2=&#34;419&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;425&#34; y1=&#34;444&#34; x2=&#34;425&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;431&#34; y1=&#34;444&#34; x2=&#34;431&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;437&#34; y1=&#34;444&#34; x2=&#34;437&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;443&#34; y1=&#34;444&#34; x2=&#34;443&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;449&#34; y1=&#34;444&#34; x2=&#34;449&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;455&#34; y1=&#34;444&#34; x2=&#34;455&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;461&#34; y1=&#34;444&#34; x2=&#34;461&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;467&#34; y1=&#34;444&#34; x2=&#34;467&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;473&#34; y1=&#34;444&#34; x2=&#34;473&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;479&#34; y1=&#34;444&#34; x2=&#34;479&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;485&#34; y1=&#34;444&#34; x2=&#34;485&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;491&#34; y1=&#34;444&#34; x2=&#34;491&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;497&#34; y1=&#34;444&#34; x2=&#34;497&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;503&#34; y1=&#34;444&#34; x2=&#34;503&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;509&#34; y1=&#34;444&#34; x2=&#34;509&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;515&#34; y1=&#34;444&#34; x2=&#34;515&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;521&#34; y1=&#34;444&#34; x2=&#34;521&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;527&#34; y1=&#34;444&#34; x2=&#34;527&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;533&#34; y1=&#34;444&#34; x2=&#34;533&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;539&#34; y1=&#34;444&#34; x2=&#34;539&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;545&#34; y1=&#34;444&#34; x2=&#34;545&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;551&#34; y1=&#34;444&#34; x2=&#34;551&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;557&#34; y1=&#34;444&#34; x2=&#34;557&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;563&#34; y1=&#34;444&#34; x2=&#34;563&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;569&#34; y1=&#34;444&#34; x2=&#34;569&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;575&#34; y1=&#34;444&#34; x2=&#34;575&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;581&#34; y1=&#34;444&#34; x2=&#34;581&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;587&#34; y1=&#34;444&#34; x2=&#34;587&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;593&#34; y1=&#34;444&#34; x2=&#34;593&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;599&#34; y1=&#34;444&#34; x2=&#34;599&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;605&#34; y1=&#34;444&#34; x2=&#34;605&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;611&#34; y1=&#34;444&#34; x2=&#34;611&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;617&#34; y1=&#34;444&#34; x2=&#34;617&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;623&#34; y1=&#34;444&#34; x2=&#34;623&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;629&#34; y1=&#34;444&#34; x2=&#34;629&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;635&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;444&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;436&#34; x2=&#34;635&#34; y2=&#34;436&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;429&#34; x2=&#34;635&#34; y2=&#34;429&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;422&#34; x2=&#34;635&#34; y2=&#34;422&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;415&#34; x2=&#34;635&#34; y2=&#34;415&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;408&#34; x2=&#34;635&#34; y2=&#34;408&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;401&#34; x2=&#34;635&#34; y2=&#34;401&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;394&#34; x2=&#34;635&#34; y2=&#34;394&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;387&#34; x2=&#34;635&#34; y2=&#34;387&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;380&#34; x2=&#34;635&#34; y2=&#34;380&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;373&#34; x2=&#34;635&#34; y2=&#34;373&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;366&#34; x2=&#34;635&#34; y2=&#34;366&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;359&#34; x2=&#34;635&#34; y2=&#34;359&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;352&#34; x2=&#34;635&#34; y2=&#34;352&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;344&#34; x2=&#34;635&#34; y2=&#34;344&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;337&#34; x2=&#34;635&#34; y2=&#34;337&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;330&#34; x2=&#34;635&#34; y2=&#34;330&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;323&#34; x2=&#34;635&#34; y2=&#34;323&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;316&#34; x2=&#34;635&#34; y2=&#34;316&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;309&#34; x2=&#34;635&#34; y2=&#34;309&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;302&#34; x2=&#34;635&#34; y2=&#34;302&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;295&#34; x2=&#34;635&#34; y2=&#34;295&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;288&#34; x2=&#34;635&#34; y2=&#34;288&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;281&#34; x2=&#34;635&#34; y2=&#34;281&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;274&#34; x2=&#34;635&#34; y2=&#34;274&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;267&#34; x2=&#34;635&#34; y2=&#34;267&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;260&#34; x2=&#34;635&#34; y2=&#34;260&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;253&#34; x2=&#34;635&#34; y2=&#34;253&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;245&#34; x2=&#34;635&#34; y2=&#34;245&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;238&#34; x2=&#34;635&#34; y2=&#34;238&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;231&#34; x2=&#34;635&#34; y2=&#34;231&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;224&#34; x2=&#34;635&#34; y2=&#34;224&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;217&#34; x2=&#34;635&#34; y2=&#34;217&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;210&#34; x2=&#34;635&#34; y2=&#34;210&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;203&#34; x2=&#34;635&#34; y2=&#34;203&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;196&#34; x2=&#34;635&#34; y2=&#34;196&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;189&#34; x2=&#34;635&#34; y2=&#34;189&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;182&#34; x2=&#34;635&#34; y2=&#34;182&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;175&#34; x2=&#34;635&#34; y2=&#34;175&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;168&#34; x2=&#34;635&#34; y2=&#34;168&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;161&#34; x2=&#34;635&#34; y2=&#34;161&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;154&#34; x2=&#34;635&#34; y2=&#34;154&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;146&#34; x2=&#34;635&#34; y2=&#34;146&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;139&#34; x2=&#34;635&#34; y2=&#34;139&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;132&#34; x2=&#34;635&#34; y2=&#34;132&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;125&#34; x2=&#34;635&#34; y2=&#34;125&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;118&#34; x2=&#34;635&#34; y2=&#34;118&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;111&#34; x2=&#34;635&#34; y2=&#34;111&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;104&#34; x2=&#34;635&#34; y2=&#34;104&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;97&#34; x2=&#34;635&#34; y2=&#34;97&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;90&#34; x2=&#34;635&#34; y2=&#34;90&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;83&#34; x2=&#34;635&#34; y2=&#34;83&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;76&#34; x2=&#34;635&#34; y2=&#34;76&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;69&#34; x2=&#34;635&#34; y2=&#34;69&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;62&#34; x2=&#34;635&#34; y2=&#34;62&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;55&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;95&#34; y1=&#34;444&#34; x2=&#34;95&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;155&#34; y1=&#34;444&#34; x2=&#34;155&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;215&#34; y1=&#34;444&#34; x2=&#34;215&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;275&#34; y1=&#34;444&#34; x2=&#34;275&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;335&#34; y1=&#34;444&#34; x2=&#34;335&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;395&#34; y1=&#34;444&#34; x2=&#34;395&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;455&#34; y1=&#34;444&#34; x2=&#34;455&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;515&#34; y1=&#34;444&#34; x2=&#34;515&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;575&#34; y1=&#34;444&#34; x2=&#34;575&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;635&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;408&#34; x2=&#34;635&#34; y2=&#34;408&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;337&#34; x2=&#34;635&#34; y2=&#34;337&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;267&#34; x2=&#34;635&#34; y2=&#34;267&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;196&#34; x2=&#34;635&#34; y2=&#34;196&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;125&#34; x2=&#34;635&#34; y2=&#34;125&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;55&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;34,56 34,445 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;408&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,408 34,408 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;337&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,337 34,337 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;267&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,267 34,267 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;196&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,196 34,196 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;125&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,125 34,125 &#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;35,445 635,445 &#34;/&gt;
+&lt;text x=&#34;95&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;95,445 95,450 &#34;/&gt;
+&lt;text x=&#34;155&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;155,445 155,450 &#34;/&gt;
+&lt;text x=&#34;215&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;215,445 215,450 &#34;/&gt;
+&lt;text x=&#34;275&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;275,445 275,450 &#34;/&gt;
+&lt;text x=&#34;335&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;335,445 335,450 &#34;/&gt;
+&lt;text x=&#34;395&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;395,445 395,450 &#34;/&gt;
+&lt;text x=&#34;455&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;455,445 455,450 &#34;/&gt;
+&lt;text x=&#34;515&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;515,445 515,450 &#34;/&gt;
+&lt;text x=&#34;575&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;575,445 575,450 &#34;/&gt;
+&lt;text x=&#34;635&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+1.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;635,445 635,450 &#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#FF0000&#34; stroke-width=&#34;1&#34; points=&#34;35,56 41,69 47,82 53,96 59,109 65,122 71,134 77,147 83,159 89,170 95,182 101,193 107,204 113,214 119,225 125,235 131,245 137,254 143,263 149,272 155,281 161,289 167,297 173,305 179,313 185,320 191,327 197,333 203,340 209,346 215,352 221,357 227,362 233,367 239,372 245,376 251,380 257,384 263,388 269,391 275,394 281,397 287,399 293,401 299,403 305,405 311,406 317,407 323,408 329,408 335,408 341,408 347,408 353,407 359,406 365,405 371,403 377,401 383,399 389,397 395,394 401,391 407,388 413,384 419,380 425,376 431,372 437,367 443,362 449,357 455,352 461,346 467,340 473,333 479,327 485,320 491,313 497,305 503,297 509,289 515,281 521,272 527,263 533,254 539,245 545,235 551,225 557,214 563,204 569,193 575,182 581,170 587,159 593,147 599,134 605,122 611,109 617,96 623,82 629,69 635,56 &#34;/&gt;
+&lt;rect x=&#34;542&#34; y=&#34;235&#34; width=&#34;88&#34; height=&#34;30&#34; opacity=&#34;0.8&#34; fill=&#34;#FFFFFF&#34; stroke=&#34;none&#34;/&gt;
+&lt;rect x=&#34;542&#34; y=&#34;235&#34; width=&#34;88&#34; height=&#34;30&#34; opacity=&#34;1&#34; fill=&#34;none&#34; stroke=&#34;#000000&#34;/&gt;
+&lt;text x=&#34;582&#34; y=&#34;245&#34; dy=&#34;0.76em&#34; text-anchor=&#34;start&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+y = x^2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#FF0000&#34; stroke-width=&#34;1&#34; points=&#34;552,250 572,250 &#34;/&gt;
+&lt;/svg&gt;
+&lt;/div&gt;
+&lt;h3 id=&#34;參考&#34;&gt;參考&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://datacrayon.com/posts/programming/rust-notebooks/setup-anaconda-jupyter-and-rust/&#34;&gt;Setup Anaconda, Jupyter, and Rust | Data Crayon&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Setup Fuchsia Rust Development on macOS</title>
+      <link>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</link>
+      <pubDate>Thu, 06 Jun 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</guid>
+      <description>&lt;p&gt;基本上照著官方的指引 &lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/docs/development/languages/rust/editors.md&#34;&gt;Rust Editor Configuration&lt;/a&gt;，設置 Fuchsia OS 開發的 Rust 開發環境主要就兩個步驟:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;設定編輯器使用 Rust 的 Language Server (&lt;code&gt;RLS&lt;/code&gt;)&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;產生-cargotoml&#34;&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;很簡單，就是用 &lt;code&gt;fx gen-cargo //garnet/foo/path/to/target:label&lt;/code&gt; 產生對應的 &lt;code&gt;Cargo.toml&lt;/code&gt;。例如 &lt;code&gt;fx gen-cargo //garnet/bin/log_listener:bin&lt;/code&gt; 會產生 &lt;code&gt;/garnet/bin/log_listener/Cargo.toml&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;設定-rls&#34;&gt;設定 RLS&lt;/h3&gt;
+&lt;p&gt;官方文檔提到要先把 Fuchsia 自帶的 Rust 連結到 rustup，並且設成預設的 toolchain:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ rustup toolchain link fuchsia /&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust
+$ rustup default fuchsia&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;我是有做第一步，但第二步我比較持保留態度，之後試過似乎不做也沒影響，我會建議跳過這一步。&lt;/p&gt;
+&lt;h4 id=&#34;vim&#34;&gt;Vim&lt;/h4&gt;
+&lt;p&gt;跟 C++ 類似，只是 Language Server 我們必須從 &lt;code&gt;clangd&lt;/code&gt; 換成 &lt;code&gt;RLS&lt;/code&gt;，所以可以在 Vim 裡用 &lt;code&gt;:CocInstall coc-rls&lt;/code&gt; 來安裝 &lt;a href=&#34;https://github.com/neoclide/coc-rls&#34;&gt;coc-rls&lt;/a&gt; extension，如果你系統之前就有裝過 RLS 的話，在 Vim 裡打開對應的目錄就會有 code completion 的功能了。&lt;/p&gt;
+&lt;p&gt;如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，可以用 &lt;code&gt;:CocConfig&lt;/code&gt; 把下列設定加進去:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;javascript&#34;&gt;{
+  &#34;rust.target&#34;: &#34;x86_64-fuchsia&#34;,
+  &#34;rust.target_dir&#34;: &#34;/&lt;your Fuchsia root&gt;/out/cargo_target&#34;,
+  &#34;rust.unstable_features&#34;: true,
+  &#34;rust-client.rlsPath&#34;: &#34;/&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust/bin/rls&#34;,
+  &#34;rust-client.disableRustup&#34;: true,
+
+  // Some optional settings that may help:
+  &#34;rust.goto_def_racer_fallback&#34;: true,
+  &#34;rust-client.logToFile&#34;: true,
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;visual-studio-code&#34;&gt;Visual Studio Code&lt;/h4&gt;
+&lt;p&gt;VSCode 則是需要安裝 &lt;a href=&#34;https://marketplace.visualstudio.com/items?itemName=rust-lang.rust&#34;&gt;Rust (rls)&lt;/a&gt; 這個 plugin。同樣如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，加入下列的設定到 VS Code 裡：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;javascript&#34;&gt;{
+  &#34;rust.target&#34;: &#34;x86_64-fuchsia&#34;,
+  &#34;rust.target_dir&#34;: &#34;/&lt;your Fuchsia root&gt;/out/cargo_target&#34;,
+  &#34;rust.unstable_features&#34;: true,
+  &#34;rust-client.rlsPath&#34;: &#34;/&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust/bin/rls&#34;,
+  &#34;rust-client.disableRustup&#34;: true,
+
+  // Some optional settings that may help:
+  &#34;rust.goto_def_racer_fallback&#34;: true,
+  &#34;rust-client.logToFile&#34;: true,
+}&lt;/code&gt;&lt;/pre&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Learning Rust</title>
+      <link>https://blog.simplypatrick.com/posts/2019/04-08-learning-rust/</link>
+      <pubDate>Mon, 08 Apr 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/04-08-learning-rust/</guid>
+      <description>&lt;h2 id=&#34;關於-rust&#34;&gt;關於 Rust&lt;/h2&gt;
+&lt;p&gt;會知道 Rust 是因為之前公司團隊的工作是跟瀏覽器引擎 (Webkit/Blink) 的優化有關，那時只知道 Mozilla 正在用 Rust 這個新的程式語言實驗性地開發 Servo 引擎。同時間 Go 已經到達 1.0 的里程碑，同時有著優異的編譯及執行效能，很快地 Go 就變成我個人主要使用的程式語言，工作上需要的一些小工具也都是用 Go 來實現。&lt;/p&gt;
+&lt;p&gt;開始對 Rust 重新關注大概是它在 2015 年釋放 1.0 版本後，那時只稍微了解一下語法及主要的語言特性，當時覺得這程式語言的學習曲線蠻陡峭的，必須全面地對所有的語言特性有一定了解後才能駕馭它。那時 Go 用的正是順手，所以就沒什麼動力把 Rust 完整學起來。&lt;/p&gt;
+&lt;p&gt;去年開始工作上需要了解 Fuchsia OS 的實作，赫然發現裡面蠻多系統服務都是用 Rust 開發的，數量上甚至比 Google 自家的 Go 還多，這也是我決定多投入時間學習 Rust 的轉捩點。&lt;/p&gt;
+&lt;h2 id=&#34;學習資源&#34;&gt;學習資源&lt;/h2&gt;
+&lt;p&gt;我主要使用下列幾本書來學習 Rust：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.amazon.cn/dp/B07GSRFG28&#34;&gt;深入浅出 Rust&lt;/a&gt; 這本書的電子版: 它的特色是側重於解釋 Rust 主要概念的設計思想，而不只是單純語法或用法的說明；且因為是中文的緣故，讀起來速度還是比較快，比較像是 Rust 的內功心法入門。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://ithelp.ithome.com.tw/users/20111802/ironman/1742&#34;&gt;30 天深入淺出 Rust 系列&lt;/a&gt; 則是以淺顯易懂的範例把 Rust 主要的特色講解了一遍，內容適合對於想要快速地對 Rust 有個全面性的概觀的人。&lt;/li&gt;
+&lt;li&gt;對 Rust 有了基本的了解後，&lt;a href=&#34;https://stevedonovan.github.io/rust-gentle-intro/readme.html#a-gentle-introduction-to-rust&#34;&gt;A Gentle Introduction to Rust&lt;/a&gt; 則是適合有 C/C++ 經驗的開發者來學習如何寫 idiomatic Rust。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;至於最經典的 &lt;a href=&#34;https://doc.rust-lang.org/book/&#34;&gt;The Rust Programming Language&lt;/a&gt; 呢? 我只把了一些我覺得重要的章節看完，其他剩下的就直接動手實作，遇到有細節不清楚或是已經忘記時再花時間來看。&lt;/p&gt;
+&lt;h2 id=&#34;其他資源&#34;&gt;其他資源&lt;/h2&gt;
+&lt;p&gt;上面主要是比較完整的 Rust 學習資源，下一篇再分享一些我覺得不錯的 blog post，通常是針對某個特定主題或進階功能的解釋或教學。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
