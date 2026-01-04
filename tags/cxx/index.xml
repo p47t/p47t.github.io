@@ -1,0 +1,430 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/cxx/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2012-08-12 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Reference Counting in Android libutils</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</link>
+      <pubDate>Sun, 12 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</guid>
+      <description>&lt;p&gt;從事 Android native framework 層的開發一定會接觸到兩個 C++ template class: sp 及 wp，分別是 strong pointer 及 weak pointer 的簡稱，是兩個看似簡單但卻有著魔鬼細節的 utility class。&lt;/p&gt;
+&lt;p&gt;一個比較典型使用 weak pointer 的狀況就是 Listener pattern，例如:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;class TimedTextPlayer {
+    wp&lt;MediaPlayerBase&gt; mListener;
+}
+
+void TimedTextPlayer::postTextEvent(const sp&lt;ParcelEvent&gt;&amp; parcel, int64_t timeUs) {
+    sp&lt;MediaPlayerBase&gt; listener = mListener.promote();
+    if (listener != NULL) {
+        // ...
+        listener-&gt;getCurrentPosition(&amp;positionMs);
+        // ...
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這個例子如果使用 sp 來記錄 listener 很容易因為忘了移除 listener 而造成 memory leak。用了 wp 也就沒有這個困擾，不過額外的開銷就是 wp 必須先呼叫 promote() 拿到一個 sp 才能使用。&lt;/p&gt;
+&lt;p&gt;如果要了解 sp 及 wp 的原理，必定要先了解 RefBase，因為這兩個 class 都必須搭配繼承自 RefBase 的 class 才能運作，以下是他們之間的大致關係：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;http://www.plantuml.com:80/plantuml/png/VLB1IiD04BtdAuOMIXhjGRr9BQXO43o85iHJMPD93IRPPNVQ8bg_tPriqcPZwcd3l3Tlthn9d0jZu0dJ6s4GlWA0autC4iZA-9cqB5TXbeptrGJxggdKCTvt6xAIBiwN12ia1zpATKdXE61mY-93OxgaJuKHn1e5uOkjDSq-RYKOj2wDwn_MXaCc3pUPfhN8uQUtMbcKvJpJXYoX5tmGfZR93EUXozalU4s4XI9CmZGNAtCA_NpMh5rNYhiWQ6AUVayci7Xzl0k2kCg_lQv_X7OepGdQjJSfSn3EqNydu9xc0BlksAnGkHlRT1HEo2kn11VgBI8e-F4eSmw4zRs5gdNRimv93Cu645cKNy_D9HHyxhrJDUMyPfNBoSBENYhI_Et_AONc9cl9s8OPA2qBIUw7SF75EGhjCjWg64I7yQpFOolX3kQjmnpTycQEURCcHY0LQa5INuKMaVIEUlmNYcLfg1AQZHgITMYEE_m5&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;!--
+class RefBase {
+  +void incStrong(id)
+  +void decStrong(id)
+  +void forceIncStrong(id)
+  +int32_t getStrongCount()
+
+  +weakref_type* createWeak(id)
+  +weakref_type* getWeakRefs()
+
+  #RefBase()
+  #virtual ~RefBase()
+  #virtual void onFirstRef()
+  #virtual void onLastStrongRef(id)
+  #virtual void onIncStrongAttempted(flags, id)
+  #virtual void onLastWeakRef(id)
+}
+
+RefBase &lt;|-- TYPE
+
+class weakref_type {
+  +void incWeak(id)
+  +void decWeak(id)
+  +bool attemptIncStrong(id)
+  +int32_t getWeakCount()
+}
+
+class weakref_impl {
+  +int32_t mStrong
+  +int32_t mWeak
+  +RefBase* mBase
+  +int32_t mFlags
+}
+
+weakref_type &lt;|-- weakref_impl
+
+RefBase &#34;1&#34; *-- &#34;1&#34; weakref_impl : mRefs
+
+class wp&lt;TYPE&gt; {
+  -T* m_ptr
+  -weakref_type* mrefs
+  +sp&lt;T&gt; promote()
+  +void clear()
+}
+
+wp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+wp &#34;*&#34; *-- &#34;1&#34; weakref_type : m_refs
+
+class sp&lt;TYPE&gt; {
+  -T* m_ptr
+  +sp&amp; operator=(T* other)
+  +sp&amp; operator=(const sp&lt;T&gt;&amp; other)
+}
+
+sp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+```
+
+其中 strong pointer 的實現相當簡單：
+
+```c++
+template&lt;typename T&gt; sp&lt;T&gt;::sp(T* other) : m_ptr(other) {
+    if (other) other-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::sp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(U* other) : m_ptr(other) {
+    if (other) ((T*)other)-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::~sp() {
+    if (m_ptr) m_ptr-&gt;decStrong(this);
+}
+```
+
+而 weak pointer 則是需要經由 `RefBase::createWeak` 或是 `weakref_type::incWeak` 來增加 weak reference：
+
+```c++
+template&lt;typename T&gt; wp&lt;T&gt;::wp(T* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const wp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr), m_refs(other.m_refs) {
+    if (m_ptr) m_refs-&gt;incWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(U* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const wp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = other.m_refs;
+        m_refs-&gt;incWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::~wp() {
+    if (m_ptr) m_refs-&gt;decWeak(this);
+}
+--&gt;
+&lt;p&gt;其中的 promote() 實現如下：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;template&lt;typename T&gt; sp&lt;T&gt; wp&lt;T&gt;::promote() const {
+    sp&lt;T&gt; result;
+    if (m_ptr &amp;&amp; m_refs-&gt;attemptIncStrong(&amp;result)) {
+        result.set_pointer(m_ptr);
+    }
+    return result;
+}
+
+bool RefBase::weakref_type::attemptIncStrong(const void* id)
+{
+    incWeak(id);
+
+    weakref_impl* const impl = static_cast&lt;weakref_impl*&gt;(this);
+
+    int32_t curCount = impl-&gt;mStrong;
+    ALOG_ASSERT(curCount &gt;= 0, &#34;attemptIncStrong called on %p after underflow&#34;,
+              this);
+    while (curCount &gt; 0 &amp;&amp; curCount != INITIAL_STRONG_VALUE) {
+        if (android_atomic_cmpxchg(curCount, curCount+1, &amp;impl-&gt;mStrong) == 0) {
+            break;
+        }
+        curCount = impl-&gt;mStrong;
+    }
+
+    if (curCount &lt;= 0 || curCount == INITIAL_STRONG_VALUE) {
+        bool allow;
+        if (curCount == INITIAL_STRONG_VALUE) {
+            // Attempting to acquire first strong reference...  this is allowed
+            // if the object does NOT have a longer lifetime (meaning the
+            // implementation doesn&#39;t need to see this), or if the implementation
+            // allows it to happen.
+            allow = (impl-&gt;mFlags&amp;OBJECT_LIFETIME_WEAK) != OBJECT_LIFETIME_WEAK
+                  || impl-&gt;mBase-&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+        } else {
+            // Attempting to revive the object...  this is allowed
+            // if the object DOES have a longer lifetime (so we can safely
+            // call the object with only a weak ref) and the implementation
+            // allows it to happen.
+            allow = (impl-&gt;mFlags&amp;OBJECT_LIFETIME_WEAK) == OBJECT_LIFETIME_WEAK
+                  &amp;&amp; impl-&gt;mBase-&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+        }
+        if (!allow) {
+            decWeak(id);
+            return false;
+        }
+        curCount = android_atomic_inc(&amp;impl-&gt;mStrong);
+
+        // If the strong reference count has already been incremented by
+        // someone else, the implementor of onIncStrongAttempted() is holding
+        // an unneeded reference.  So call onLastStrongRef() here to remove it.
+        // (No, this is not pretty.)  Note that we MUST NOT do this if we
+        // are in fact acquiring the first reference.
+        if (curCount &gt; 0 &amp;&amp; curCount &lt; INITIAL_STRONG_VALUE) {
+            impl-&gt;mBase-&gt;onLastStrongRef(id);
+        }
+    }
+
+    impl-&gt;addStrongRef(id);
+
+#if PRINT_REFS
+    ALOGD(&#34;attemptIncStrong of %p from %p: cnt=%d\n&#34;, this, id, curCount);
+#endif
+
+    if (curCount == INITIAL_STRONG_VALUE) {
+        android_atomic_add(-INITIAL_STRONG_VALUE, &amp;impl-&gt;mStrong);
+        impl-&gt;mBase-&gt;onFirstRef();
+    }
+
+    return true;
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;有幾個重點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Reference count 其實是存在 weakref_impl 裡面的，跟被參考物件 T 的生命週期是獨立的。&lt;/li&gt;
+&lt;li&gt;RefBase 有宣告virtual function，比較 heavy weight 一點，在一些比較簡單的狀況可以考慮使用 &lt;code&gt;LightRefBase&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;目前的實現是 thread-safe 的，所以對於 strong/weak ref count 的操作都用使用 atomic operation 例如 &lt;code&gt;android_atomic_inc&lt;/code&gt; 或 &lt;code&gt;android_atomic_dec&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;從目前實現看來，原本的設計是希望在第一個 strong ref 被加上前，也就是 constructor 裡面不應該做太 heavy weight 的事。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::onFirstRef()&lt;/code&gt; 是當第一次被 strong ref 時會被呼叫，通常是 override 它來做資源配置或是準備工作，算是一種 lazy initialization。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::OnLastStrongRef()&lt;/code&gt; 是當最後一個 strong ref 被釋放時會被呼叫，跟 &lt;code&gt;OnFirstRef&lt;/code&gt; 相反是用來做資源釋放或是收尾工作。&lt;/li&gt;
+&lt;li&gt;預設是最後一個 strong ref 時，實際的物件就會被摧毀；但是也可以透過 &lt;code&gt;extendObjectLifeTime(OBJECT_LIFETIME_WEAK)&lt;/code&gt; 讓物件只有要 weak ref 還在時便存活著，目前的唯一的應用實例是 Binder proxy (繼承自 &lt;code&gt;BpRefBase&lt;/code&gt;)。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;有了這些認知，來看 &lt;code&gt;BpRefBase&lt;/code&gt; 的實現便會比較容易了解其意義：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;BpRefBase::BpRefBase(const sp&lt;IBinder&gt;&amp; o)
+    : mRemote(o.get()), mRefs(NULL), mState(0)
+{
+    extendObjectLifetime(OBJECT_LIFETIME_WEAK);
+
+    if (mRemote) {
+        mRemote-&gt;incStrong(this);           // Removed on first IncStrong().
+        mRefs = mRemote-&gt;createWeak(this);  // Held for our entire lifetime.
+    }
+}
+
+BpRefBase::~BpRefBase()
+{
+    if (mRemote) {
+        if (!(mState&amp;kRemoteAcquired)) {
+            mRemote-&gt;decStrong(this);
+        }
+        mRefs-&gt;decWeak(this);
+    }
+}
+
+void BpRefBase::onFirstRef()
+{
+    android_atomic_or(kRemoteAcquired, &amp;mState);
+}
+
+void BpRefBase::onLastStrongRef(const void* id)
+{
+    if (mRemote) {
+        mRemote-&gt;decStrong(this);
+    }
+}
+
+bool BpRefBase::onIncStrongAttempted(uint32_t flags, const void* id)
+{
+    return mRemote ? mRefs-&gt;attemptIncStrong(this) : false;
+}&lt;/code&gt;&lt;/pre&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Stan Lippman on C&#43;&#43;/CLI</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-12-06-205/</link>
+      <pubDate>Mon, 06 Dec 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-12-06-205/</guid>
+      <description>&lt;p&gt;我一直很好奇為什麼在 C++ 領域赫赫有名的 Stan Lippman 及 Herb Sutter 會加入 Microsoft?&lt;/p&gt;
+&lt;p&gt;從&lt;a href=&#34;http://blog.csdn.net/myan/archive/2004/10/13/134978.aspx&#34;&gt;孟岩對 Stan 的訪談&lt;/a&gt;或許可以一窺其究竟。從文中可以看出，透過 C++/CLI 一方面可以實現 Stan 個人對 C++ 改進的期許，一方面也大大增強了 C++ 在 .NET 平台上的實用性。或許有許多人認為 Stan 這樣的作法是叛離 C++ 的正統道路，我倒是很樂觀其成。如果今天 Microsoft 不做 C++ 與 .NET 的 Interop，一定會有其他的公司或開放原始碼的專案會去做，畢竟有需求就會有人想辦法供給。&lt;/p&gt;
+&lt;p&gt;看看訪談文章的評論，發現有些人總是喜歡把別人當成笨蛋或是認為別人做任何事都是出於自私的目的，胸襟及眼光實在是小了些。人們所以為的往往是自己想法的反射。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>C&#43;&#43; Coding Standards</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-11-23-202/</link>
+      <pubDate>Tue, 23 Nov 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-11-23-202/</guid>
+      <description>&lt;p&gt;預覽 Herb Sutter 及 Andrei Alexandrescu 的新書《&lt;a href=&#34;http://www.artima.com/cppsource/codestandards.html&#34;&gt;C++ Coding Standards&lt;/a&gt;》。&lt;/p&gt;
+&lt;p&gt;還沒有機會去書店買，但從 &lt;a href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/0321113586/002-8340650-8752853?v=glance&#34;&gt;Amazon.com 裡的評論&lt;/a&gt;看來，這本書與 Effective C++ 似乎頗有互補作用。&lt;/p&gt;
+&lt;ol start=&#34;0&#34;&gt;
+&lt;li&gt;Don’t sweat the small stuff. (Or: Know what not to standardize.) 2&lt;/li&gt;
+&lt;li&gt;Compile cleanly at high warning levels. 4&lt;/li&gt;
+&lt;li&gt;Use an automated build system. 7&lt;/li&gt;
+&lt;li&gt;Use a version control system. 8&lt;/li&gt;
+&lt;li&gt;Invest in code reviews. 9&lt;/li&gt;
+&lt;li&gt;Give one entity one cohesive responsibility. 12&lt;/li&gt;
+&lt;li&gt;Correctness, simplicity, and clarity come first. 13&lt;/li&gt;
+&lt;li&gt;Know when and how to code for scalability. 14&lt;/li&gt;
+&lt;li&gt;Don’t optimize prematurely. 16&lt;/li&gt;
+&lt;li&gt;Don’t pessimize prematurely. 18&lt;/li&gt;
+&lt;li&gt;Minimize global and shared data. 19&lt;/li&gt;
+&lt;li&gt;Hide information. 20&lt;/li&gt;
+&lt;li&gt;Know when and how to code for concurrency. 21&lt;/li&gt;
+&lt;li&gt;Ensure resources are owned by objects. Use explicit RAII and smart pointers. 24&lt;/li&gt;
+&lt;li&gt;Prefer compile- and link-time errors to run-time errors. 28&lt;/li&gt;
+&lt;li&gt;Use const proactively. 30&lt;/li&gt;
+&lt;li&gt;Avoid macros. 32&lt;/li&gt;
+&lt;li&gt;Avoid magic numbers. 34&lt;/li&gt;
+&lt;li&gt;Declare variables as locally as possible. 35&lt;/li&gt;
+&lt;li&gt;Always initialize variables. 36&lt;/li&gt;
+&lt;li&gt;Avoid long functions. Avoid deep nesting. 38&lt;/li&gt;
+&lt;li&gt;Avoid initialization dependencies across compilation units. 39&lt;/li&gt;
+&lt;li&gt;Minimize definitional dependencies. Avoid cyclic dependencies. 40&lt;/li&gt;
+&lt;li&gt;Make header files self-sufficient. 42&lt;/li&gt;
+&lt;li&gt;Always write internal #include guards. Never write external #include guards. 43&lt;/li&gt;
+&lt;li&gt;Take parameters appropriately by value, (smart) pointer, or reference. 46&lt;/li&gt;
+&lt;li&gt;Preserve natural semantics for overloaded operators. 47&lt;/li&gt;
+&lt;li&gt;Prefer the canonical forms of arithmetic and assignment operators. 48&lt;/li&gt;
+&lt;li&gt;Prefer the canonical form of ++ and &amp;ndash;. Prefer calling the prefix forms. 50&lt;/li&gt;
+&lt;li&gt;Consider overloading to avoid implicit type conversions. 51&lt;/li&gt;
+&lt;li&gt;Avoid overloading &amp;amp;&amp;amp;, ||, or , (comma). 52&lt;/li&gt;
+&lt;li&gt;Don’t write code that depends on the order of evaluation of function arguments. 54&lt;/li&gt;
+&lt;li&gt;Be clear what kind of class you’re writing. 56&lt;/li&gt;
+&lt;li&gt;Prefer minimal classes to monolithic classes. 57&lt;/li&gt;
+&lt;li&gt;Prefer composition to inheritance. 58&lt;/li&gt;
+&lt;li&gt;Avoid inheriting from classes that were not designed to be base classes. 60&lt;/li&gt;
+&lt;li&gt;Prefer providing abstract interfaces. 62&lt;/li&gt;
+&lt;li&gt;Public inheritance is substitutability. Inherit, not to reuse, but to be reused. 64&lt;/li&gt;
+&lt;li&gt;Practice safe overriding. 66&lt;/li&gt;
+&lt;li&gt;Consider making virtual functions nonpublic, and public functions nonvirtual. 68&lt;/li&gt;
+&lt;li&gt;Avoid providing implicit conversions. 70&lt;/li&gt;
+&lt;li&gt;Make data members private, except in behaviorless aggregates (C-style structs). 72&lt;/li&gt;
+&lt;li&gt;Don’t give away your internals. 74&lt;/li&gt;
+&lt;li&gt;Pimpl judiciously. 76&lt;/li&gt;
+&lt;li&gt;Prefer writing nonmember nonfriend functions. 79&lt;/li&gt;
+&lt;li&gt;Always provide new and delete together. 80&lt;/li&gt;
+&lt;li&gt;If you provide any class-specific new, provide all of the standard forms (plain, in-place, and nothrow). 82&lt;/li&gt;
+&lt;li&gt;Define and initialize member variables in the same order. 86&lt;/li&gt;
+&lt;li&gt;Prefer initialization to assignment in constructors. 87&lt;/li&gt;
+&lt;li&gt;Avoid calling virtual functions in constructors and destructors. 88&lt;/li&gt;
+&lt;li&gt;Make base class destructors public and virtual, or protected and nonvirtual. 90&lt;/li&gt;
+&lt;li&gt;Destructors, deallocation, and swap never fail. 92&lt;/li&gt;
+&lt;li&gt;Copy and destroy consistently. 94&lt;/li&gt;
+&lt;li&gt;Explicitly enable or disable copying. 95&lt;/li&gt;
+&lt;li&gt;Avoid slicing. Consider Clone instead of copying in base classes. 96&lt;/li&gt;
+&lt;li&gt;Prefer the canonical form of assignment. 99&lt;/li&gt;
+&lt;li&gt;Whenever it makes sense, provide a no-fail swap (and provide it correctly). 100&lt;/li&gt;
+&lt;li&gt;Keep a type and its nonmember function interface in the same namespace. 104&lt;/li&gt;
+&lt;li&gt;Keep types and functions in separate namespaces unless they’re specifically intended to work together. 106&lt;/li&gt;
+&lt;li&gt;Don’t write namespace usings in a header file or before an #include. 108&lt;/li&gt;
+&lt;li&gt;Avoid allocating and deallocating memory in different modules. 111&lt;/li&gt;
+&lt;li&gt;Don’t define entities with linkage in a header file. 112&lt;/li&gt;
+&lt;li&gt;Don’t allow exceptions to propagate across module boundaries. 114&lt;/li&gt;
+&lt;li&gt;Use sufficiently portable types in a module’s interface. 116&lt;/li&gt;
+&lt;li&gt;Blend static and dynamic polymorphism judiciously. 120&lt;/li&gt;
+&lt;li&gt;Customize intentionally and explicitly. 122&lt;/li&gt;
+&lt;li&gt;Don’t specialize function templates. 126&lt;/li&gt;
+&lt;li&gt;Don’t write unintentionally nongeneric code. 128&lt;/li&gt;
+&lt;li&gt;Assert liberally to document internal assumptions and invariants. 130&lt;/li&gt;
+&lt;li&gt;Establish a rational error handling policy, and follow it strictly. 132&lt;/li&gt;
+&lt;li&gt;Distinguish between errors and non-errors. 134&lt;/li&gt;
+&lt;li&gt;Design and write error-safe code. 137&lt;/li&gt;
+&lt;li&gt;Prefer to use exceptions to report errors. 140&lt;/li&gt;
+&lt;li&gt;Throw by value, catch by reference. 144&lt;/li&gt;
+&lt;li&gt;Report, handle, and translate errors appropriately. 145&lt;/li&gt;
+&lt;li&gt;Avoid exception specifications. 146&lt;/li&gt;
+&lt;li&gt;Use vector by default. Otherwise, choose an appropriate container. 150&lt;/li&gt;
+&lt;li&gt;Use vector and string instead of arrays. 152&lt;/li&gt;
+&lt;li&gt;Use vector (and string::c_str) to exchange data with non-C++ APIs. 153&lt;/li&gt;
+&lt;li&gt;Store only values and smart pointers in containers. 154&lt;/li&gt;
+&lt;li&gt;Prefer push_back to other ways of expanding a sequence. 155&lt;/li&gt;
+&lt;li&gt;Prefer range operations to single-element operations. 156&lt;/li&gt;
+&lt;li&gt;Use the accepted idioms to really shrink capacity and really erase elements. 157&lt;/li&gt;
+&lt;li&gt;Use a checked STL implementation. 160&lt;/li&gt;
+&lt;li&gt;Prefer algorithm calls to handwritten loops. 162&lt;/li&gt;
+&lt;li&gt;Use the right STL search algorithm. 165&lt;/li&gt;
+&lt;li&gt;Use the right STL sort algorithm. 166&lt;/li&gt;
+&lt;li&gt;Make predicates pure functions. 168&lt;/li&gt;
+&lt;li&gt;Prefer function objects over functions as algorithm and comparer arguments. 170&lt;/li&gt;
+&lt;li&gt;Write function objects correctly. 172&lt;/li&gt;
+&lt;li&gt;Avoid type switching; prefer polymorphism. 174&lt;/li&gt;
+&lt;li&gt;Rely on types, not on representations. 176&lt;/li&gt;
+&lt;li&gt;Avoid using reinterpret_cast. 177&lt;/li&gt;
+&lt;li&gt;Avoid using static_cast on pointers. 178&lt;/li&gt;
+&lt;li&gt;Avoid casting away const. 179&lt;/li&gt;
+&lt;li&gt;Don’t use C-style casts. 180&lt;/li&gt;
+&lt;li&gt;Don’t memcpy or memcmp non-PODs. 182&lt;/li&gt;
+&lt;li&gt;Don’t use unions to reinterpret representation. 183&lt;/li&gt;
+&lt;li&gt;Don’t use varargs (ellipsis). 184&lt;/li&gt;
+&lt;li&gt;Don’t use invalid objects. Don’t use unsafe functions. 185&lt;/li&gt;
+&lt;li&gt;Don’t treat arrays polymorphically. 186&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Free Visual C&#43;&#43; Compiler</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-05-07-152/</link>
+      <pubDate>Fri, 07 May 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-05-07-152/</guid>
+      <description>&lt;p&gt;Microsoft 提供免費的 &lt;A href=&#34;http://msdn.microsoft.com/visualc/vctoolkit2003/&#34;&gt;Microsoft Visual C++ Toolkit 2003&lt;/A&gt;，其中包含了跟 Visual Studio .NET 2003 一樣的 C++ compiler。其實 Microsoft 早就應該這樣做了，畢竟現在有誰在 Windows 上不用整合開發環境 (IDE) 來寫程式，提供免費的 C++ compiler 一點也不會影響 Visual Studio 的銷售。提供免費的 C++ 編譯器來推廣 .NET 平台的普及，我想是這個事情最主要的原因吧。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Exceptional C&#43;&#43;</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-05-22-35/</link>
+      <pubDate>Thu, 22 May 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-05-22-35/</guid>
+      <description>&lt;p&gt;&lt;img src=&#34;http://www.gotw.ca/images/xc++cover-small.gif&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;p&gt;C++ 的信徒應該對 &lt;a href=&#34;http://www.gotw.ca/&#34; title=&#34;GotW.ca Home Page&#34;&gt;Herb Sutter&lt;/a&gt; 不感到陌生。草藥兄最常發表技術文章的地方是&lt;a href=&#34;http://www.cuj.com/&#34;&gt;C/C++ Users Journal&lt;/a&gt; 的 C++ 專欄。不才也有一本他寫的 &lt;a href=&#34;http://www.gotw.ca/publications/xc++.htm&#34;&gt;Exceptional C++&lt;/a&gt;，雖是薄薄的一本卻是字字珠璣，沒有多餘的廢話。任何自認為 C++ 的專家都應該來挑戰看看書中所提的問題。每次我誤入書中所設的的陷阱時，彷彿都能聽見 Herb 在耳邊說 &amp;ldquo;&lt;a href=&#34;http://info.astrian.net/jargon/terms/g/gotcha.html&#34;&gt;gotcha&lt;/a&gt;&amp;quot;。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

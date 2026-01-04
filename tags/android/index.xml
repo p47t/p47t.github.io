@@ -1,0 +1,1060 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/android/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2018-02-14 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Kotlin Coroutines and Threads</title>
+      <link>https://blog.simplypatrick.com/posts/2018/02-14-kotlin-coroutines-and-threads/</link>
+      <pubDate>Wed, 14 Feb 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/02-14-kotlin-coroutines-and-threads/</guid>
+      <description>&lt;h3 id=&#34;coroutine-跟-thread-的關係&#34;&gt;Coroutine 跟 thread 的關係&lt;/h3&gt;
+&lt;p&gt;Coroutine 通常可以理解成輕量化的 thread，但實際運作還是需要被排程到作業系統層級的 thread，然後再被排程到某個 CPU來執行：&lt;/p&gt;
+&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR6ZVOirpUEhDxVjbJJgJiSzTdXsvn5IXRjTh8oqZ4JoHg04JhqsU6vTjjCK_BVvwdbIky5oYDzjMWI/pub?w=398&amp;amp;h=284&#34;&gt;
+&lt;p&gt;相對於 thread，使用 coroutine 的好處是， coroutine 之間的切換快速，需要耗用的系統資源也比較小。&lt;/p&gt;
+&lt;h3 id=&#34;coroutine-如何排程&#34;&gt;Coroutine 如何排程？&lt;/h3&gt;
+&lt;p&gt;Kotlin 的 coroutine 會被分派到那個 thread 是由呼叫 coroutine builder 時提供的 &lt;code&gt;CoroutineContext&lt;/code&gt; 參數來決定。&lt;/p&gt;
+&lt;p&gt;透過觀察這個&lt;a href=&#34;https://github.com/yinghau76/kotlin-playground/blob/29bb2f7a5385047bcd1a9b0303d2cb70f1f2dd7e/app/src/main/java/com/simplypatrick/android/coroutines/CoroutineContextActivity.kt#L7&#34;&gt;範例&lt;/a&gt;的輸出，我們可以了解不同 &lt;code&gt;CoroutineContext&lt;/code&gt; 的行為：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;kotlin&#34;&gt;class CoroutineContextActivity : ConsoleActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        logThread(&#34;Begin onCreate&#34;)
+
+        launch(UI) {
+            logThread(&#34;Begin launch(UI)&#34;)
+            delay(10_000)
+            logThread(&#34;End launch(UI)&#34;)
+        }
+
+        launch(CommonPool) {
+            logThread(&#34;Begin launch(CommonPool)&#34;)
+            delay(10_000)
+            logThread(&#34;End launch(CommonPool)&#34;)
+        }
+
+        launch(Unconfined) {
+            logThread(&#34;Begin launch(Unconfined)&#34;)
+            delay(10_000)
+            logThread(&#34;End launch(Unconfined)&#34;)
+        }
+
+        launch(newSingleThreadContext(&#34;MyOwnThread&#34;)) {
+            logThread(&#34;Begin launch(newSingleThreadContext)&#34;)
+            delay(10_000)
+            logThread(&#34;End launch(newSingleThreadContext)&#34;)
+        }
+
+        logThread(&#34;End onCreate&#34;)
+    }
+
+    fun logThread(msg: String) {
+        println(&#34;$msg: ${Thread.currentThread().name}&#34;)
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;結果：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;&#34;&gt;1:48:50:866 (   1) Begin onCreate: main
+1:48:50:937 (   1) Begin launch(Unconfined): main
+1:48:50:938 (1719) Begin launch(CommonPool): ForkJoinPool.commonPool-worker-2
+1:48:50:967 (   1) End onCreate: main
+1:48:50:968 (1721) Begin launch(newSingleThreadContext): MyOwnThread
+1:48:51:015 (   1) Begin launch(UI): main
+1:49:00:971 (1721) End launch(newSingleThreadContext): MyOwnThread
+1:49:00:973 (1720) End launch(Unconfined): kotlinx.coroutines.DefaultExecutor
+1:49:00:980 (1724) End launch(CommonPool): ForkJoinPool.commonPool-worker-1
+1:49:01:016 (   1) End launch(UI): main&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;心得：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Unconfined&lt;/code&gt; 在 suspend 之前會是由 calling thread 直接執行，suspend 之後則是用 DefaultExecutor thread 來執行。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CommonPool&lt;/code&gt; 會是由 common thread pool 裡面的 thread 來執行，suspend 前後被分配的 thread 有可能不同。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;UI&lt;/code&gt; 只能在 main thread 上執行，並且因為是依賴 Android Looper 來實現的，coroutine 會在 onCreate 結束後才被執行到。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;newSingleThreadContext&lt;/code&gt; 會由新產生的 thread 來執行，因爲創建新的 thread 需要一點時間，coroutine 是在 onCreate 結束後才被呼叫到。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這樣的設計主要有兩個優點：一來提供彈性讓使用者根據使用情境決定要使用那些 thread，二來提供擴充性讓使用者可以設計不一樣的 thread dispatching strategy。&lt;/p&gt;
+&lt;p&gt;如果想要掌握更進階的 coroutine 用法，&lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#coroutine-context-and-dispatchers&#34;&gt;Coroutine context and dispatchers&lt;/a&gt; 是很不錯的使用指南。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Kotlin Coroutine API</title>
+      <link>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</link>
+      <pubDate>Tue, 13 Feb 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</guid>
+      <description>&lt;h3 id=&#34;kotlin-coroutine-的架構&#34;&gt;Kotlin Coroutine 的架構&lt;/h3&gt;
+&lt;p&gt;Kotlin 從 1.1 版開始實驗性地支援 coroutine，主要的目標是簡化非同步編程的複雜度。&lt;a href=&#34;https://www.kotlindevelopment.com/deep-dive-coroutines/&#34;&gt;Diving deep into Kotlin Coroutines&lt;/a&gt; 解釋了 coroutine 跟一般常用的 callback 及目前蠻多人在用的 reactive 模式有何不同。&lt;/p&gt;
+&lt;p&gt;由於目前 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines&#34;&gt;kotlinx-coroutines-core&lt;/a&gt; 的實現包含了不同抽象程度的 API，初學者建議可以用下面這張圖來學習如何使用 Kotlin coroutine：&lt;/p&gt;
+&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR70Re48nVLUrBy7crWv4oBTGeDsWKAYmYz2zFCb0NZCnUwd7vmh2LZFsJs9bgeBrLjs7oRrwV_rDQD/pub?w=360&amp;amp;h=284&#34;&gt;
+&lt;h3 id=&#34;範例分析&#34;&gt;範例分析&lt;/h3&gt;
+&lt;p&gt;套用下面這個&lt;a href=&#34;https://proandroiddev.com/approaching-kotlin-coroutines-an-extensive-feature-concurrent-programming-in-kotlin-eaaa19b003d2&#34;&gt;範例&lt;/a&gt;來理解:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;kotlin&#34;&gt;suspend fun sendEmail(r: String, msg: String): Boolean { // 3
+    delay(2000) // 4
+    println(&#34;Sent &#39;$msg&#39; to $r&#34;)
+    return true
+}
+
+suspend fun getReceiverAddressFromDatabase(): String { // 3
+    delay(1000) // 4
+    return &#34;coroutine@kotlin.org&#34;
+}
+
+suspend fun sendEmailSuspending(): Boolean { // 3
+    val msg = /* 1 */ async(CommonPool) { // 2
+        delay(500)
+        &#34;The message content&#34;
+    }
+    val recipient = /* 1 */ async(CommonPool) { // 2
+        getReceiverAddressFromDatabase()
+    }
+    println(&#34;Waiting for email data&#34;)
+    val sendStatus = /* 1 */ async(CommonPool) { // 2
+        sendEmail(recipient.await(), msg.await()) // 4
+    }
+    return sendStatus.await()
+}
+
+fun main(args: Array&lt;String&gt;) = /* 1 */ runBlocking(CommonPool) {
+    val job = /* 1 */ launch(CommonPool) { // 2
+        sendEmailSuspending()
+        println(&#34;Email sent successfully.&#34;)
+    }
+    job.join() // 4
+    println(&#34;Finished&#34;)
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;其中：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;runBlocking&lt;/code&gt;, &lt;code&gt;launch&lt;/code&gt;, 及 &lt;code&gt;async&lt;/code&gt; 是最常被使用的 coroutine builder。&lt;/li&gt;
+&lt;li&gt;coroutine builder 後面跟著的就是我們撰寫的 suspending lambda，可以視為 coroutine 的進入點。&lt;/li&gt;
+&lt;li&gt;通常在 suspending lambda 裡會再呼叫其他 suspending function，例如 &lt;code&gt;sendEmailSuspending&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;delay&lt;/code&gt;, &lt;code&gt;Job.join&lt;/code&gt;, &lt;code&gt;Deferred.await&lt;/code&gt; 則是用來&lt;strong&gt;等待&lt;/strong&gt;的 high-level API。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;high-level-api&#34;&gt;High-level API&lt;/h3&gt;
+&lt;p&gt;範例中的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#concurrent-using-async&#34;&gt;async/await&lt;/a&gt; 並不是目前唯一支援的 concurrency pattern，目前看到正在開發中的還有：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Golang 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#channels&#34;&gt;channel/select&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Python 的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#generators-api-in-kotlincoroutines&#34;&gt;generator/yield&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Erlang 或 Scala 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#actors&#34;&gt;Actor&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Java 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/tree/master/reactive/kotlinx-coroutines-reactor&#34;&gt;Reactor&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;low-level-api&#34;&gt;Low-level API&lt;/h3&gt;
+&lt;p&gt;所有的 coroutine 機制都是基於底層的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#low-level-api-kotlincoroutines&#34;&gt;low-level API&lt;/a&gt; 來實現的。之後有時間的話會再研究並分享 high-level API 是如何用 low-level API 來實現的。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Better Way to Request Runtime Permissions</title>
+      <link>https://blog.simplypatrick.com/posts/2016/05-30-requesting-runtime-permission/</link>
+      <pubDate>Mon, 30 May 2016 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2016/05-30-requesting-runtime-permission/</guid>
+      <description>&lt;p&gt;If you are an Android developer, you definitely know an important change beginning in Android 6.0 (API 23) is run time permission: users grant permissions to apps while the app is running, not when they install the app. &lt;a href=&#34;https://developer.android.com/training/permissions/requesting.html&#34;&gt;This official training guide&lt;/a&gt; explains clearly how you can
+check for permission and request them at runtime.&lt;/p&gt;
+&lt;p&gt;Let me list the sample code in the training guide so that you can understand what improvements I would like to do with them:&lt;/p&gt;
+&lt;h3 id=&#34;check-for-permissions&#34;&gt;Check for Permissions&lt;/h3&gt;
+&lt;pre data-line=&#34;7, 12, 17&#34;&gt;&lt;code class=&#34;language-java&#34;&gt;// Here, thisActivity is the current activity
+if (ContextCompat.checkSelfPermission(thisActivity, Manifest.permission.READ_CONTACTS)
+        != PackageManager.PERMISSION_GRANTED) {
+    // Should we show an explanation?
+    if (ActivityCompat.shouldShowRequestPermissionRationale(thisActivity,
+            Manifest.permission.READ_CONTACTS)) {
+        // Show an expanation to the user *asynchronously* -- don&#39;t block
+        // this thread waiting for the user&#39;s response! After the user
+        // sees the explanation, try again to request the permission.
+    } else {
+        // No explanation needed, we can request the permission.
+        ActivityCompat.requestPermissions(thisActivity,
+                new String[]{Manifest.permission.READ_CONTACTS},
+                MY_PERMISSIONS_REQUEST_READ_CONTACTS);
+    }
+} else {
+  // permission was granted, yay! Do the task you need to do.
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;h3 id=&#34;request-permissions&#34;&gt;Request Permissions&lt;/h3&gt;
+&lt;pre data-line=&#34;8&#34;&gt;&lt;code class=&#34;language-java&#34;&gt;@Override
+public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+    switch (requestCode) {
+        case MY_PERMISSIONS_REQUEST_READ_CONTACTS: {
+            // If request is cancelled, the result arrays are empty.
+            if (grantResults.length &gt; 0
+                &amp;&amp; grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // permission was granted, yay! Do the task you need to do.
+            } else {
+                // permission denied, boo! Disable the
+                // functionality that depends on this permission.
+            }
+            return;
+        }
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The sample code looks nice but it does not work so well in real-world projects for several reasons:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;The sample structure encourages you to write duplicated code:
+&lt;ul&gt;
+&lt;li&gt;There are two places your app have to perform the real task:
+&lt;ul&gt;
+&lt;li&gt;while permission is already granted - line 17&lt;/li&gt;
+&lt;li&gt;while permission is granted after user interaction - line 8&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;There are two places your app have to request the permission:
+&lt;ul&gt;
+&lt;li&gt;after user see the explanation and decide to request permission again - line 7&lt;/li&gt;
+&lt;li&gt;while no explanation is needed - line 12&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;When permission is finally granted from user, the original context has lost. For example, when my app tries to make a phone call, the context is the phone number. A typical solution is to store the context in class field, such as a &lt;code&gt;mPhoneNumberToCall&lt;/code&gt;. It is bad and something I would like to avoid.&lt;/li&gt;
+&lt;li&gt;The sample code does not suggest how to show an explanation asynchronously.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;more-elegant-solution&#34;&gt;More Elegant Solution&lt;/h3&gt;
+&lt;p&gt;My basic idea is using &lt;code&gt;Runnable&lt;/code&gt; (with help of Java8 lambda) to capture the context and prevent duplication. Here is my way to :&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;The original task is wrapped as a &lt;code&gt;Runnable&lt;/code&gt; that can be stored in &lt;code&gt;HashMap&lt;/code&gt; and retrieved later for execution without repeating its logic. All necessary information can be captured when the lambda is created.&lt;/li&gt;
+&lt;li&gt;The runnable task is wrapped again by a permission checker which is also an &lt;code&gt;Runnable&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Use &lt;code&gt;Snackbar&lt;/code&gt; to show an explanation&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Here is revised version of original sample code:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;private HashMap&lt;String, Runnable&gt; mPendingPermissionRequests = new HashMap&lt;&gt;();
+private static final int PENDING_PERMISSION_REQUESTS = 0;
+
+private Runnable newPermissionRequester(Activity activity, String permission, String explanation, Runnable task) {
+    return () -&gt; {
+        if (ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED) {
+            task.run();
+            return;
+        }
+
+        Runnable requestPermission = () -&gt; {
+            ActivityCompat.requestPermissions(getActivity(), new String[] {permission}, PENDING_PERMISSION_REQUESTS);
+            mPendingPermissionRequests.put(permission, task);
+        };
+
+        // Should we show an explanation?
+        if (ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)) {
+            // Show an explanation to the user *asynchronously* -- don&#39;t block this thread waiting for the user&#39;s
+            // response! After the user sees the explanation, try again to request the permission.
+            Snackbar.make(getView(), explanation, Snackbar.LENGTH_LONG)
+                    .setAction(R.string.request, v -&gt; {
+                        requestPermission.run();
+                    })
+                    .show();
+        } else {
+            // No explanation needed, we can request the permission.
+            requestPermission.run();
+        }
+    };
+}
+
+@Override
+public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    if (requestCode == PENDING_PERMISSION_REQUESTS) {
+        for (int i = 0; i &lt; permissions.length; i++) {
+            String permission = permissions[i];
+            if (grantResults[i] == PackageManager.PERMISSION_GRANTED &amp;&amp; mPendingPermissionRequests.containsKey(permission)) {
+                // permission was granted, yay! Do the task you need to do.
+                mPendingPermissionRequests.remove(permission).run();
+            }
+        }
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Here is an example to make a phone call:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;newPermissionRequester(
+    getActivity(),
+    Manifest.permission.CALL_PHONE,             // permission to request
+    getString(R.string.call_phone_permission),  // explanation to user
+    () -&gt; startActivity(new Intent(Intent.ACTION_CALL, Uri.fromParts(&#34;tel&#34;, phone.number, null))))
+.run();&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Of course you can try extracting a more reusable &lt;code&gt;PermissionRequester&lt;/code&gt; class but this is good enough for me.&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>在 Android 上使用 OpenCV 的臉部偵測及辨識</title>
+      <link>https://blog.simplypatrick.com/posts/2016/03-05-face-detection-with-opencv-on-android/</link>
+      <pubDate>Sat, 05 Mar 2016 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2016/03-05-face-detection-with-opencv-on-android/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;https://docs.google.com/document/d/1QcD_bUKW8wNb8tYZpFJ-NbwgTAjkgAWFc-gz23cBUUI/edit?usp=sharing&#34;&gt;兩年多前研究了一下在 Android 上如何用 OpenCV 做臉部偵測及辨識&lt;/a&gt;。主要的使用情境如下圖:&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;client-architecture.png&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;p&gt;因為輸入來源是攝影機的視訊，當時的想法是初步的偵測及辨識還是由裝置執行，比較複雜的計算再上傳到 server 執行：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;components.png&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;p&gt;這幾年許多大廠例如 Google, Facebook, 及 Microsoft 都積極投入發展人工智慧及臉部辨識技術，現在臉部辨識已經是 Mobile OS 上的必備功能:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.projectoxford.ai/face&#34;&gt;Face API of Microsoft Project Oxford&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://developers.google.com/vision/face-detection-concepts&#34;&gt;Face API of Mobile Video from Google&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://developer.apple.com/library/ios/documentation/GraphicsImaging/Conceptual/CoreImaging/ci_detect_faces/ci_detect_faces.html&#34;&gt;Detecting Faces in an Image on Apple iOS&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;當時只是簡單弄了一個 prototype，現在回頭看，大致上設計沒有差太多，倒是 &lt;a href=&#34;https://developers.google.com/android/reference/com/google/android/gms/vision/package-summary&#34;&gt;API 設計上&lt;/a&gt;可以多跟人家學習學習:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;public class Tracker&lt;T&gt; {
+    public Tracker() {}
+
+    public void onNewItem(int id, T item) {}
+    public void onUpdate(Detections&lt;T&gt; detections, T item) {}
+    public void onMissing(Detections&lt;T&gt; detections) {}
+    public void onDone() {}
+}&lt;/code&gt;&lt;/pre&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Redesign Listener with RxJava on Android</title>
+      <link>https://blog.simplypatrick.com/posts/2016/03-04-using-rxjava-on-android/</link>
+      <pubDate>Fri, 04 Mar 2016 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2016/03-04-using-rxjava-on-android/</guid>
+      <description>&lt;h3 id=&#34;background&#34;&gt;Background&lt;/h3&gt;
+&lt;p&gt;In my Android app, I used the following typical Listener pattern to monitor updates from models:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;public interface Listener {
+    void onUpdate(List&lt;Item&gt; list);
+}
+
+public interface Model {
+    void addListener(Listener l);
+    void removeListener(Listener l);
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Listeners are implemented by several &lt;a href=&#34;http://developer.android.com/guide/components/fragments.html&#34;&gt;Fragments&lt;/a&gt; that expect update notifications coming from a global model object. The updating may be triggered manually by user or periodically by a scheduler.&lt;/p&gt;
+&lt;p&gt;After learning RxJava, I would like to simplify the model interface and at the same time remove the boilerplate of maintaining listener list in model implementation:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;public interface Model {
+    Observable&lt;List&lt;Item&gt; getItems();
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;dealing-with-different-life-cycles&#34;&gt;Dealing with Different Life Cycles&lt;/h3&gt;
+&lt;p&gt;Note that Listeners (i.e. Fragments) are registered to model during &lt;a href=&#34;http://developer.android.com/reference/android/app/Fragment.html#onResume()&#34;&gt;&lt;code&gt;Fragment.onResume&lt;/code&gt;&lt;/a&gt; and unregistered during &lt;a href=&#34;http://developer.android.com/reference/android/app/Fragment.html#onPause()&#34;&gt;&lt;code&gt;Fragment.onPause&lt;/code&gt;&lt;/a&gt; but &lt;code&gt;Observable&lt;/code&gt; are typically designed to be created for each update. That means I need a middleman that can:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Subscribe to new Observable for each update&lt;/li&gt;
+&lt;li&gt;Manage listener list&lt;/li&gt;
+&lt;li&gt;Notify listener when source Observable has completed its emission&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;subject-to-rescue-us&#34;&gt;Subject to Rescue Us&lt;/h3&gt;
+&lt;p&gt;The middleman can be implemented by deriving from &lt;a href=&#34;https://github.com/ReactiveX/RxJava/wiki/Subject&#34;&gt;&lt;code&gt;Subject&lt;/code&gt;&lt;/a&gt; in RxJava:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;A Subject is a sort of bridge or proxy that acts both as an Subscriber and as an Observable. Because it is a Subscriber, it can subscribe to one or more Observables, and because it is an Observable, it can pass through the items it observes by reemitting them, and it can also emit new items.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;What I need is a &lt;code&gt;Subject&lt;/code&gt; that can consume &lt;code&gt;T&lt;/code&gt; and emit &lt;code&gt;List&amp;lt;T&amp;gt;&lt;/code&gt;. Therefore Fragments can subscribe to this Subject once and this Subject subscribes to newly created source Observable for each update.&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;private static &lt;T&gt; Subject&lt;T, List&lt;T&gt;&gt; createAggregateSubject() {
+    final List&lt;Subscriber&lt;? super List&lt;T&gt;&gt;&gt; observers = new LinkedList&lt;&gt;();
+    final Observable.OnSubscribe&lt;List&lt;T&gt;&gt; onSubscribe = o -&gt; {
+        o.onStart();
+        observers.add(o);
+    };
+    return new Subject&lt;T, List&lt;T&gt;&gt;(onSubscribe) {
+        private List&lt;T&gt; list = new LinkedList&lt;&gt;();
+
+        @Override
+        public boolean hasObservers() {
+            return !observers.isEmpty();
+        }
+
+        @Override
+        public void onCompleted() {
+            Iterables.removeIf(observers, Subscriber::isUnsubscribed);
+
+            for (Subscriber&lt;? super List&lt;T&gt;&gt; o: observers) {
+                o.onNext(list);
+            }
+            list.clear();
+        }
+
+        @Override
+        public void onError(Throwable e) {
+            for (Subscriber&lt;? super List&lt;T&gt;&gt; o: observers) {
+                o.onError(e);
+            }
+        }
+
+        @Override
+        public void onNext(T t) {
+            list.add(t);
+        }
+    };
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;reference&#34;&gt;Reference&lt;/h3&gt;
+&lt;p&gt;To know more about how to use RxJava on Android, you can refer to &lt;a href=&#34;https://github.com/kaushikgopal/RxJava-Android-Samples&#34;&gt;Learning RxJava for Android by example&lt;/a&gt; for more creative usage.&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Running Android Studio with Custom JDK</title>
+      <link>https://blog.simplypatrick.com/posts/2016/02-28-running-android-studio-with-custom-jdk/</link>
+      <pubDate>Sun, 28 Feb 2016 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2016/02-28-running-android-studio-with-custom-jdk/</guid>
+      <description>&lt;p&gt;IntelliJ is certainly the best Java IDE ever. However, IntelliJ-based Android Studio really bothers me much because it fails to render font antialiasing correctly compared with older version on OS X:&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;as-font-bad.png&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;http://tools.android.com/tech-docs/configuration/osx-jdk&#34;&gt;Google&amp;rsquo;s suggestion to this issue&lt;/a&gt; is to use Oracle JDK 1.6 but I don&amp;rsquo;t like the idea to stick with out-of-dated JDK.&lt;/p&gt;
+&lt;p&gt;Recently IntelliJ 15 fixed this issue by bundling custom JDK. After realizing the same fix is probably not on the priority list of Android Studio 2.0 release, I decided to look for a solution that applies the same change for IntelliJ 15 to Android Studio. Luckily, &lt;a href=&#34;https://www.reddit.com/r/androiddev/comments/3ve3z1/android_studio_subpixel_antialiasing_on_os_x_with/&#34;&gt;Someone had the same idea and provided a non-intrusive way to fix it&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;I chose to modify &lt;code&gt;~/Library/Preferences/AndroidStudioPreview2.0/studio.jdk&lt;/code&gt; and point the JDK location to the custom one provided by IntelliJ 15 CE (in my case: &lt;code&gt;/Applications/IntelliJ IDEA 15 CE.app/Contents/jre/jdk&lt;/code&gt;).&lt;/p&gt;
+&lt;p&gt;Wow! The nice-looking Android Studio is back:&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;as-font-good.png&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Using Native Libraries in Android</title>
+      <link>https://blog.simplypatrick.com/posts/2014/01-04-using-native-libraries-in-android/</link>
+      <pubDate>Sat, 04 Jan 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/01-04-using-native-libraries-in-android/</guid>
+      <description>&lt;h3 id=&#34;基本概念&#34;&gt;基本概念&lt;/h3&gt;
+&lt;p&gt;開發 Android app 如果需要使用 native library，簡單地說其實不複雜，就是把 .so 檔放到 &lt;code&gt;lib/&amp;lt;abi&amp;gt;&lt;/code&gt; 目錄，然後不管你是用 Eclipse ADT, Ant, 或是 Gradle 來產生 APK, 這些工具都會把這些 &lt;code&gt;.so&lt;/code&gt; 包到 &lt;code&gt;.apk&lt;/code&gt; 裡面，然後這些 &lt;code&gt;.so&lt;/code&gt; 就可以在運作時期用 &lt;a href=&#34;http://developer.android.com/reference/java/lang/System.html#loadLibrary(java.lang.String)&#34;&gt;System.loadLibrary&lt;/a&gt; 或是 &lt;a href=&#34;http://developer.android.com/reference/java/lang/System.html#load(java.lang.String)&#34;&gt;System.load&lt;/a&gt; 來載入。&lt;/p&gt;
+&lt;p&gt;接下來說明幾個常見的 &lt;code&gt;.so&lt;/code&gt; 產生及載入方式：&lt;/p&gt;
+&lt;h3 id=&#34;使用-ndk&#34;&gt;使用 NDK&lt;/h3&gt;
+&lt;p&gt;如果是自己開發自己使用，通常建議用 Android NDK，只要一個 &lt;code&gt;ndk-build&lt;/code&gt; 命令就可以將 &lt;code&gt;jni/&lt;/code&gt; 目錄裡的 C/C++ code 編譯成 &lt;code&gt;libs/&amp;lt;abi&amp;gt;/&lt;/code&gt; 裡的 &lt;code&gt;lib&amp;lt;name&amp;gt;.so&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;載入方式就是直接使用 &lt;code&gt;System.loadLibrary&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;third-party-library&#34;&gt;Third-party library&lt;/h3&gt;
+&lt;p&gt;但如果角色換成是要提供 library 給 App 開發者使用，方法就比較多樣一點：&lt;/p&gt;
+&lt;h4 id=&#34;jni--src&#34;&gt;&lt;code&gt;jni/&lt;/code&gt; + &lt;code&gt;src/&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;也就是直接給 JNI 及 Java code 由 App 開發自己整合。&lt;/p&gt;
+&lt;h4 id=&#34;library-project&#34;&gt;Library Project&lt;/h4&gt;
+&lt;p&gt;如果你要提供的 library 有自帶的 resource，這是目前唯一可以用的方式。把 .so 放在 library project 的 &lt;code&gt;libs/&amp;lt;abi&amp;gt;&lt;/code&gt; 就可以讓 app project 使用了。據說 Google 以後會提供工具可以把 library project 輸出成單一檔案來使用，期待中。&lt;/p&gt;
+&lt;h4 id=&#34;一個-jar--數個-so-檔&#34;&gt;一個 &lt;code&gt;.jar&lt;/code&gt; + 數個 &lt;code&gt;.so&lt;/code&gt; 檔&lt;/h4&gt;
+&lt;p&gt;如果不帶 resource 的話，給編譯好的 &lt;code&gt;.jar&lt;/code&gt; 跟 &lt;code&gt;.so&lt;/code&gt; 讓 App 開發者直接放到 &lt;code&gt;libs/&lt;/code&gt; 也是種簡單的方法。&lt;/p&gt;
+&lt;h4 id=&#34;一個-jar-內嵌-so-檔&#34;&gt;一個 &lt;code&gt;.jar&lt;/code&gt; 內嵌 &lt;code&gt;.so&lt;/code&gt; 檔&lt;/h4&gt;
+&lt;p&gt;有些 library 提供者為了降低開發者的使用門檻，使用了把 &lt;code&gt;.so&lt;/code&gt; 放在 &lt;code&gt;.jar&lt;/code&gt; 檔的 &lt;code&gt;assets/&lt;/code&gt; 目錄中然後運作時再從 assets 中取出 &lt;code&gt;.so&lt;/code&gt; 來載入的技巧，細節可以參考 &lt;a href=&#34;https://www.crittercism.com/packaging-android-libraries-with-native-code/&#34;&gt;Crittercism SDK 用的方式&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;獨立的-library-apk&#34;&gt;獨立的 library APK&lt;/h3&gt;
+&lt;p&gt;上述的所有方法都有個缺點(或者也是優點): app 都自帶 &lt;code&gt;.so&lt;/code&gt;，不同 app 間無法共享占用空間多，也無法獨立更新。所以就有人想了把 &lt;code&gt;.so&lt;/code&gt; 放在獨立的 APK 裡，只要能找到 &lt;code&gt;.so&lt;/code&gt; 的絕對安裝路徑就能用 &lt;code&gt;System.load&lt;/code&gt; 來載入使用。例如 &lt;a href=&#34;http://opencv.org/platforms/android.html&#34;&gt;OpenCV&lt;/a&gt; 就是使用這樣的技巧：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;AndroidAppUsageModel.png&#34; alt=&#34;Android App Usage Model&#34;&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;由 library APK 提供一個 service。&lt;/li&gt;
+&lt;li&gt;App 透過 service 獲取 lib 的絕對路徑。&lt;/li&gt;
+&lt;li&gt;但如果 service 不存在可以由 App 透過 Play store 來安裝。&lt;/li&gt;
+&lt;li&gt;App 使用 &lt;code&gt;System.load(libpath)&lt;/code&gt; 來載入 &lt;code&gt;.so&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;但這樣相對地 library 要做的事情就蠻多的，細節可以參考 &lt;a href=&#34;https://github.com/Itseez/opencv/tree/master/platforms/android/service&#34;&gt;OpenCV 的做法&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;總結&#34;&gt;總結&lt;/h3&gt;
+&lt;p&gt;上面的方法各有其適用的時機，該用那一種就是大家自己去思考及評估囉。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>用 Scala 來開發 Android App 入門</title>
+      <link>https://blog.simplypatrick.com/posts/2013/11-11-develop-android-app-with-scala/</link>
+      <pubDate>Mon, 11 Nov 2013 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2013/11-11-develop-android-app-with-scala/</guid>
+      <description>&lt;p&gt;最近想寫些 Android 的小程式，但是用 Java 實在是太無趣了，於是就想嘗試用 Scala 來做，分享一下怎麼入門的心得。&lt;/p&gt;
+&lt;h2 id=&#34;基本工具&#34;&gt;基本工具&lt;/h2&gt;
+&lt;p&gt;我假設你已經安裝好下列工具 (標上我目前使用的版本):&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Scala (2.10.3) 及 SBT (0.13.0)&lt;/li&gt;
+&lt;li&gt;IntelliJ 12
+&lt;ul&gt;
+&lt;li&gt;Scala plugin (0.22.302)&lt;/li&gt;
+&lt;li&gt;SBT plugin (1.5.1)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;產生一個基本的-scala-android-app&#34;&gt;產生一個基本的 Scala Android App&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;執行 &lt;code&gt;android create project --target android-19 --path ./MyProject --package com.example.myproject --activity Main&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;在 project 目錄下新建 &lt;code&gt;project/plugins.sbt&lt;/code&gt;，內容如下 (注意中間的空白行不可省略):&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;scala&#34;&gt;addSbtPlugin(&#34;com.hanhuy.sbt&#34; % &#34;android-sdk-plugin&#34; % &#34;1.2.2&#34;)
+
+addSbtPlugin(&#34;com.hanhuy.sbt&#34; % &#34;sbt-idea&#34; % &#34;1.6.0&#34;)&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;在 project 目錄下新建 build.sbt，同樣中間空白行不可省略:&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;scala&#34;&gt;android.Plugin.androidBuild
+
+name := &#34;MyProject&#34;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;執行 &lt;code&gt;sbt android:package-debug&lt;/code&gt;，到這一步應該就能把 APK 建立出來了&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;把-java-轉成-scala&#34;&gt;把 Java 轉成 Scala&lt;/h2&gt;
+&lt;p&gt;然後你可以試著把 android 幫你產生的 Java 手動改寫成 Scala (副檔名也要改 .scala):&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;package com.example.myproject;
+
+import android.app.Activity;
+import android.os.Bundle;
+
+public class Main extends Activity
+{
+    /** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState)
+    {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;變成:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;scala&#34;&gt;package com.example.myproject
+
+import android.app.Activity
+import android.os.Bundle
+
+class Main extends Activity {
+    override def onCreate(savedInstanceState: Bundle) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.main)
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;可以再跑一次 &lt;code&gt;sbt android:package-debug&lt;/code&gt; 確認沒問題。&lt;/p&gt;
+&lt;h2 id=&#34;產生-intellij-idea-的專案&#34;&gt;產生 IntelliJ Idea 的專案&lt;/h2&gt;
+&lt;p&gt;因為我還是比較喜歡用 IntelliJ 來寫 Java/Scala，所以讓我們產生需要的 project 檔:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;執行 &lt;code&gt;sbt gen-idea&lt;/code&gt; 產生專案&lt;/li&gt;
+&lt;li&gt;用 IntelliJ 開啟專案&lt;/li&gt;
+&lt;li&gt;新增一個 Run/Debug Configuration，類型是 &lt;code&gt;Android Application&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;Module 記得要設定成 MyProject&lt;/li&gt;
+&lt;li&gt;把 &lt;code&gt;Before Launch&lt;/code&gt; 的設定改成 Run SBT Action &lt;code&gt;android:package-debug&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;執行 Run 或是 Debug 沒問題就大功告成了&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img src=&#34;intellij.png&#34; alt=&#34;IntelliJ&#34;&gt;&lt;/p&gt;
+&lt;h2 id=&#34;進階&#34;&gt;進階&lt;/h2&gt;
+&lt;p&gt;如果想要寫 Scala 風格的 Android 程式，可以參考 &lt;a href=&#34;https://github.com/pocorall/scaloid&#34;&gt;pocorall/scaloid&lt;/a&gt;。&lt;/p&gt;
+&lt;h2 id=&#34;參考&#34;&gt;參考&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/pfn/android-sdk-plugin&#34;&gt;pfn / android-sdk-plugin&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.madeye.me/2013/05/09/scala-in-android/&#34;&gt;使用 Scala 编写 Android 应用 - MADEYE&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Trying Scala on Android</title>
+      <link>https://blog.simplypatrick.com/posts/2012/12-08-trying-scala-on-android/</link>
+      <pubDate>Sat, 08 Dec 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/12-08-trying-scala-on-android/</guid>
+      <description>&lt;p&gt;Scala 是基於 Java 平台的多範式程式語言，最著名的使用者就是原本從 Ruby 起家的 Twitter。由於 Java 平台賦予的可攜性，除了應用於各式各樣的後端程式，Scala 也能用來撰寫 Android 的 app。&lt;/p&gt;
+&lt;p&gt;我嘗試的環境如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Mac OS X 10.8.2&lt;/li&gt;
+&lt;li&gt;Android 4.2 SDK&lt;/li&gt;
+&lt;li&gt;Scala 2.9.2&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;由於我習慣用 ant 來建置，需要先做的就是&lt;a href=&#34;https://github.com/yinghau76/android-examples/blob/803229f597b3095f5e03bd85785599d54c0466c3/android-sdk/HelloActivity/build.xml&#34;&gt;修改 build.xml&lt;/a&gt; 加入以下步驟：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;markup&#34;&gt;&lt;import file=&#34;mac-shim.xml&#34; /&gt;
+&lt;import file=&#34;build-scala.xml&#34; /&gt;
+&lt;target name=&#34;-post-compile&#34; depends=&#34;-post-compile-scala&#34; /&gt;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;重點在於加入 -post-compile-scala 這個步驟來編譯 src/ 下的 .scala 檔案。&lt;a href=&#34;https://github.com/yinghau76/android-examples/blob/803229f597b3095f5e03bd85785599d54c0466c3/android-sdk/HelloActivity/mac-shim.xml&#34;&gt;mac-shim.xml&lt;/a&gt; 是為了解決 Android SDK 的 ant script 在 Linux/MacOS 下的差異；&lt;a href=&#34;https://github.com/yinghau76/android-examples/blob/803229f597b3095f5e03bd85785599d54c0466c3/android-sdk/HelloActivity/build-scala.xml&#34;&gt;build-scala.xml&lt;/a&gt; 則是包含可重複使用的 Scala 建置規則。&lt;/p&gt;
+&lt;p&gt;另外執行 ant 前要先用 android update project 把 local.properties 產生出來，並把 scala.dir 指向 Scala 的安裝位置：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ android update project -p . -t android-17
+$ echo scala.dir=/usr/local/share/scala-2.9.2 &gt;&gt; local.properties
+$ ant&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;完整的範例可以到我 GitHub 裡面抓 &lt;a href=&#34;https://github.com/yinghau76/android-examples/tree/803229f597b3095f5e03bd85785599d54c0466c3/android-sdk/HelloActivity&#34;&gt;HelloActivity&lt;/a&gt; 這個目錄，一個這樣空的 activity 產生出來的 APK 大小是 5,686 bytes，還不錯：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;package com.example.android.helloactivity
+
+import android.app.Activity
+import android.os.Bundle
+import android.widget.TextView
+
+class HelloActivity extends Activity {
+    /** Called when the activity is first created. */
+    override def onCreate(savedInstanceState: Bundle) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.main)
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;接下來嘗試比較龐大的範例如 ApiDemos，如果不幸地在 proguard 過程會有 OOM error:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;-post-compile-scala:
+...
+[proguard] Reading library jar [/usr/local/share/android-sdk-mac_x86/platforms/android-17/android.jar]
+
+BUILD FAILED
+/Users/patrick/src/android/scala-android-examples/android-sdk/ApiDemos/build-scala.xml:186: java.lang.OutOfMemoryError: Java heap space
+        at proguard.classfile.constant.Utf8Constant.getStringRepresentation(Utf8Constant.java:251)
+        ...
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;可以適當地加大 ant 的記憶體配置：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;shell&#34;&gt;$ export ANT_OPTS=-Xmx512m
+$ ant&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;應該這樣就會順利成功建出 APK 在手機上執行。更進階的用法可以參考的 Stéphane Micheloud 的 &lt;a href=&#34;http://lampwww.epfl.ch/~michelou/android/&#34;&gt;Exploring Android&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ACRA and BugSense</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-19-acra-and-bugsense/</link>
+      <pubDate>Sun, 19 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-19-acra-and-bugsense/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://code.google.com/p/acra/&#34;&gt;ACRA&lt;/a&gt; (Application Crash Report for Android) 是個&lt;a href=&#34;http://www.appbrain.com/stats/libraries/details/acra/acra&#34;&gt;很受歡迎&lt;/a&gt;的 Android library，因為當你的 app 掛點時，它可以送一份驗屍報告 (crash report) 到 server 保存，以便開發者能做事後分析並修正問題。&lt;/p&gt;
+&lt;p&gt;你需要做的只是下面簡短幾行設定：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;@ReportsCrashes(formKey = &#34;dGp6WmNqdXNMM2lkTkJiUmhHRlM014615&#34;) // Add this line
+public class Globals extends Application {
+
+    private static Airport sAirport;
+
+    public static Airport getAirport(Context context) {
+        if (sAirport == null) {
+            sAirport = new TaoyuanAirport(context.getApplicationContext());
+        }
+        return sAirport;
+    }
+
+    @Override
+    public void onCreate() {
+        ACRA.init(this); // Add this line
+        super.onCreate();
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然後 manifest 裡面加上以下設定：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;markup&#34;&gt;&lt;uses-permission android:name=&#34;android.permission.INTERNET&#34;/&gt;
+
+&lt;application
+        android:name=&#34;.Globals&#34;
+        android:icon=&#34;@drawable/ic_app&#34;&gt;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最後記得去連結 arca-x.y.z.jar 就行了。&lt;/p&gt;
+&lt;p&gt;細節可以參考網站上的&lt;a href=&#34;http://code.google.com/p/acra/wiki/BasicSetup?tm=6&#34;&gt;教學&lt;/a&gt;。目前網站上教的方式是把 crash report 發到你指定的 Google Docs 文件裡，是可以用但實用度非常低，因為用 spreadsheet 來看 crash report 非常地不方便。&lt;/p&gt;
+&lt;p&gt;這種有普遍需求但做起來不方便的事，在今天這個世界，一定有人已經想到並且設法解決你的問題(並且從中賺到你的錢），&lt;a href=&#34;https://www.bugsense.com/&#34;&gt;BugSense&lt;/a&gt; 是目前看起來還不錯的一家，據說每天處理超過一千萬條程式錯誤。目前 BugSense 支援 Android, iOS, Windows Phone 7, HTML5, 及 Google App Engine。使用量不大的話，可以先試看看它的免費版本。&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;bugsense.png&#34; alt=&#34;Why use BugSense?&#34;&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>AQuery - JQuery-like library for Android App</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-19-aquery-jquery-like-library-for-android-app/</link>
+      <pubDate>Sun, 19 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-19-aquery-jquery-like-library-for-android-app/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://code.google.com/p/android-query/&#34;&gt;Android Query&lt;/a&gt; 是個頗酷的 Android library，顧名思義就是給 Android 用但用法很像 jQuery 的東西。&lt;/p&gt;
+&lt;p&gt;跟 jQuery 一樣，AQuery 的目標是讓 Android developer 可以 write less and do more：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;public void renderContent(Content content, View view) {
+    AQuery aq = new AQuery(view);
+    aq.id(R.id.icon).image(R.drawable.icon).visible().clicked(this, &#34;someMethod&#34;);  
+    aq.id(R.id.name).text(content.getPname());
+    aq.id(R.id.time).text(FormatUtility.relativeTime(System.currentTimeMillis(), content.getCreate())).visible();
+    aq.id(R.id.desc).text(content.getDesc()).visible();
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;也可以輕鬆地執行 AJAX:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;public void asyncJson(){
+    // perform a Google search in just a few lines of code
+    String url = &#34;http://www.google.com/uds/GnewsSearch?q=Obama&amp;v=1.0&#34;;
+    aq.ajax(url, JSONObject.class, this, &#34;jsonCallback&#34;);
+}
+
+public void jsonCallback(String url, JSONObject json, AjaxStatus status) {
+    if (json != null){
+        // successful ajax call
+    } else {
+        // ajax error
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;另外兩個蠻實用的功能是 getCachedImage 及 shouldDelay，直接參考它們的說明吧：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;java&#34;&gt;/**
+    * Return bitmap cached by image requests. Returns null if url is not cached.
+    *
+    * @param url
+    * @param targetWidth The desired downsampled width.
+    *
+    * @return Bitmap
+    */
+public Bitmap getCachedImage(String url, int targetWidth){
+        Bitmap result = BitmapAjaxCallback.getMemoryCached(url, targetWidth);
+        if(result == null){
+                File file = getCachedFile(url);
+                if(file != null){
+                        result = BitmapAjaxCallback.getResizedImage(file.getAbsolutePath(), null, targetWidth, true, 0);
+                }
+        }
+
+        return result;
+}
+
+/**
+    * Determines if a list or gallery view item should delay loading a url resource because the view is scrolling very fast.
+    * The primary purpose of this method is to skip loading remote resources (such as images) over the internet
+    * until the list stop flinging and the user is focusing on the displaying items.
+    *
+    * If the scrolling stops and there are delayed items displaying, the getView method will be called again to force
+    * the delayed items to be redrawn. During redraw, this method will always return false, thus allowing a particular
+    * resource to be loaded.
+    *
+    * Designed to be used inside getView(int position, View convertView, ViewGroup parent) of an adapter.
+    *
+    * &lt;br&gt;
+    * &lt;br&gt;
+    * Example usage:
+    * &lt;pre&gt;
+    *              public View getView(int position, View convertView, ViewGroup parent) {
+    *                      ...
+    *
+    *                      if(aq.shouldDelay(position, convertView, parent, tbUrl)){
+    *                              aq.id(R.id.tb).image(placeholder);
+    *                      }else{
+    *                              aq.id(R.id.tb).image(tbUrl, true, true, 0, 0, placeholder, 0, 0);
+    *                      }
+    *
+    *                      ...
+    *              }
+    * &lt;/pre&gt;
+    *
+    * &lt;br&gt;
+    * NOTE:
+    *
+    * &lt;br&gt;
+    * This method uses the setOnScrollListener() method and will override any previously non-aquery assigned scroll listener.
+    * If a scrolled listener is required, use the aquery method scrolled(OnScrollListener listener) to set the listener
+    * instead of directly calling setOnScrollListener().
+    *
+    * @param position the position of the item
+    * @param convertView the list item view
+    * @param parent the parent input of getView
+    * @param url the content url to be checked if cached and is available immediately
+    *
+    * @return delay should delay loading a particular resource
+    */
+
+public boolean shouldDelay(int position, View convertView, ViewGroup parent, String url){
+        if(parent instanceof ExpandableListView){
+                throw new IllegalArgumentException(&#34;Please use the other shouldDelay methods for expandable list.&#34;);
+        }
+        return Common.shouldDelay(position, convertView, parent, url);
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這個 library 應該會成為我開發 Android app 的標準配備。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Reference Counting in Android libutils</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</link>
+      <pubDate>Sun, 12 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</guid>
+      <description>&lt;p&gt;從事 Android native framework 層的開發一定會接觸到兩個 C++ template class: sp 及 wp，分別是 strong pointer 及 weak pointer 的簡稱，是兩個看似簡單但卻有著魔鬼細節的 utility class。&lt;/p&gt;
+&lt;p&gt;一個比較典型使用 weak pointer 的狀況就是 Listener pattern，例如:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;class TimedTextPlayer {
+    wp&lt;MediaPlayerBase&gt; mListener;
+}
+
+void TimedTextPlayer::postTextEvent(const sp&lt;ParcelEvent&gt;&amp; parcel, int64_t timeUs) {
+    sp&lt;MediaPlayerBase&gt; listener = mListener.promote();
+    if (listener != NULL) {
+        // ...
+        listener-&gt;getCurrentPosition(&amp;positionMs);
+        // ...
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這個例子如果使用 sp 來記錄 listener 很容易因為忘了移除 listener 而造成 memory leak。用了 wp 也就沒有這個困擾，不過額外的開銷就是 wp 必須先呼叫 promote() 拿到一個 sp 才能使用。&lt;/p&gt;
+&lt;p&gt;如果要了解 sp 及 wp 的原理，必定要先了解 RefBase，因為這兩個 class 都必須搭配繼承自 RefBase 的 class 才能運作，以下是他們之間的大致關係：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;http://www.plantuml.com:80/plantuml/png/VLB1IiD04BtdAuOMIXhjGRr9BQXO43o85iHJMPD93IRPPNVQ8bg_tPriqcPZwcd3l3Tlthn9d0jZu0dJ6s4GlWA0autC4iZA-9cqB5TXbeptrGJxggdKCTvt6xAIBiwN12ia1zpATKdXE61mY-93OxgaJuKHn1e5uOkjDSq-RYKOj2wDwn_MXaCc3pUPfhN8uQUtMbcKvJpJXYoX5tmGfZR93EUXozalU4s4XI9CmZGNAtCA_NpMh5rNYhiWQ6AUVayci7Xzl0k2kCg_lQv_X7OepGdQjJSfSn3EqNydu9xc0BlksAnGkHlRT1HEo2kn11VgBI8e-F4eSmw4zRs5gdNRimv93Cu645cKNy_D9HHyxhrJDUMyPfNBoSBENYhI_Et_AONc9cl9s8OPA2qBIUw7SF75EGhjCjWg64I7yQpFOolX3kQjmnpTycQEURCcHY0LQa5INuKMaVIEUlmNYcLfg1AQZHgITMYEE_m5&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;!--
+class RefBase {
+  +void incStrong(id)
+  +void decStrong(id)
+  +void forceIncStrong(id)
+  +int32_t getStrongCount()
+
+  +weakref_type* createWeak(id)
+  +weakref_type* getWeakRefs()
+
+  #RefBase()
+  #virtual ~RefBase()
+  #virtual void onFirstRef()
+  #virtual void onLastStrongRef(id)
+  #virtual void onIncStrongAttempted(flags, id)
+  #virtual void onLastWeakRef(id)
+}
+
+RefBase &lt;|-- TYPE
+
+class weakref_type {
+  +void incWeak(id)
+  +void decWeak(id)
+  +bool attemptIncStrong(id)
+  +int32_t getWeakCount()
+}
+
+class weakref_impl {
+  +int32_t mStrong
+  +int32_t mWeak
+  +RefBase* mBase
+  +int32_t mFlags
+}
+
+weakref_type &lt;|-- weakref_impl
+
+RefBase &#34;1&#34; *-- &#34;1&#34; weakref_impl : mRefs
+
+class wp&lt;TYPE&gt; {
+  -T* m_ptr
+  -weakref_type* mrefs
+  +sp&lt;T&gt; promote()
+  +void clear()
+}
+
+wp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+wp &#34;*&#34; *-- &#34;1&#34; weakref_type : m_refs
+
+class sp&lt;TYPE&gt; {
+  -T* m_ptr
+  +sp&amp; operator=(T* other)
+  +sp&amp; operator=(const sp&lt;T&gt;&amp; other)
+}
+
+sp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+```
+
+其中 strong pointer 的實現相當簡單：
+
+```c++
+template&lt;typename T&gt; sp&lt;T&gt;::sp(T* other) : m_ptr(other) {
+    if (other) other-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::sp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(U* other) : m_ptr(other) {
+    if (other) ((T*)other)-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::~sp() {
+    if (m_ptr) m_ptr-&gt;decStrong(this);
+}
+```
+
+而 weak pointer 則是需要經由 `RefBase::createWeak` 或是 `weakref_type::incWeak` 來增加 weak reference：
+
+```c++
+template&lt;typename T&gt; wp&lt;T&gt;::wp(T* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const wp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr), m_refs(other.m_refs) {
+    if (m_ptr) m_refs-&gt;incWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(U* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const wp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = other.m_refs;
+        m_refs-&gt;incWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::~wp() {
+    if (m_ptr) m_refs-&gt;decWeak(this);
+}
+--&gt;
+&lt;p&gt;其中的 promote() 實現如下：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;template&lt;typename T&gt; sp&lt;T&gt; wp&lt;T&gt;::promote() const {
+    sp&lt;T&gt; result;
+    if (m_ptr &amp;&amp; m_refs-&gt;attemptIncStrong(&amp;result)) {
+        result.set_pointer(m_ptr);
+    }
+    return result;
+}
+
+bool RefBase::weakref_type::attemptIncStrong(const void* id)
+{
+    incWeak(id);
+
+    weakref_impl* const impl = static_cast&lt;weakref_impl*&gt;(this);
+
+    int32_t curCount = impl-&gt;mStrong;
+    ALOG_ASSERT(curCount &gt;= 0, &#34;attemptIncStrong called on %p after underflow&#34;,
+              this);
+    while (curCount &gt; 0 &amp;&amp; curCount != INITIAL_STRONG_VALUE) {
+        if (android_atomic_cmpxchg(curCount, curCount+1, &amp;impl-&gt;mStrong) == 0) {
+            break;
+        }
+        curCount = impl-&gt;mStrong;
+    }
+
+    if (curCount &lt;= 0 || curCount == INITIAL_STRONG_VALUE) {
+        bool allow;
+        if (curCount == INITIAL_STRONG_VALUE) {
+            // Attempting to acquire first strong reference...  this is allowed
+            // if the object does NOT have a longer lifetime (meaning the
+            // implementation doesn&#39;t need to see this), or if the implementation
+            // allows it to happen.
+            allow = (impl-&gt;mFlags&amp;OBJECT_LIFETIME_WEAK) != OBJECT_LIFETIME_WEAK
+                  || impl-&gt;mBase-&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+        } else {
+            // Attempting to revive the object...  this is allowed
+            // if the object DOES have a longer lifetime (so we can safely
+            // call the object with only a weak ref) and the implementation
+            // allows it to happen.
+            allow = (impl-&gt;mFlags&amp;OBJECT_LIFETIME_WEAK) == OBJECT_LIFETIME_WEAK
+                  &amp;&amp; impl-&gt;mBase-&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+        }
+        if (!allow) {
+            decWeak(id);
+            return false;
+        }
+        curCount = android_atomic_inc(&amp;impl-&gt;mStrong);
+
+        // If the strong reference count has already been incremented by
+        // someone else, the implementor of onIncStrongAttempted() is holding
+        // an unneeded reference.  So call onLastStrongRef() here to remove it.
+        // (No, this is not pretty.)  Note that we MUST NOT do this if we
+        // are in fact acquiring the first reference.
+        if (curCount &gt; 0 &amp;&amp; curCount &lt; INITIAL_STRONG_VALUE) {
+            impl-&gt;mBase-&gt;onLastStrongRef(id);
+        }
+    }
+
+    impl-&gt;addStrongRef(id);
+
+#if PRINT_REFS
+    ALOGD(&#34;attemptIncStrong of %p from %p: cnt=%d\n&#34;, this, id, curCount);
+#endif
+
+    if (curCount == INITIAL_STRONG_VALUE) {
+        android_atomic_add(-INITIAL_STRONG_VALUE, &amp;impl-&gt;mStrong);
+        impl-&gt;mBase-&gt;onFirstRef();
+    }
+
+    return true;
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;有幾個重點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Reference count 其實是存在 weakref_impl 裡面的，跟被參考物件 T 的生命週期是獨立的。&lt;/li&gt;
+&lt;li&gt;RefBase 有宣告virtual function，比較 heavy weight 一點，在一些比較簡單的狀況可以考慮使用 &lt;code&gt;LightRefBase&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;目前的實現是 thread-safe 的，所以對於 strong/weak ref count 的操作都用使用 atomic operation 例如 &lt;code&gt;android_atomic_inc&lt;/code&gt; 或 &lt;code&gt;android_atomic_dec&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;從目前實現看來，原本的設計是希望在第一個 strong ref 被加上前，也就是 constructor 裡面不應該做太 heavy weight 的事。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::onFirstRef()&lt;/code&gt; 是當第一次被 strong ref 時會被呼叫，通常是 override 它來做資源配置或是準備工作，算是一種 lazy initialization。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::OnLastStrongRef()&lt;/code&gt; 是當最後一個 strong ref 被釋放時會被呼叫，跟 &lt;code&gt;OnFirstRef&lt;/code&gt; 相反是用來做資源釋放或是收尾工作。&lt;/li&gt;
+&lt;li&gt;預設是最後一個 strong ref 時，實際的物件就會被摧毀；但是也可以透過 &lt;code&gt;extendObjectLifeTime(OBJECT_LIFETIME_WEAK)&lt;/code&gt; 讓物件只有要 weak ref 還在時便存活著，目前的唯一的應用實例是 Binder proxy (繼承自 &lt;code&gt;BpRefBase&lt;/code&gt;)。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;有了這些認知，來看 &lt;code&gt;BpRefBase&lt;/code&gt; 的實現便會比較容易了解其意義：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;c&amp;#43;&amp;#43;&#34;&gt;BpRefBase::BpRefBase(const sp&lt;IBinder&gt;&amp; o)
+    : mRemote(o.get()), mRefs(NULL), mState(0)
+{
+    extendObjectLifetime(OBJECT_LIFETIME_WEAK);
+
+    if (mRemote) {
+        mRemote-&gt;incStrong(this);           // Removed on first IncStrong().
+        mRefs = mRemote-&gt;createWeak(this);  // Held for our entire lifetime.
+    }
+}
+
+BpRefBase::~BpRefBase()
+{
+    if (mRemote) {
+        if (!(mState&amp;kRemoteAcquired)) {
+            mRemote-&gt;decStrong(this);
+        }
+        mRefs-&gt;decWeak(this);
+    }
+}
+
+void BpRefBase::onFirstRef()
+{
+    android_atomic_or(kRemoteAcquired, &amp;mState);
+}
+
+void BpRefBase::onLastStrongRef(const void* id)
+{
+    if (mRemote) {
+        mRemote-&gt;decStrong(this);
+    }
+}
+
+bool BpRefBase::onIncStrongAttempted(uint32_t flags, const void* id)
+{
+    return mRemote ? mRefs-&gt;attemptIncStrong(this) : false;
+}&lt;/code&gt;&lt;/pre&gt;
+
+</description>
+    </item>
+    
+  </channel>
+</rss>

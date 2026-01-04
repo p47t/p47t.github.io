@@ -1,0 +1,1212 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/rust/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-01-03 15:12:56 -0800 PST</updated>
+    
+    <item>
+      <title>使用 Rust 實作非同步任務佇列：系統設計與核心概念</title>
+      <link>https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/</link>
+      <pubDate>Sat, 03 Jan 2026 15:12:56 PST</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/</guid>
+      <description>&lt;h2 id=&#34;專案概述&#34;&gt;專案概述&lt;/h2&gt;
+&lt;p&gt;本文將探討如何使用 Rust 實作一個生產級的非同步任務佇列系統。這個專案展示了多個重要的 Rust 概念和系統設計原則，包括：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;模組化設計與封裝&lt;/li&gt;
+&lt;li&gt;Trait 系統的應用&lt;/li&gt;
+&lt;li&gt;並發安全與資料競爭處理&lt;/li&gt;
+&lt;li&gt;非同步程式設計 (Tokio)&lt;/li&gt;
+&lt;li&gt;SQLite 資料持久化&lt;/li&gt;
+&lt;li&gt;CLI 工具設計&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;專案原始碼：&lt;/strong&gt; &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/async-job-queue&#34;&gt;https://github.com/p47t/rust-52-projects/tree/master/async-job-queue&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;系統架構&#34;&gt;系統架構&lt;/h2&gt;
+&lt;h3 id=&#34;核心組件&#34;&gt;核心組件&lt;/h3&gt;
+&lt;p&gt;我們的任務佇列系統由三個主要模組組成：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;&#34;&gt;async-job-queue/
+├── src/
+│   ├── job.rs        # 任務定義與狀態管理
+│   ├── storage.rs    # SQLite 儲存層
+│   ├── worker.rs     # 工作池與任務處理
+│   ├── lib.rs        # 公開 API
+│   └── bin/
+│       ├── producer.rs  # 生產者 CLI
+│       └── worker.rs    # 消費者 CLI&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;資料流程&#34;&gt;資料流程&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;&#34;&gt;Producer (CLI) → SQLite Database ← Worker Pool (多個 workers)
+                      ↓
+                 [Pending Jobs]
+                      ↓
+                 [Running Jobs]
+                      ↓
+              [Completed/Failed/Dead Letter]&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;rust-核心概念解析&#34;&gt;Rust 核心概念解析&lt;/h2&gt;
+&lt;h3 id=&#34;1-模組可見性mod-vs-pub-mod&#34;&gt;1. 模組可見性：&lt;code&gt;mod&lt;/code&gt; vs &lt;code&gt;pub mod&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;問題：&lt;/strong&gt; 如何設計乾淨的公開 API？&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;lib.rs&lt;/code&gt; 中，我們使用私有模組配合公開重匯出：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// 私有模組 - 隱藏內部實作細節
+mod job;
+mod storage;
+mod worker;
+
+// 公開重匯出 - 只暴露需要的類型
+pub use job::{Job, JobHandler, JobStatus, Priority};
+pub use storage::{Storage, StorageError};
+pub use worker::WorkerPool;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;優點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 使用者只能透過 &lt;code&gt;use async_job_queue::{Job, Storage}&lt;/code&gt; 匯入&lt;/li&gt;
+&lt;li&gt;✅ 內部模組結構可以自由重構而不影響公開 API&lt;/li&gt;
+&lt;li&gt;✅ 更好的封裝性，隱藏實作細節&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;替代方案（不推薦）：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub mod job;  // 暴露整個模組，使用者可存取所有公開項目&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;2-trait定義行為抽象&#34;&gt;2. Trait：定義行為抽象&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;JobHandler&lt;/code&gt; trait 定義了任務處理的介面：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub trait JobHandler: Send + Sync {
+    fn handle(&amp;self, payload: &amp;[u8]) -&gt; Result&amp;lt;(), String&amp;gt;;
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;設計考量：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Send + Sync&lt;/code&gt;：確保可以在執行緒間安全傳遞和共享&lt;/li&gt;
+&lt;li&gt;接受 &lt;code&gt;&amp;amp;[u8]&lt;/code&gt; 而非具體類型：保持通用性，支援任何序列化格式&lt;/li&gt;
+&lt;li&gt;回傳 &lt;code&gt;Result&amp;lt;(), String&amp;gt;&lt;/code&gt;：簡單的錯誤處理&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;使用範例：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;struct EchoHandler;
+
+impl JobHandler for EchoHandler {
+    fn handle(&amp;self, payload: &amp;[u8]) -&gt; Result&amp;lt;(), String&amp;gt; {
+        let message = String::from_utf8_lossy(payload);
+        println!(&#34;處理任務：{}&#34;, message);
+        Ok(())
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;3-newtype-模式的應用場景&#34;&gt;3. Newtype 模式的應用場景&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;討論：&lt;/strong&gt; 應該使用 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt; 還是 &lt;code&gt;JobPayload&lt;/code&gt; 新類型？&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;目前實作（&lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;）：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub struct Job {
+    pub payload: Vec&amp;lt;u8&amp;gt;,
+    // ...
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;Newtype 模式：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub struct JobPayload(Vec&amp;lt;u8&amp;gt;);
+
+impl JobPayload {
+    pub fn new(bytes: Vec&amp;lt;u8&amp;gt;) -&gt; Self {
+        Self(bytes)
+    }
+    
+    pub fn as_bytes(&amp;self) -&gt; &amp;[u8] {
+        &amp;self.0
+    }
+}
+
+impl From&amp;lt;String&amp;gt; for JobPayload {
+    fn from(s: String) -&gt; Self {
+        Self(s.into_bytes())
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;何時使用 Newtype：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 提供型別安全（避免混淆不同的 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;✅ 零成本抽象（編譯時展開，無執行時開銷）&lt;/li&gt;
+&lt;li&gt;✅ API 更清晰（&lt;code&gt;Job::new(JobPayload, ...)&lt;/code&gt; vs &lt;code&gt;Job::new(Vec&amp;lt;u8&amp;gt;, ...)&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;✅ 未來擴充性（可加入驗證、壓縮等功能）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;目前專案的選擇：&lt;/strong&gt;
+保持 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt; 是合理的，因為：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;系統設計為通用型，不關心具體格式&lt;/li&gt;
+&lt;li&gt;API 介面簡單，不易混淆&lt;/li&gt;
+&lt;li&gt;遵循 YAGNI 原則（You Aren&amp;rsquo;t Gonna Need It）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;4-列舉型別與-display-trait&#34;&gt;4. 列舉型別與 Display Trait&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;問題：&lt;/strong&gt; 如何為列舉實作 &lt;code&gt;Display&lt;/code&gt;？&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;手動實作（目前方式）：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;impl fmt::Display for Priority {
+    fn fmt(&amp;self, f: &amp;mut fmt::Formatter&amp;lt;&#39;_&amp;gt;) -&gt; fmt::Result {
+        match self {
+            Priority::Low =&gt; write!(f, &#34;low&#34;),
+            Priority::Normal =&gt; write!(f, &#34;normal&#34;),
+            Priority::High =&gt; write!(f, &#34;high&#34;),
+            Priority::Critical =&gt; write!(f, &#34;critical&#34;),
+        }
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;使用第三方 crate（&lt;code&gt;strum&lt;/code&gt;）：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;use strum_macros::Display;
+
+#[derive(Display)]
+#[strum(serialize_all = &#34;lowercase&#34;)]
+pub enum Priority {
+    Low,
+    Normal,
+    High,
+    Critical,
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;建議：&lt;/strong&gt; 對於簡單列舉，手動實作更清晰，無需額外依賴。&lt;/p&gt;
+&lt;h3 id=&#34;5-非同步程式設計tokio-的角色&#34;&gt;5. 非同步程式設計：Tokio 的角色&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;Tokio 在專案中的使用：&lt;/strong&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;#[tokio::main]&lt;/code&gt;&lt;/strong&gt; - 設定非同步執行環境&lt;/li&gt;
+&lt;/ol&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;#[tokio::main]
+async fn main() -&gt; Result&amp;lt;(), Box&amp;lt;dyn std::error::Error&amp;gt;&amp;gt; {
+    // ...
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;tokio::spawn&lt;/code&gt;&lt;/strong&gt; - 並發執行多個 worker&lt;/li&gt;
+&lt;/ol&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;for worker_id in 0..self.num_workers {
+    let handle = tokio::spawn(async move {
+        worker_loop(worker_id, storage, handler, poll_interval).await;
+    });
+    handles.push(handle);
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ol start=&#34;3&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;tokio::time::sleep&lt;/code&gt;&lt;/strong&gt; - 非阻塞延遲&lt;/li&gt;
+&lt;/ol&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;sleep(poll_interval).await;  // 輪詢間隔&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;有趣的觀察：&lt;/strong&gt;
+這個專案實際上是「假非同步」！核心操作都是同步的：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;SQLite 操作使用 &lt;code&gt;rusqlite&lt;/code&gt;（同步 API）&lt;/li&gt;
+&lt;li&gt;任務處理是同步函式&lt;/li&gt;
+&lt;li&gt;使用 &lt;code&gt;std::sync::Mutex&lt;/code&gt; 而非 &lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;為什麼還要用 Tokio？&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;方便建立並發 worker（比 &lt;code&gt;std::thread&lt;/code&gt; 更輕量）&lt;/li&gt;
+&lt;li&gt;非阻塞的 sleep（不會凍結整個執行緒）&lt;/li&gt;
+&lt;li&gt;為未來的非同步擴充做準備&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;6-stdsyncmutex-vs-tokiosyncmutex&#34;&gt;6. &lt;code&gt;std::sync::Mutex&lt;/code&gt; vs &lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;關鍵差異：&lt;/strong&gt;&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;特性&lt;/th&gt;
+          &lt;th&gt;&lt;code&gt;std::sync::Mutex&lt;/code&gt;&lt;/th&gt;
+          &lt;th&gt;&lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;等待鎖時&lt;/td&gt;
+          &lt;td&gt;阻塞整個執行緒&lt;/td&gt;
+          &lt;td&gt;讓出執行權給其他 task&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;使用方式&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;mutex.lock().unwrap()&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;mutex.lock().await&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;適用場景&lt;/td&gt;
+          &lt;td&gt;短時間持鎖、同步操作&lt;/td&gt;
+          &lt;td&gt;長時間持鎖、跨 await&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;效能&lt;/td&gt;
+          &lt;td&gt;更快（作業系統級）&lt;/td&gt;
+          &lt;td&gt;稍慢（需協調排程）&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;strong&gt;目前專案的正確選擇：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub struct Storage {
+    conn: Arc&amp;lt;Mutex&amp;lt;Connection&amp;gt;&amp;gt;,  // ✅ std::sync::Mutex
+}
+
+pub fn get_next_pending(&amp;self) -&amp;gt; Result&amp;lt;Option&amp;lt;Job&amp;gt;, StorageError&amp;gt; {
+    let conn = self.conn.lock().unwrap();
+    // 執行快速的同步資料庫操作
+    // 沒有在持鎖期間 await
+    Ok(job)
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;何時必須使用 &lt;code&gt;tokio::sync::Mutex&lt;/code&gt;：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// ❌ 錯誤：在持有 std::sync::Mutex 時 await
+let guard = std_mutex.lock().unwrap();
+async_operation().await;  // 會阻塞整個執行緒！
+
+// ✅ 正確：使用 tokio::sync::Mutex
+let guard = tokio_mutex.lock().await;
+async_operation().await;  // OK，會讓出執行權&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;並發安全與資料競爭&#34;&gt;並發安全與資料競爭&lt;/h2&gt;
+&lt;h3 id=&#34;發現的競爭條件問題&#34;&gt;發現的競爭條件問題&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;原始設計的漏洞：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// ❌ 有競爭條件的程式碼
+pub fn get_next_pending(&amp;self) -&amp;gt; Result&amp;lt;Option&amp;lt;Job&amp;gt;, StorageError&amp;gt; {
+    // 步驟 1：讀取待處理任務
+    let job = SELECT ... WHERE status = Pending LIMIT 1;
+    // ⚠️ 問題：Worker 2 可能在這裡也讀取到相同任務！
+    Ok(job)
+}
+
+// Worker 處理邏輯
+let job = storage.get_next_pending()?;  // 取得任務
+job.mark_running();                     // 標記為執行中
+storage.update(&amp;job)?;                  // 更新資料庫&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;時序圖展示問題：&lt;/strong&gt;&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;時間&lt;/th&gt;
+          &lt;th&gt;Worker 1&lt;/th&gt;
+          &lt;th&gt;Worker 2&lt;/th&gt;
+          &lt;th&gt;資料庫狀態&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T1&lt;/td&gt;
+          &lt;td&gt;get_next_pending()&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;Job A: Pending&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T2&lt;/td&gt;
+          &lt;td&gt;讀取 Job A&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T3&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;get_next_pending()&lt;/td&gt;
+          &lt;td&gt;Job A: Pending&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T4&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;讀取 Job A (相同!)&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T5&lt;/td&gt;
+          &lt;td&gt;mark_running()&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T6&lt;/td&gt;
+          &lt;td&gt;update(Job A)&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;Job A: Running&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T7&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;mark_running()&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T8&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;update(Job A)&lt;/td&gt;
+          &lt;td&gt;Job A: Running&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T9&lt;/td&gt;
+          &lt;td&gt;處理 Job A&lt;/td&gt;
+          &lt;td&gt;處理 Job A&lt;/td&gt;
+          &lt;td&gt;❌ 重複處理！&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;解決方案原子性操作&#34;&gt;解決方案：原子性操作&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;修正後的實作：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub fn get_next_pending(&amp;self) -&amp;gt; Result&amp;lt;Option&amp;lt;Job&amp;gt;, StorageError&amp;gt; {
+    let conn = self.conn.lock().unwrap();
+    
+    // ✅ 原子性的 UPDATE + RETURNING（一個 SQL 語句完成）
+    let mut stmt = conn.prepare(
+        &#34;UPDATE jobs
+         SET status = ?1, updated_at = ?2
+         WHERE id = (
+             SELECT id FROM jobs
+             WHERE status = ?3
+             ORDER BY priority DESC, created_at ASC
+             LIMIT 1
+         )
+         RETURNING id, payload, priority, status, retry_count, max_retries,
+                   created_at, updated_at, error_message&#34;,
+    )?;
+
+    let now = Utc::now().to_rfc3339();
+    let job = stmt
+        .query_row(
+            params![JobStatus::Running as i32, now, JobStatus::Pending as i32],
+            |row| Ok(self.row_to_job(row)?),
+        )
+        .optional()?;
+
+    Ok(job)
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;為什麼這樣可以解決問題：&lt;/strong&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;原子性保證：&lt;/strong&gt; &lt;code&gt;UPDATE ... RETURNING&lt;/code&gt; 是單一 SQL 語句&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mutex 保護：&lt;/strong&gt; 同一時間只有一個 worker 能執行此查詢&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態立即改變：&lt;/strong&gt; 任務在被回傳前就已標記為 Running&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;資料庫層級鎖定：&lt;/strong&gt; SQLite 的 EXCLUSIVE 鎖確保寫入安全&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;修正後的時序：&lt;/strong&gt;&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;時間&lt;/th&gt;
+          &lt;th&gt;Worker 1&lt;/th&gt;
+          &lt;th&gt;Worker 2&lt;/th&gt;
+          &lt;th&gt;資料庫狀態&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T1&lt;/td&gt;
+          &lt;td&gt;取得 Mutex&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T2&lt;/td&gt;
+          &lt;td&gt;UPDATE Job A → Running&lt;/td&gt;
+          &lt;td&gt;等待 Mutex&lt;/td&gt;
+          &lt;td&gt;Job A: Running&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T3&lt;/td&gt;
+          &lt;td&gt;釋放 Mutex，回傳 Job A&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T4&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;取得 Mutex&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T5&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;UPDATE (找不到 Pending)&lt;/td&gt;
+          &lt;td&gt;Job A: Running&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T6&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+          &lt;td&gt;回傳 None&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;T7&lt;/td&gt;
+          &lt;td&gt;處理 Job A&lt;/td&gt;
+          &lt;td&gt;等待下一輪&lt;/td&gt;
+          &lt;td&gt;✅ 無重複處理&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;worker-程式碼簡化&#34;&gt;Worker 程式碼簡化&lt;/h3&gt;
+&lt;p&gt;因為 &lt;code&gt;get_next_pending()&lt;/code&gt; 已經原子性地標記任務，worker 程式碼更簡潔：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// ✅ 修正後
+match storage.get_next_pending() {
+    Ok(Some(mut job)) =&gt; {
+        // 任務已經是 Running 狀態，直接處理
+        match handler.handle(&amp;job.payload) {
+            Ok(()) =&gt; job.mark_completed(),
+            Err(e) =&gt; job.mark_failed(e),
+        }
+        storage.update(&amp;job)?;
+    }
+    Ok(None) =&gt; {
+        sleep(poll_interval).await;  // 無任務，等待
+    }
+    Err(e) =&gt; { /* 處理錯誤 */ }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;日誌與除錯&#34;&gt;日誌與除錯&lt;/h2&gt;
+&lt;h3 id=&#34;tracing-vs-println&#34;&gt;&lt;code&gt;tracing&lt;/code&gt; vs &lt;code&gt;println!&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;何時使用 &lt;code&gt;println!&lt;/code&gt;：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// ✅ 使用者導向的輸出
+println!(&#34;Job ID: {}&#34;, job.id);
+println!(&#34;Status: {}&#34;, job.status);&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;何時使用 &lt;code&gt;tracing&lt;/code&gt;：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// ✅ 操作性日誌、除錯資訊
+tracing::info!(job_id = %job.id, &#34;Processing job&#34;);
+tracing::error!(&#34;Database error: {}&#34;, e);&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;在 CLI 工具中：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;producer&lt;/code&gt; 使用 &lt;code&gt;println!&lt;/code&gt; 顯示命令結果（使用者期望的輸出）&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;worker&lt;/code&gt; 使用 &lt;code&gt;tracing&lt;/code&gt; 記錄操作日誌（方便監控和除錯）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;初始化-tracing&#34;&gt;初始化 tracing&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;#[tokio::main]
+async fn main() -&amp;gt; Result&amp;lt;(), Box&amp;lt;dyn std::error::Error&amp;gt;&amp;gt; {
+    // 設定日誌格式與過濾級別
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
+    
+    // ...
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;使用方式：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;# 預設 INFO 級別
+./worker
+
+# 設定為 DEBUG 級別
+RUST_LOG=debug ./worker&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;資料持久化設計&#34;&gt;資料持久化設計&lt;/h2&gt;
+&lt;h3 id=&#34;sqlite-schema&#34;&gt;SQLite Schema&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;sql&#34;&gt;CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    payload BLOB NOT NULL,
+    priority INTEGER NOT NULL,
+    status INTEGER NOT NULL,
+    retry_count INTEGER NOT NULL,
+    max_retries INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    error_message TEXT
+);
+
+CREATE INDEX idx_status_priority
+ON jobs(status, priority DESC, created_at ASC);&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;索引設計考量：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;status&lt;/code&gt; 在前：快速過濾待處理任務&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;priority DESC&lt;/code&gt;：高優先順序優先&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;created_at ASC&lt;/code&gt;：相同優先順序時，先進先出 (FIFO)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;狀態轉換&#34;&gt;狀態轉換&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;&#34;&gt;         ┌─────────────┐
+         │   Pending   │
+         └──────┬──────┘
+                │
+                ↓
+         ┌──────────────┐
+         │   Running    │
+         └──────┬───────┘
+                │
+        ┌───────┴────────┐
+        │                │
+        ↓ (成功)          ↓ (失敗)
+  ┌───────────┐    ┌─────────┐
+  │ Completed │    │ Failed  │
+  └───────────┘    └────┬────┘
+                        │
+                ┌───────┴────────┐
+                │                │
+                ↓ (可重試)        ↓ (超過最大重試)
+           [Pending]        ┌──────────────┐
+          (retry_count++)   │ DeadLetter   │
+                            └──────────────┘&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;失敗處理:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;pub fn mark_failed(&amp;mut self, error: String) {
+    self.status = if self.can_retry() {
+        self.retry_count += 1;
+        JobStatus::Pending  // 重新排程
+    } else {
+        JobStatus::DeadLetter  // 移至死信佇列
+    };
+    self.error_message = Some(error);
+    self.updated_at = Utc::now();
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;cli-設計&#34;&gt;CLI 設計&lt;/h2&gt;
+&lt;h3 id=&#34;producer生產者&#34;&gt;Producer（生產者）&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;# 提交任務
+producer submit -p &#34;Hello, World!&#34; -r high -m 3
+
+# 查詢狀態
+producer status --job-id &amp;lt;uuid&amp;gt;
+
+# 統計資料
+producer stats&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;使用 Clap 實作：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;#[derive(Parser)]
+#[command(name = &#34;producer&#34;)]
+#[command(about = &#34;Job queue producer - submit and manage jobs&#34;)]
+struct Cli {
+    #[arg(short, long, default_value = &#34;jobs.db&#34;)]
+    database: String,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Submit {
+        #[arg(short, long)]
+        payload: String,
+        
+        #[arg(short = &#39;r&#39;, long, default_value = &#34;normal&#34;)]
+        priority: String,
+        
+        #[arg(short, long, default_value = &#34;3&#34;)]
+        max_retries: u32,
+    },
+    Status { /* ... */ },
+    Stats,
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;worker消費者&#34;&gt;Worker（消費者）&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;# 啟動 4 個 workers
+worker -w 4
+
+# 使用不同的資料庫
+worker --database /path/to/jobs.db --workers 8&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;效能考量&#34;&gt;效能考量&lt;/h2&gt;
+&lt;h3 id=&#34;輪詢-vs-事件驅動&#34;&gt;輪詢 vs 事件驅動&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;目前實作（輪詢）：&lt;/strong&gt;&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;loop {
+    match storage.get_next_pending() {
+        Ok(Some(job)) =&gt; { /* 處理 */ }
+        Ok(None) =&gt; sleep(poll_interval).await,  // 等待 1 秒
+        Err(e) =&gt; { /* 錯誤處理 */ }
+    }
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;優點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 實作簡單&lt;/li&gt;
+&lt;li&gt;✅ 可靠性高（無需額外機制）&lt;/li&gt;
+&lt;li&gt;✅ 易於理解和維護&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;缺點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;❌ 延遲：最多 &lt;code&gt;poll_interval&lt;/code&gt; 的延遲&lt;/li&gt;
+&lt;li&gt;❌ 資源浪費：無任務時仍在輪詢&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;改進方案（事件驅動）：&lt;/strong&gt;
+可以使用 &lt;code&gt;tokio::sync::Notify&lt;/code&gt; 或資料庫的 NOTIFY/LISTEN：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;// 生產者插入任務後通知
+notifier.notify_waiters();
+
+// Worker 等待通知
+notifier.notified().await;&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;指數退避exponential-backoff&#34;&gt;指數退避（Exponential Backoff）&lt;/h3&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;rust&#34;&gt;if job.retry_count &gt; 0 {
+    let backoff = Duration::from_secs(2_u64.pow(job.retry_count.min(5)));
+    sleep(backoff).await;
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;退避時間：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;第 1 次重試：2^1 = 2 秒&lt;/li&gt;
+&lt;li&gt;第 2 次重試：2^2 = 4 秒&lt;/li&gt;
+&lt;li&gt;第 3 次重試：2^3 = 8 秒&lt;/li&gt;
+&lt;li&gt;第 4 次重試：2^4 = 16 秒&lt;/li&gt;
+&lt;li&gt;第 5 次以上：2^5 = 32 秒（最大值）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;目的：&lt;/strong&gt; 避免快速重試造成系統負擔，給下游服務恢復時間。&lt;/p&gt;
+&lt;h2 id=&#34;最佳實踐總結&#34;&gt;最佳實踐總結&lt;/h2&gt;
+&lt;h3 id=&#34;1-模組設計&#34;&gt;1. 模組設計&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;使用私有模組 + 公開重匯出控制 API&lt;/li&gt;
+&lt;li&gt;清晰的關注點分離&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;2-型別安全&#34;&gt;2. 型別安全&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;考慮使用 newtype 模式增加型別安全&lt;/li&gt;
+&lt;li&gt;平衡抽象與簡潔性&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;3-並發處理&#34;&gt;3. 並發處理&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;識別臨界區（critical section）&lt;/li&gt;
+&lt;li&gt;使用原子操作避免競爭條件&lt;/li&gt;
+&lt;li&gt;選擇適當的同步原語（Mutex、RwLock 等）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;4-錯誤處理&#34;&gt;4. 錯誤處理&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 &lt;code&gt;thiserror&lt;/code&gt; 定義清晰的錯誤類型&lt;/li&gt;
+&lt;li&gt;區分可恢復與不可恢復的錯誤&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;5-日誌策略&#34;&gt;5. 日誌策略&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;CLI 輸出用 &lt;code&gt;println!&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;操作日誌用 &lt;code&gt;tracing&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;使用環境變數控制日誌級別&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;6-非同步選擇&#34;&gt;6. 非同步選擇&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;評估是否真的需要 async/await&lt;/li&gt;
+&lt;li&gt;混合使用同步與非同步程式碼時要小心&lt;/li&gt;
+&lt;li&gt;理解 &lt;code&gt;std::sync&lt;/code&gt; 與 &lt;code&gt;tokio::sync&lt;/code&gt; 的差異&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;擴充方向&#34;&gt;擴充方向&lt;/h2&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;真正的非同步化：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 &lt;code&gt;sqlx&lt;/code&gt; 或 &lt;code&gt;tokio-rusqlite&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;非同步的 &lt;code&gt;JobHandler&lt;/code&gt; trait&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;分散式支援：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 PostgreSQL 的 &lt;code&gt;SELECT FOR UPDATE SKIP LOCKED&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Redis 作為訊息佇列&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;監控與觀測：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Prometheus metrics&lt;/li&gt;
+&lt;li&gt;分散式追蹤&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;進階功能：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;延遲任務（scheduled jobs）&lt;/li&gt;
+&lt;li&gt;任務優先順序調整&lt;/li&gt;
+&lt;li&gt;動態 worker 擴縮容&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;結論&#34;&gt;結論&lt;/h2&gt;
+&lt;p&gt;這個專案展示了如何使用 Rust 構建可靠的系統軟體。關鍵要點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;型別系統&lt;/strong&gt;讓我們在編譯期捕獲許多錯誤&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;所有權模型&lt;/strong&gt;確保記憶體安全與執行緒安全&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Trait 系統&lt;/strong&gt;提供零成本抽象&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;並發原語&lt;/strong&gt;幫助我們正確處理競爭條件&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Rust 的「如果編譯通過，通常就能正確運行」的特性，讓我們能夠自信地構建複雜的並發系統。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>建置 Jupyter Notebook 的 Rust 運作環境</title>
+      <link>https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/</link>
+      <pubDate>Sat, 02 Jan 2021 18:42:35 PST</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/</guid>
+      <description>&lt;p&gt;最近重新安裝了 macOS Big Sur，想試試 Jupyter Notebook 的 Rust 環境，再加上這幾天放假比較有時間，就把安裝的過程記錄下來。&lt;/p&gt;
+&lt;h3 id=&#34;安裝-miniconda&#34;&gt;安裝 Miniconda&lt;/h3&gt;
+&lt;p&gt;過去一直覺得 Anaconda 有點肥大，所以這次決定先從安裝比較精簡的 miniconda 開始:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ brew install --cask miniconda&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;新增 &lt;code&gt;conda-forge&lt;/code&gt; channel 以便安裝需要的套件如 &lt;code&gt;jupyterlab&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ conda config --add channels conda-forge
+$ conda config --set channel_priority strict&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然後需要初始化 conda 的 base 環境，一般都是跑 &lt;code&gt;conda init&lt;/code&gt;，但它會加一段不是很通用的設定到我個人的 &lt;code&gt;.zshrc&lt;/code&gt;，我不是很喜歡這種做法，所以就先只套用在目前的 shell 裡:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ eval `conda shell.zsh hook`&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;創建新的-conda-環境&#34;&gt;創建新的 conda 環境&lt;/h3&gt;
+&lt;p&gt;創建一個新的環境叫 &lt;code&gt;rust-notebook&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(base) $ conda create -n rust-notebook python=3
+(base) $ conda activate rust-notebook&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;安裝-jupyterlab&#34;&gt;安裝 JupyterLab&lt;/h3&gt;
+&lt;p&gt;在新的環境指定安裝 jupyterlab 版本 2.2.9，因為最新的 3.0 似乎與最新的 &lt;code&gt;jupyterlab-plotly&lt;/code&gt; 不相容:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ conda install jupyterlab=2.2.9&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然後安裝 &lt;code&gt;jupyterlab-plotly&lt;/code&gt;:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ jupyter labextension install jupyterlab-plotly&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;安裝-evcxr_jupyter&#34;&gt;安裝 evcxr_jupyter&lt;/h3&gt;
+&lt;p&gt;假設 Rust 已經安裝完成，直接用 Cargo 安裝 Rust 的 Jupyter kernel:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ cargo install evcxr_jupyter
+$ evcxr_jupyter --install&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;啟動 JupyterLab:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;(rust-notebook) $ jupyter lab&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;如果可以看到下列 Rust 圖示應該就是成功了:&lt;/p&gt;
+
+
+&lt;img src=&#34;https://blog.simplypatrick.com/posts/2021/01-02-rust-jupyter-notebook/new-notebook.png&#34; alt=&#34;new-notebook.png&#34; class=&#34;img-responsive post-image&#34;&gt;
+
+&lt;h3 id=&#34;範例執行結果&#34;&gt;範例執行結果&lt;/h3&gt;
+&lt;p&gt;試一下:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;Rust&#34;&gt;println!(&#34;Hello, Jupyter!&#34;);&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Hello, Jupyter!
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;來畫個圖:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;Rust&#34;&gt;:dep plotters = { git = &#34;https://github.com/38/plotters&#34;, default_features = false, features = [&#34;evcxr&#34;, &#34;line_series&#34;] }
+extern crate plotters;
+use plotters::prelude::*;
+use plotters::series::*;
+
+let figure = evcxr_figure((640, 480), |root| {
+    root.fill(&amp;WHITE);
+    let mut chart = ChartBuilder::on(&amp;root)
+        .caption(&#34;y=x^2&#34;, (&#34;Arial&#34;, 50).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(-1f32..1f32, -0.1f32..1f32)?;
+
+    chart.configure_mesh().draw()?;
+
+    chart.draw_series(LineSeries::new(
+        (-50..=50).map(|x| x as f32 / 50.0).map(|x| (x, x * x)),
+        &amp;RED,
+    )).unwrap()
+        .label(&#34;y = x^2&#34;)
+        .legend(|(x,y)| PathElement::new(vec![(x,y), (x + 20,y)], &amp;RED));
+
+    chart.configure_series_labels()
+        .background_style(&amp;WHITE.mix(0.8))
+        .border_style(&amp;BLACK)
+        .draw()?;
+    Ok(())
+});
+figure&lt;/code&gt;&lt;/pre&gt;
+
+&lt;div style=&#34;&#34;&gt;&lt;svg width=&#34;640&#34; height=&#34;480&#34; viewBox=&#34;0 0 640 480&#34; xmlns=&#34;http://www.w3.org/2000/svg&#34;&gt;
+&lt;rect x=&#34;0&#34; y=&#34;0&#34; width=&#34;639&#34; height=&#34;479&#34; opacity=&#34;1&#34; fill=&#34;#FFFFFF&#34; stroke=&#34;none&#34;/&gt;
+&lt;text x=&#34;320&#34; y=&#34;10&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;Arial&#34; font-size=&#34;40.32258064516129&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+y=x^2
+&lt;/text&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;41&#34; y1=&#34;444&#34; x2=&#34;41&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;47&#34; y1=&#34;444&#34; x2=&#34;47&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;53&#34; y1=&#34;444&#34; x2=&#34;53&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;59&#34; y1=&#34;444&#34; x2=&#34;59&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;65&#34; y1=&#34;444&#34; x2=&#34;65&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;71&#34; y1=&#34;444&#34; x2=&#34;71&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;77&#34; y1=&#34;444&#34; x2=&#34;77&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;83&#34; y1=&#34;444&#34; x2=&#34;83&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;89&#34; y1=&#34;444&#34; x2=&#34;89&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;95&#34; y1=&#34;444&#34; x2=&#34;95&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;101&#34; y1=&#34;444&#34; x2=&#34;101&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;107&#34; y1=&#34;444&#34; x2=&#34;107&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;113&#34; y1=&#34;444&#34; x2=&#34;113&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;119&#34; y1=&#34;444&#34; x2=&#34;119&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;125&#34; y1=&#34;444&#34; x2=&#34;125&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;131&#34; y1=&#34;444&#34; x2=&#34;131&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;137&#34; y1=&#34;444&#34; x2=&#34;137&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;143&#34; y1=&#34;444&#34; x2=&#34;143&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;149&#34; y1=&#34;444&#34; x2=&#34;149&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;155&#34; y1=&#34;444&#34; x2=&#34;155&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;161&#34; y1=&#34;444&#34; x2=&#34;161&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;167&#34; y1=&#34;444&#34; x2=&#34;167&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;173&#34; y1=&#34;444&#34; x2=&#34;173&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;179&#34; y1=&#34;444&#34; x2=&#34;179&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;185&#34; y1=&#34;444&#34; x2=&#34;185&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;191&#34; y1=&#34;444&#34; x2=&#34;191&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;197&#34; y1=&#34;444&#34; x2=&#34;197&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;203&#34; y1=&#34;444&#34; x2=&#34;203&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;209&#34; y1=&#34;444&#34; x2=&#34;209&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;215&#34; y1=&#34;444&#34; x2=&#34;215&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;221&#34; y1=&#34;444&#34; x2=&#34;221&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;227&#34; y1=&#34;444&#34; x2=&#34;227&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;233&#34; y1=&#34;444&#34; x2=&#34;233&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;239&#34; y1=&#34;444&#34; x2=&#34;239&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;245&#34; y1=&#34;444&#34; x2=&#34;245&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;251&#34; y1=&#34;444&#34; x2=&#34;251&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;257&#34; y1=&#34;444&#34; x2=&#34;257&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;263&#34; y1=&#34;444&#34; x2=&#34;263&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;269&#34; y1=&#34;444&#34; x2=&#34;269&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;275&#34; y1=&#34;444&#34; x2=&#34;275&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;281&#34; y1=&#34;444&#34; x2=&#34;281&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;287&#34; y1=&#34;444&#34; x2=&#34;287&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;293&#34; y1=&#34;444&#34; x2=&#34;293&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;299&#34; y1=&#34;444&#34; x2=&#34;299&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;305&#34; y1=&#34;444&#34; x2=&#34;305&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;311&#34; y1=&#34;444&#34; x2=&#34;311&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;317&#34; y1=&#34;444&#34; x2=&#34;317&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;323&#34; y1=&#34;444&#34; x2=&#34;323&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;329&#34; y1=&#34;444&#34; x2=&#34;329&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;335&#34; y1=&#34;444&#34; x2=&#34;335&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;341&#34; y1=&#34;444&#34; x2=&#34;341&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;347&#34; y1=&#34;444&#34; x2=&#34;347&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;353&#34; y1=&#34;444&#34; x2=&#34;353&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;359&#34; y1=&#34;444&#34; x2=&#34;359&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;365&#34; y1=&#34;444&#34; x2=&#34;365&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;371&#34; y1=&#34;444&#34; x2=&#34;371&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;377&#34; y1=&#34;444&#34; x2=&#34;377&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;383&#34; y1=&#34;444&#34; x2=&#34;383&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;389&#34; y1=&#34;444&#34; x2=&#34;389&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;395&#34; y1=&#34;444&#34; x2=&#34;395&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;401&#34; y1=&#34;444&#34; x2=&#34;401&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;407&#34; y1=&#34;444&#34; x2=&#34;407&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;413&#34; y1=&#34;444&#34; x2=&#34;413&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;419&#34; y1=&#34;444&#34; x2=&#34;419&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;425&#34; y1=&#34;444&#34; x2=&#34;425&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;431&#34; y1=&#34;444&#34; x2=&#34;431&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;437&#34; y1=&#34;444&#34; x2=&#34;437&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;443&#34; y1=&#34;444&#34; x2=&#34;443&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;449&#34; y1=&#34;444&#34; x2=&#34;449&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;455&#34; y1=&#34;444&#34; x2=&#34;455&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;461&#34; y1=&#34;444&#34; x2=&#34;461&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;467&#34; y1=&#34;444&#34; x2=&#34;467&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;473&#34; y1=&#34;444&#34; x2=&#34;473&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;479&#34; y1=&#34;444&#34; x2=&#34;479&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;485&#34; y1=&#34;444&#34; x2=&#34;485&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;491&#34; y1=&#34;444&#34; x2=&#34;491&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;497&#34; y1=&#34;444&#34; x2=&#34;497&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;503&#34; y1=&#34;444&#34; x2=&#34;503&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;509&#34; y1=&#34;444&#34; x2=&#34;509&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;515&#34; y1=&#34;444&#34; x2=&#34;515&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;521&#34; y1=&#34;444&#34; x2=&#34;521&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;527&#34; y1=&#34;444&#34; x2=&#34;527&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;533&#34; y1=&#34;444&#34; x2=&#34;533&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;539&#34; y1=&#34;444&#34; x2=&#34;539&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;545&#34; y1=&#34;444&#34; x2=&#34;545&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;551&#34; y1=&#34;444&#34; x2=&#34;551&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;557&#34; y1=&#34;444&#34; x2=&#34;557&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;563&#34; y1=&#34;444&#34; x2=&#34;563&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;569&#34; y1=&#34;444&#34; x2=&#34;569&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;575&#34; y1=&#34;444&#34; x2=&#34;575&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;581&#34; y1=&#34;444&#34; x2=&#34;581&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;587&#34; y1=&#34;444&#34; x2=&#34;587&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;593&#34; y1=&#34;444&#34; x2=&#34;593&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;599&#34; y1=&#34;444&#34; x2=&#34;599&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;605&#34; y1=&#34;444&#34; x2=&#34;605&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;611&#34; y1=&#34;444&#34; x2=&#34;611&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;617&#34; y1=&#34;444&#34; x2=&#34;617&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;623&#34; y1=&#34;444&#34; x2=&#34;623&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;629&#34; y1=&#34;444&#34; x2=&#34;629&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;635&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;444&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;436&#34; x2=&#34;635&#34; y2=&#34;436&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;429&#34; x2=&#34;635&#34; y2=&#34;429&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;422&#34; x2=&#34;635&#34; y2=&#34;422&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;415&#34; x2=&#34;635&#34; y2=&#34;415&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;408&#34; x2=&#34;635&#34; y2=&#34;408&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;401&#34; x2=&#34;635&#34; y2=&#34;401&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;394&#34; x2=&#34;635&#34; y2=&#34;394&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;387&#34; x2=&#34;635&#34; y2=&#34;387&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;380&#34; x2=&#34;635&#34; y2=&#34;380&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;373&#34; x2=&#34;635&#34; y2=&#34;373&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;366&#34; x2=&#34;635&#34; y2=&#34;366&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;359&#34; x2=&#34;635&#34; y2=&#34;359&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;352&#34; x2=&#34;635&#34; y2=&#34;352&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;344&#34; x2=&#34;635&#34; y2=&#34;344&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;337&#34; x2=&#34;635&#34; y2=&#34;337&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;330&#34; x2=&#34;635&#34; y2=&#34;330&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;323&#34; x2=&#34;635&#34; y2=&#34;323&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;316&#34; x2=&#34;635&#34; y2=&#34;316&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;309&#34; x2=&#34;635&#34; y2=&#34;309&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;302&#34; x2=&#34;635&#34; y2=&#34;302&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;295&#34; x2=&#34;635&#34; y2=&#34;295&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;288&#34; x2=&#34;635&#34; y2=&#34;288&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;281&#34; x2=&#34;635&#34; y2=&#34;281&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;274&#34; x2=&#34;635&#34; y2=&#34;274&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;267&#34; x2=&#34;635&#34; y2=&#34;267&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;260&#34; x2=&#34;635&#34; y2=&#34;260&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;253&#34; x2=&#34;635&#34; y2=&#34;253&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;245&#34; x2=&#34;635&#34; y2=&#34;245&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;238&#34; x2=&#34;635&#34; y2=&#34;238&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;231&#34; x2=&#34;635&#34; y2=&#34;231&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;224&#34; x2=&#34;635&#34; y2=&#34;224&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;217&#34; x2=&#34;635&#34; y2=&#34;217&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;210&#34; x2=&#34;635&#34; y2=&#34;210&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;203&#34; x2=&#34;635&#34; y2=&#34;203&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;196&#34; x2=&#34;635&#34; y2=&#34;196&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;189&#34; x2=&#34;635&#34; y2=&#34;189&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;182&#34; x2=&#34;635&#34; y2=&#34;182&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;175&#34; x2=&#34;635&#34; y2=&#34;175&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;168&#34; x2=&#34;635&#34; y2=&#34;168&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;161&#34; x2=&#34;635&#34; y2=&#34;161&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;154&#34; x2=&#34;635&#34; y2=&#34;154&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;146&#34; x2=&#34;635&#34; y2=&#34;146&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;139&#34; x2=&#34;635&#34; y2=&#34;139&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;132&#34; x2=&#34;635&#34; y2=&#34;132&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;125&#34; x2=&#34;635&#34; y2=&#34;125&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;118&#34; x2=&#34;635&#34; y2=&#34;118&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;111&#34; x2=&#34;635&#34; y2=&#34;111&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;104&#34; x2=&#34;635&#34; y2=&#34;104&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;97&#34; x2=&#34;635&#34; y2=&#34;97&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;90&#34; x2=&#34;635&#34; y2=&#34;90&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;83&#34; x2=&#34;635&#34; y2=&#34;83&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;76&#34; x2=&#34;635&#34; y2=&#34;76&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;69&#34; x2=&#34;635&#34; y2=&#34;69&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;62&#34; x2=&#34;635&#34; y2=&#34;62&#34;/&gt;
+&lt;line opacity=&#34;0.1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;55&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;95&#34; y1=&#34;444&#34; x2=&#34;95&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;155&#34; y1=&#34;444&#34; x2=&#34;155&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;215&#34; y1=&#34;444&#34; x2=&#34;215&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;275&#34; y1=&#34;444&#34; x2=&#34;275&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;335&#34; y1=&#34;444&#34; x2=&#34;335&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;395&#34; y1=&#34;444&#34; x2=&#34;395&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;455&#34; y1=&#34;444&#34; x2=&#34;455&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;515&#34; y1=&#34;444&#34; x2=&#34;515&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;575&#34; y1=&#34;444&#34; x2=&#34;575&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;635&#34; y1=&#34;444&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;408&#34; x2=&#34;635&#34; y2=&#34;408&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;337&#34; x2=&#34;635&#34; y2=&#34;337&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;267&#34; x2=&#34;635&#34; y2=&#34;267&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;196&#34; x2=&#34;635&#34; y2=&#34;196&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;125&#34; x2=&#34;635&#34; y2=&#34;125&#34;/&gt;
+&lt;line opacity=&#34;0.2&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; x1=&#34;35&#34; y1=&#34;55&#34; x2=&#34;635&#34; y2=&#34;55&#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;34,56 34,445 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;408&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,408 34,408 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;337&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,337 34,337 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;267&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,267 34,267 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;196&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,196 34,196 &#34;/&gt;
+&lt;text x=&#34;25&#34; y=&#34;125&#34; dy=&#34;0.5ex&#34; text-anchor=&#34;end&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;29,125 34,125 &#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;35,445 635,445 &#34;/&gt;
+&lt;text x=&#34;95&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;95,445 95,450 &#34;/&gt;
+&lt;text x=&#34;155&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;155,445 155,450 &#34;/&gt;
+&lt;text x=&#34;215&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;215,445 215,450 &#34;/&gt;
+&lt;text x=&#34;275&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+-0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;275,445 275,450 &#34;/&gt;
+&lt;text x=&#34;335&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;335,445 335,450 &#34;/&gt;
+&lt;text x=&#34;395&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;395,445 395,450 &#34;/&gt;
+&lt;text x=&#34;455&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.4
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;455,445 455,450 &#34;/&gt;
+&lt;text x=&#34;515&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.6
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;515,445 515,450 &#34;/&gt;
+&lt;text x=&#34;575&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+0.8
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;575,445 575,450 &#34;/&gt;
+&lt;text x=&#34;635&#34; y=&#34;455&#34; dy=&#34;0.76em&#34; text-anchor=&#34;middle&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+1.0
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#000000&#34; stroke-width=&#34;1&#34; points=&#34;635,445 635,450 &#34;/&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#FF0000&#34; stroke-width=&#34;1&#34; points=&#34;35,56 41,69 47,82 53,96 59,109 65,122 71,134 77,147 83,159 89,170 95,182 101,193 107,204 113,214 119,225 125,235 131,245 137,254 143,263 149,272 155,281 161,289 167,297 173,305 179,313 185,320 191,327 197,333 203,340 209,346 215,352 221,357 227,362 233,367 239,372 245,376 251,380 257,384 263,388 269,391 275,394 281,397 287,399 293,401 299,403 305,405 311,406 317,407 323,408 329,408 335,408 341,408 347,408 353,407 359,406 365,405 371,403 377,401 383,399 389,397 395,394 401,391 407,388 413,384 419,380 425,376 431,372 437,367 443,362 449,357 455,352 461,346 467,340 473,333 479,327 485,320 491,313 497,305 503,297 509,289 515,281 521,272 527,263 533,254 539,245 545,235 551,225 557,214 563,204 569,193 575,182 581,170 587,159 593,147 599,134 605,122 611,109 617,96 623,82 629,69 635,56 &#34;/&gt;
+&lt;rect x=&#34;542&#34; y=&#34;235&#34; width=&#34;88&#34; height=&#34;30&#34; opacity=&#34;0.8&#34; fill=&#34;#FFFFFF&#34; stroke=&#34;none&#34;/&gt;
+&lt;rect x=&#34;542&#34; y=&#34;235&#34; width=&#34;88&#34; height=&#34;30&#34; opacity=&#34;1&#34; fill=&#34;none&#34; stroke=&#34;#000000&#34;/&gt;
+&lt;text x=&#34;582&#34; y=&#34;245&#34; dy=&#34;0.76em&#34; text-anchor=&#34;start&#34; font-family=&#34;sans-serif&#34; font-size=&#34;9.67741935483871&#34; opacity=&#34;1&#34; fill=&#34;#000000&#34;&gt;
+y = x^2
+&lt;/text&gt;
+&lt;polyline fill=&#34;none&#34; opacity=&#34;1&#34; stroke=&#34;#FF0000&#34; stroke-width=&#34;1&#34; points=&#34;552,250 572,250 &#34;/&gt;
+&lt;/svg&gt;
+&lt;/div&gt;
+&lt;h3 id=&#34;參考&#34;&gt;參考&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://datacrayon.com/posts/programming/rust-notebooks/setup-anaconda-jupyter-and-rust/&#34;&gt;Setup Anaconda, Jupyter, and Rust | Data Crayon&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Setup Fuchsia Rust Development on macOS</title>
+      <link>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</link>
+      <pubDate>Thu, 06 Jun 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</guid>
+      <description>&lt;p&gt;基本上照著官方的指引 &lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/docs/development/languages/rust/editors.md&#34;&gt;Rust Editor Configuration&lt;/a&gt;，設置 Fuchsia OS 開發的 Rust 開發環境主要就兩個步驟:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;設定編輯器使用 Rust 的 Language Server (&lt;code&gt;RLS&lt;/code&gt;)&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;產生-cargotoml&#34;&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;很簡單，就是用 &lt;code&gt;fx gen-cargo //garnet/foo/path/to/target:label&lt;/code&gt; 產生對應的 &lt;code&gt;Cargo.toml&lt;/code&gt;。例如 &lt;code&gt;fx gen-cargo //garnet/bin/log_listener:bin&lt;/code&gt; 會產生 &lt;code&gt;/garnet/bin/log_listener/Cargo.toml&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;設定-rls&#34;&gt;設定 RLS&lt;/h3&gt;
+&lt;p&gt;官方文檔提到要先把 Fuchsia 自帶的 Rust 連結到 rustup，並且設成預設的 toolchain:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;bash&#34;&gt;$ rustup toolchain link fuchsia /&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust
+$ rustup default fuchsia&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;我是有做第一步，但第二步我比較持保留態度，之後試過似乎不做也沒影響，我會建議跳過這一步。&lt;/p&gt;
+&lt;h4 id=&#34;vim&#34;&gt;Vim&lt;/h4&gt;
+&lt;p&gt;跟 C++ 類似，只是 Language Server 我們必須從 &lt;code&gt;clangd&lt;/code&gt; 換成 &lt;code&gt;RLS&lt;/code&gt;，所以可以在 Vim 裡用 &lt;code&gt;:CocInstall coc-rls&lt;/code&gt; 來安裝 &lt;a href=&#34;https://github.com/neoclide/coc-rls&#34;&gt;coc-rls&lt;/a&gt; extension，如果你系統之前就有裝過 RLS 的話，在 Vim 裡打開對應的目錄就會有 code completion 的功能了。&lt;/p&gt;
+&lt;p&gt;如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，可以用 &lt;code&gt;:CocConfig&lt;/code&gt; 把下列設定加進去:&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;javascript&#34;&gt;{
+  &#34;rust.target&#34;: &#34;x86_64-fuchsia&#34;,
+  &#34;rust.target_dir&#34;: &#34;/&lt;your Fuchsia root&gt;/out/cargo_target&#34;,
+  &#34;rust.unstable_features&#34;: true,
+  &#34;rust-client.rlsPath&#34;: &#34;/&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust/bin/rls&#34;,
+  &#34;rust-client.disableRustup&#34;: true,
+
+  // Some optional settings that may help:
+  &#34;rust.goto_def_racer_fallback&#34;: true,
+  &#34;rust-client.logToFile&#34;: true,
+}&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;visual-studio-code&#34;&gt;Visual Studio Code&lt;/h4&gt;
+&lt;p&gt;VSCode 則是需要安裝 &lt;a href=&#34;https://marketplace.visualstudio.com/items?itemName=rust-lang.rust&#34;&gt;Rust (rls)&lt;/a&gt; 這個 plugin。同樣如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，加入下列的設定到 VS Code 裡：&lt;/p&gt;
+
+
+  &lt;pre&gt;&lt;code class=&#34;javascript&#34;&gt;{
+  &#34;rust.target&#34;: &#34;x86_64-fuchsia&#34;,
+  &#34;rust.target_dir&#34;: &#34;/&lt;your Fuchsia root&gt;/out/cargo_target&#34;,
+  &#34;rust.unstable_features&#34;: true,
+  &#34;rust-client.rlsPath&#34;: &#34;/&lt;your Fuchsia root&gt;/buildtools/&lt;platform&gt;/rust/bin/rls&#34;,
+  &#34;rust-client.disableRustup&#34;: true,
+
+  // Some optional settings that may help:
+  &#34;rust.goto_def_racer_fallback&#34;: true,
+  &#34;rust-client.logToFile&#34;: true,
+}&lt;/code&gt;&lt;/pre&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Learning Rust</title>
+      <link>https://blog.simplypatrick.com/posts/2019/04-08-learning-rust/</link>
+      <pubDate>Mon, 08 Apr 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/04-08-learning-rust/</guid>
+      <description>&lt;h2 id=&#34;關於-rust&#34;&gt;關於 Rust&lt;/h2&gt;
+&lt;p&gt;會知道 Rust 是因為之前公司團隊的工作是跟瀏覽器引擎 (Webkit/Blink) 的優化有關，那時只知道 Mozilla 正在用 Rust 這個新的程式語言實驗性地開發 Servo 引擎。同時間 Go 已經到達 1.0 的里程碑，同時有著優異的編譯及執行效能，很快地 Go 就變成我個人主要使用的程式語言，工作上需要的一些小工具也都是用 Go 來實現。&lt;/p&gt;
+&lt;p&gt;開始對 Rust 重新關注大概是它在 2015 年釋放 1.0 版本後，那時只稍微了解一下語法及主要的語言特性，當時覺得這程式語言的學習曲線蠻陡峭的，必須全面地對所有的語言特性有一定了解後才能駕馭它。那時 Go 用的正是順手，所以就沒什麼動力把 Rust 完整學起來。&lt;/p&gt;
+&lt;p&gt;去年開始工作上需要了解 Fuchsia OS 的實作，赫然發現裡面蠻多系統服務都是用 Rust 開發的，數量上甚至比 Google 自家的 Go 還多，這也是我決定多投入時間學習 Rust 的轉捩點。&lt;/p&gt;
+&lt;h2 id=&#34;學習資源&#34;&gt;學習資源&lt;/h2&gt;
+&lt;p&gt;我主要使用下列幾本書來學習 Rust：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.amazon.cn/dp/B07GSRFG28&#34;&gt;深入浅出 Rust&lt;/a&gt; 這本書的電子版: 它的特色是側重於解釋 Rust 主要概念的設計思想，而不只是單純語法或用法的說明；且因為是中文的緣故，讀起來速度還是比較快，比較像是 Rust 的內功心法入門。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://ithelp.ithome.com.tw/users/20111802/ironman/1742&#34;&gt;30 天深入淺出 Rust 系列&lt;/a&gt; 則是以淺顯易懂的範例把 Rust 主要的特色講解了一遍，內容適合對於想要快速地對 Rust 有個全面性的概觀的人。&lt;/li&gt;
+&lt;li&gt;對 Rust 有了基本的了解後，&lt;a href=&#34;https://stevedonovan.github.io/rust-gentle-intro/readme.html#a-gentle-introduction-to-rust&#34;&gt;A Gentle Introduction to Rust&lt;/a&gt; 則是適合有 C/C++ 經驗的開發者來學習如何寫 idiomatic Rust。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;至於最經典的 &lt;a href=&#34;https://doc.rust-lang.org/book/&#34;&gt;The Rust Programming Language&lt;/a&gt; 呢? 我只把了一些我覺得重要的章節看完，其他剩下的就直接動手實作，遇到有細節不清楚或是已經忘記時再花時間來看。&lt;/p&gt;
+&lt;h2 id=&#34;其他資源&#34;&gt;其他資源&lt;/h2&gt;
+&lt;p&gt;上面主要是比較完整的 Rust 學習資源，下一篇再分享一些我覺得不錯的 blog post，通常是針對某個特定主題或進階功能的解釋或教學。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,204 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/java/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2014-01-04 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Using Native Libraries in Android</title>
+      <link>https://blog.simplypatrick.com/posts/2014/01-04-using-native-libraries-in-android/</link>
+      <pubDate>Sat, 04 Jan 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/01-04-using-native-libraries-in-android/</guid>
+      <description>&lt;h3 id=&#34;基本概念&#34;&gt;基本概念&lt;/h3&gt;
+&lt;p&gt;開發 Android app 如果需要使用 native library，簡單地說其實不複雜，就是把 .so 檔放到 &lt;code&gt;lib/&amp;lt;abi&amp;gt;&lt;/code&gt; 目錄，然後不管你是用 Eclipse ADT, Ant, 或是 Gradle 來產生 APK, 這些工具都會把這些 &lt;code&gt;.so&lt;/code&gt; 包到 &lt;code&gt;.apk&lt;/code&gt; 裡面，然後這些 &lt;code&gt;.so&lt;/code&gt; 就可以在運作時期用 &lt;a href=&#34;http://developer.android.com/reference/java/lang/System.html#loadLibrary(java.lang.String)&#34;&gt;System.loadLibrary&lt;/a&gt; 或是 &lt;a href=&#34;http://developer.android.com/reference/java/lang/System.html#load(java.lang.String)&#34;&gt;System.load&lt;/a&gt; 來載入。&lt;/p&gt;
+&lt;p&gt;接下來說明幾個常見的 &lt;code&gt;.so&lt;/code&gt; 產生及載入方式：&lt;/p&gt;
+&lt;h3 id=&#34;使用-ndk&#34;&gt;使用 NDK&lt;/h3&gt;
+&lt;p&gt;如果是自己開發自己使用，通常建議用 Android NDK，只要一個 &lt;code&gt;ndk-build&lt;/code&gt; 命令就可以將 &lt;code&gt;jni/&lt;/code&gt; 目錄裡的 C/C++ code 編譯成 &lt;code&gt;libs/&amp;lt;abi&amp;gt;/&lt;/code&gt; 裡的 &lt;code&gt;lib&amp;lt;name&amp;gt;.so&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;載入方式就是直接使用 &lt;code&gt;System.loadLibrary&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;third-party-library&#34;&gt;Third-party library&lt;/h3&gt;
+&lt;p&gt;但如果角色換成是要提供 library 給 App 開發者使用，方法就比較多樣一點：&lt;/p&gt;
+&lt;h4 id=&#34;jni--src&#34;&gt;&lt;code&gt;jni/&lt;/code&gt; + &lt;code&gt;src/&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;也就是直接給 JNI 及 Java code 由 App 開發自己整合。&lt;/p&gt;
+&lt;h4 id=&#34;library-project&#34;&gt;Library Project&lt;/h4&gt;
+&lt;p&gt;如果你要提供的 library 有自帶的 resource，這是目前唯一可以用的方式。把 .so 放在 library project 的 &lt;code&gt;libs/&amp;lt;abi&amp;gt;&lt;/code&gt; 就可以讓 app project 使用了。據說 Google 以後會提供工具可以把 library project 輸出成單一檔案來使用，期待中。&lt;/p&gt;
+&lt;h4 id=&#34;一個-jar--數個-so-檔&#34;&gt;一個 &lt;code&gt;.jar&lt;/code&gt; + 數個 &lt;code&gt;.so&lt;/code&gt; 檔&lt;/h4&gt;
+&lt;p&gt;如果不帶 resource 的話，給編譯好的 &lt;code&gt;.jar&lt;/code&gt; 跟 &lt;code&gt;.so&lt;/code&gt; 讓 App 開發者直接放到 &lt;code&gt;libs/&lt;/code&gt; 也是種簡單的方法。&lt;/p&gt;
+&lt;h4 id=&#34;一個-jar-內嵌-so-檔&#34;&gt;一個 &lt;code&gt;.jar&lt;/code&gt; 內嵌 &lt;code&gt;.so&lt;/code&gt; 檔&lt;/h4&gt;
+&lt;p&gt;有些 library 提供者為了降低開發者的使用門檻，使用了把 &lt;code&gt;.so&lt;/code&gt; 放在 &lt;code&gt;.jar&lt;/code&gt; 檔的 &lt;code&gt;assets/&lt;/code&gt; 目錄中然後運作時再從 assets 中取出 &lt;code&gt;.so&lt;/code&gt; 來載入的技巧，細節可以參考 &lt;a href=&#34;https://www.crittercism.com/packaging-android-libraries-with-native-code/&#34;&gt;Crittercism SDK 用的方式&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;獨立的-library-apk&#34;&gt;獨立的 library APK&lt;/h3&gt;
+&lt;p&gt;上述的所有方法都有個缺點(或者也是優點): app 都自帶 &lt;code&gt;.so&lt;/code&gt;，不同 app 間無法共享占用空間多，也無法獨立更新。所以就有人想了把 &lt;code&gt;.so&lt;/code&gt; 放在獨立的 APK 裡，只要能找到 &lt;code&gt;.so&lt;/code&gt; 的絕對安裝路徑就能用 &lt;code&gt;System.load&lt;/code&gt; 來載入使用。例如 &lt;a href=&#34;http://opencv.org/platforms/android.html&#34;&gt;OpenCV&lt;/a&gt; 就是使用這樣的技巧：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;AndroidAppUsageModel.png&#34; alt=&#34;Android App Usage Model&#34;&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;由 library APK 提供一個 service。&lt;/li&gt;
+&lt;li&gt;App 透過 service 獲取 lib 的絕對路徑。&lt;/li&gt;
+&lt;li&gt;但如果 service 不存在可以由 App 透過 Play store 來安裝。&lt;/li&gt;
+&lt;li&gt;App 使用 &lt;code&gt;System.load(libpath)&lt;/code&gt; 來載入 &lt;code&gt;.so&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;但這樣相對地 library 要做的事情就蠻多的，細節可以參考 &lt;a href=&#34;https://github.com/Itseez/opencv/tree/master/platforms/android/service&#34;&gt;OpenCV 的做法&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;總結&#34;&gt;總結&lt;/h3&gt;
+&lt;p&gt;上面的方法各有其適用的時機，該用那一種就是大家自己去思考及評估囉。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Green Thread</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-10-29-356/</link>
+      <pubDate>Sun, 29 Oct 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-10-29-356/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://www.jguru.com/faq/view.jsp?EID=143462&#34; title=&#34;What is the difference between green threads and native threads?&#34;&gt;jGuru: What is the difference between green threads and native threads?&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;突然看到 green thread 這個詞愣了一下，想說那時候有這種東西的。說穿了，就是 Sun JVM 裡的 user-level thread。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Josh Bloch on Design</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-09-25-342/</link>
+      <pubDate>Mon, 25 Sep 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-09-25-342/</guid>
+      <description>&lt;p&gt;不是什麼新的技術，Joshua Bloch 談的是更基本但也更重要的 API Design：&lt;a href=&#34;http://lcsd05.cs.tamu.edu/slides/keynote.pdf#search=%22joshua%20bloch%20api%20design%22&#34;&gt;How to Design a Good API and Why it Matters&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;其實軟體開發者的大部分工作就是和一大堆的 API 打交道，我是最討厭使用那種設計不良的 API，因為往往要用更多的 client code 來完成功能或者避過設計的缺陷。怎麼去設計“良好的 API”正是所有軟體開發者要必備的技巧，Joshua 所提出的這些設計準則，都是相當值得參考學習的。&lt;/p&gt;
+&lt;p&gt;另一篇 Joshua 的訪談：&lt;a title=&#34;Josh Bloch on Design&#34; href=&#34;http://www.artima.com/intv/bloch.html&#34;&gt;Josh Bloch on Design&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Java theory and practice</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-11-02-193/</link>
+      <pubDate>Tue, 02 Nov 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-11-02-193/</guid>
+      <description>&lt;p&gt;想要對 Effective Java 裡面的課題有更多探討的人，可以參考 Brian Goetz 在 developerWorks 的專欄 &lt;A href=&#34;http://www-106.ibm.com/developerworks/views/java/articles.jsp?sort_order=desc&amp;amp;expand=&amp;amp;sort_by=Date&amp;amp;show_abstract=true&amp;amp;view_by=Search&amp;amp;search_by=practice%3A&#34;&gt;Java theory and practice&lt;/A&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Effective Java</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-11-01-192/</link>
+      <pubDate>Mon, 01 Nov 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-11-01-192/</guid>
+      <description>&lt;p&gt;&lt;A href=&#34;http://www.cmlab.csie.ntu.edu.tw/cml/db/ssb.htm&#34;&gt;我的上一次 Java programming 經驗&lt;/A&gt;已經是將近六年前的事了，JDK 那時才剛從 1.0 版升級至 1.1，後來因為工作內容的關係，C++ 才變成是我最常使用的程式語言。&lt;/p&gt;
+&lt;p&gt;前一陣子逛書店時瞄到了 Joshua Bloch 的《&lt;A href=&#34;http://www.amazon.com/exec/obidos/ASIN/0201310058/ref%3Dase%5FjavasoftsunmicroA/104-6121513-6909566&#34;&gt;Effective Java Programming Language Guide&lt;/A&gt;》居然有&lt;A href=&#34;http://www.jjhou.com/jjtbooks-effective-java.htm&#34;&gt;中文版&lt;/A&gt;，原文的版本我是聞名已久卻沒空拜讀。我一看是&lt;A href=&#34;http://www.jjhou.com&#34;&gt;侯捷&lt;/A&gt;翻譯的作品，二話不說便掏錢買下這本書，直到最近，我一時興起才把它讀完。&lt;/p&gt;
+&lt;p&gt;就內容而言，這本書絕對有資格跟《Effective C++》享有一樣的經典地位，不僅 Java programmer 要看，.NET programmer 也應該人手一本，因為其中的許多物件導向編程的道理是同時適用於 Java 與 .NET。中文版裡不通順或是有錯誤的地方倒是比我期待的數目多了一點，不過我想侯捷應該是不介意別人用高標準來檢驗他的作品。&lt;/p&gt;
+&lt;p&gt;下面是我發現的一些翻譯問題：&lt;/p&gt;
+&lt;TABLE class=&#34;table&#34;&gt;
+&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: Not only can the class of an object returned by a public static factory method be nonpublic, but the class can vary from invocation to invocation depending on the values of the parameters to the static factory.&lt;BR&gt;&lt;BR&gt;&lt;/FONT&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p7: public static factory method 傳回的物件不僅可以是個 nonpublic class 物件，而且視 static factory 函式參數的不同，還可以涉及不同的 nonpublic class ...&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;這一句翻得有點繞口，不是讓人一看就明白，我自己試著翻譯為 &#34;public static factory method&amp;nbsp; 返回物件的 class 不僅可以是 nonpublic，而且視函式參數的不同，還可以返回不同的 class ...&#34;&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: In particular, the hash function may, in practice, be confronted with a large collection of instances that differ largely in the regions that you&#39;ve chosen to ignore.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p40: 更具體地說，實際應用時 hash 函式可能會面臨大量「在你刻意忽略的&lt;FONT color=&#34;#ff0000&#34;&gt;領域&lt;/FONT&gt;中仍有很大差異」的物件實體。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;我想「領域」直接翻成「部份」會比較容易懂。&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: Note that string names are used only by the toString method; they are not used for equality comparisons, as the equals implementation, which is inherited from Object, performs a reference identity&lt;BR&gt;comparison.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p106: 注意:字串名稱只由 toString() 使用，並不用於「相等比較」，也就是說並不用於繼承自 Object 的 equals() (該函式執行的是 reference 的比較)。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;譯文似乎有點誤導，我認為應該譯為 &#34;字串名稱只由 toString() 使用，並不用於「相等比較」，因為繼承自 Object 的 equals() 執行的正是預期的 reference 比較。&#34;&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: Second, it is possible to return the same zero-length array from every invocation that returns no items ...&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p134: 第二，對於「不傳回任何 array 元素」的呼叫，傳回同一個「長度為 0 的array」是可能的&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;正確的翻譯為: 對於數次「沒有任何 array 元素可傳回」的呼叫，傳回同一個「長度為 0 的array」是適切的&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: By convention, the word “this”always refers to the object on which the method is invoked when it is used in the doc comment for an instance method.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p138: 習慣上當 &#34;this&#34; 出現於一個 instance 函式的 doc comment 時，總是用來表示&lt;FONT color=&#34;#ff0000&#34;&gt;該函式的呼叫者(某物件)&lt;/FONT&gt;。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;正確的翻譯為: &#34;習慣上當 this 出現於一個 instance 函式的 doc comment 時，總是用來表示該函式所屬的 instance。&#34;&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: This could be construed as an IllegalArgumentException (the handSize parameter value is too high) or an IllegalStateException (the deck object contains too few cards for the request). In this case the IllegalArgumentException feels right, but there are no hard-and-fast rules.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p177: 這種情形可被解釋為 IllegalArgumentException (...) 或被解釋為 IllegalStateException (...)，或者使用 IllegalArgumentException 也適當；是的，這其中並沒有嚴格的規定。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;我覺得比較容易懂的翻譯為: 這種情形可被解釋為 IllegalArgumentException 或 IllegalStateException。在這個例子，似乎使用 IllegalArgumentException 是比較適當的，但這並不是唯一的標準答案。&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: It makes it easy for the programmer throwing an exception to capture the failure. In fact, it makes it hard for the programmer not to capture the failure!&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p184: 這種作法使得程式員可輕易「藉由拋出異常來&lt;FONT color=&#34;#ff0000&#34;&gt;捕獲失敗&lt;/FONT&gt;」。事實上這種手法使得程式員不&lt;FONT color=&#34;#ff0000&#34;&gt;捕捉失敗&lt;/FONT&gt;都很困難。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;我想原文的 capture the failure 指的是「記錄失敗情況下的資訊」，比較正確的翻譯應該是:&amp;nbsp; &#34;這種作法使得程式員可輕易「藉由拋出異常來記錄失敗情況下的資訊」。換句話說，這種手法也使得程式員不得不記錄失敗情況下的資訊。&#34;&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: A closely related approach to achieving failure atomicity is to order the computation&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p185: 另一個實現 failure atomocity 的辦法是「對運算&lt;FONT color=&#34;#ff0000&#34;&gt;排序&lt;/FONT&gt;」&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;排序一般指的是 sort，這句譯成「更動運算的次序」比較符合原義。&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: The newly created thread might then try to acquire the same lock held by the original thread, which would cause the newly created thread to block.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p196: 新建執行緒&lt;FONT color=&#34;#ff0000&#34;&gt;可能獲得&lt;/FONT&gt;原執行緒持有的鎖件，這便造成新建執行緒被阻塞。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;正確的翻譯為: &#34;新建執行緒可能嘗試獲得已被原執行緒持有的鎖件，這便造成新建執行緒被阻塞。&#34;&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: Because locks in the Java programming language are recursive, such calls won&#39;t deadlock as they would if they were made by another thread.&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p199: 由於 Java 編程中的鎖件是遞迴的，如果這些呼叫由其他執行緒產生，並不會造成死結。&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;正確的翻譯為: 由於 Java 編程中的鎖件是遞迴的，這些呼叫並不像「由其他執行緒產生的呼叫」會產生死結。&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;&lt;TR&gt;&lt;TD&gt;&lt;P&gt;&lt;FONT color=&#34;#0000ff&#34;&gt;原文: A second approach, suitable for classes that are not designed to be extended or reimplemented ...&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;&lt;FONT color=&#34;#666666&#34;&gt;譯文 p200: 第二種辦法適用於那些&lt;FONT color=&#34;#ff0000&#34;&gt;不是並非&lt;/FONT&gt;為了擴展或重新實作而設計的class&lt;/FONT&gt;&lt;/P&gt;
+&lt;P&gt;正確的翻譯為: &#34;第二種辦法適用於那些非設計為可擴展或可重新實作的class&#34;。&lt;/P&gt;
+&lt;/TD&gt;&lt;/TR&gt;
+&lt;/TABLE&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Bruce Eckel&#39;s Weblog</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-08-128/</link>
+      <pubDate>Sun, 08 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-08-128/</guid>
+      <description>&lt;p&gt;今天在閱讀一些關於 checked/unchecked exception 爭議的文章時，忽然發現 Bruce Eckel 也有自己的 weblog: &lt;a href=&#34;http://www.mindview.net/WebLog&#34;&gt;Thinking About Computing&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;從 &lt;a href=&#34;http://mindview.net/WebLog/log-0025&#34;&gt;5-2-03 Strong Typing vs. Strong Testing&lt;/a&gt; 及 &lt;a href=&#34;http://www.mindview.net/Etc/Discussions/CheckedExceptions&#34;&gt;Does Java need Checked Exceptions?&lt;/a&gt; 可以看出 Bruce 是傾向於支持 unchecked exception。&lt;/p&gt;
+&lt;p&gt;下面是我找到這些文章的連結路徑：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.manageability.org/blog/stuff/exceptional-exception-handling-techniques&#34;&gt;13 Exceptional Exception Handling Techniques  &lt;/a&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.onjava.com/pub/a/onjava/2003/11/19/exceptions.html&#34;&gt;Best Practices for Exception Handling&lt;/a&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.mindview.net/Etc/Discussions/CheckedExceptions&#34;&gt;Does Java need Checked Exceptions?&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://today.java.net/pub/a/today/2003/12/04/exceptions.html&#34;&gt;Three Rules for Effective Exception Handling&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Aspect-Oriented Programming, Part II</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-09-29-76/</link>
+      <pubDate>Mon, 29 Sep 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-09-29-76/</guid>
+      <description>&lt;p&gt;&lt;a title=&#34;IBM、JBoss聯手Java新功能&#34; href=&#34;http://taiwan.cnet.com/enterprise/topic/story/0,2000053735,20083749,00.htm&#34;&gt;IBM、JBoss聯手Java新功能&lt;/a&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;IBM與開放原始碼Java軟體商JBoss有意進行一項Java標準化計劃，意在反制日益受到歡迎的微軟C#語言。&lt;br&gt;&lt;br&gt;兩家公司目前獨立投資於一項軟體開發技術稱為AOP(aspect-oriented programming)，可加速應用開發速度，且更具彈性，同時也更不容易出錯。&lt;br&gt;&lt;br&gt;JBoss企業開發與策略副總裁Bob Bickel透露，現在兩家公司則有意把AOP變成Java的標準功能。&lt;br&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;看來 AOP 將成為 Java 與 C# 互較長短的新戰場。Java 方面已經有頗為成熟的 &lt;a href=&#34;http://aspectj.org&#34;&gt;AspectJ&lt;/a&gt;，而 C# 方面則是積極發展中。就我看來，要普及 AOP 並讓程式員了解並使用這個嶄新的概念，整合開發環境的支援扮演了一個重要的角色；在這方面，似乎又是 Java 領先 (參考 &lt;a href=&#34;http://www.eclipse.org/ajdt/&#34;&gt;AJDT in Eclipse&lt;/a&gt;)。&lt;/p&gt;
+&lt;p&gt;對 AOP 有興趣的可以參考&lt;a href=&#34;http://william.cswiz.org&#34;&gt;葉秉哲&lt;/a&gt;在 JavaTwo 2003 研討會的演講《&lt;a href=&#34;http://william.cswiz.org/present/20030812-javatwo/&#34;&gt;AspectJ: Beyond OOP&lt;/a&gt;》。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>::Manageability::</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-07-04-63/</link>
+      <pubDate>Fri, 04 Jul 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-07-04-63/</guid>
+      <description>&lt;p&gt;發現了一個很棒的 weblog: &lt;a title=&#34;&#34; href=&#34;http://www.freeroller.net/page/ceperez/&#34;&gt;::Manageability::&lt;/a&gt;，在那裡可以看到許多關於軟體開發的有趣討論〈大多數的文章都是有關 Java 的〉。&lt;/p&gt;
+&lt;p&gt;其中的一則文章《&lt;a href=&#34;http://www.freeroller.net/page/ceperez/20030430#thinking_styles_and_software_engineering&#34;&gt;Thinking Styles and Software Engineering &lt;/a&gt;》提到了一個有趣的&lt;a title=&#34;需要 Excel&#34; href=&#34;http://sern.ucalgary.ca/courses/seng/693/W98/couprie/styles.xls&#34;&gt;心理測驗&lt;/a&gt;，可以用來測試你或是他人偏向那一種思考模式，也許值得應用在面試新人上。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Aspect-Oriented Programming</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-07-01-59/</link>
+      <pubDate>Tue, 01 Jul 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-07-01-59/</guid>
+      <description>&lt;p&gt;「&lt;a href=&#34;http://www.google.com/search?hl=en&amp;amp;ie=UTF-8&amp;amp;oe=UTF-8&amp;amp;q=AOP&#34;&gt;Aspect-Oriented Programming&lt;/a&gt;」是繼OOP之後的新程式設計思維， 大陸的譯名是「面向方面」(有夠饒口的)。&lt;/p&gt;
+&lt;p&gt;aspect 在字典裡的定義是:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;A distinct feature or element in a problem&lt;/li&gt;
+&lt;li&gt;A characteristic to be considered&lt;/li&gt;
+&lt;li&gt;&amp;hellip;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;我想 1. 跟 2. 的解釋是比較貼近 AOP 中 Aspect 的定義。&lt;/p&gt;
+&lt;p&gt;我個人比較有興趣的是 AOP 與 C# 的結合，在 Google 可以找到一些&lt;a href=&#34;http://www.google.com/search?hl=en&amp;amp;ie=UTF-8&amp;amp;oe=UTF-8&amp;amp;q=AOP+C%23&#34;&gt;相關的資訊&lt;/a&gt;。在這個領域將會產生許多有趣的東西，我想。&lt;/p&gt;
+&lt;p&gt;這裡是一些介紹 AOP 的入門文章：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.extremepattern.com/dp/java_aspectj.html&#34;&gt;Extract Aspect Refactoring ?&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.javaworld.com/javaworld/jw-01-2002/jw-0118-aspect.html&#34;&gt;I want my AOP!&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://aspectj.org/doc/dist/progguide/index.html&#34; target=&#34;_blank&#34;&gt;The AspectJ Programming Guide&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www-106.ibm.com/developerworks/java/library/j-aspectj/?dwzone=java&#34; target=&#34;_blank&#34;&gt;Improve modularity with aspect-oriented programming&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

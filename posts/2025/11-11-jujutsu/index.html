@@ -1,0 +1,682 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>版本控制的個人效率追尋：從 git-revise、git-branchstack 到 Jujutsu</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2025/11-11-jujutsu/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+    <link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/css/bootstrap-toc.css" rel="stylesheet">
+  <link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+  <link href='//fonts.googleapis.com/css?family=Julee' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Just+Me+Again+Down+Here' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Source+Code+Pro' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Arvo' rel='stylesheet' type='text/css'>
+
+  <link href="/css/prism.css" rel="stylesheet" />
+  <link href="/css/blog.css" rel="stylesheet" >
+
+  <link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2025/11-11-jujutsu/"/>
+  <meta property="og:title" content="版本控制的個人效率追尋：從 git-revise、git-branchstack 到 Jujutsu"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2025-11-11 02:58:58 -0800 PST"/>
+  
+  <meta property="og:article:tag" content="vcs"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">191</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cxx">cxx <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="//google.com/search" method="get">
+        <div class="form-group">
+          <input type="hidden" name="as_sitesearch" value="blog.simplypatrick.com" />
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9">
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2025/11-10-jujutsu/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            版本控制的「柔術」🥋
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+
+          <a class="next" href="https://blog.simplypatrick.com/posts/2025/11-12-jujutsu/">
+            Git 的痛點到未來：Jujutsu (jj) 版本控制系統的進化之旅
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">版本控制的個人效率追尋：從 git-revise、git-branchstack 到 Jujutsu</h2>
+      <div class="post-meta">
+        <span class="post-date">November 11, 2025</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/vcs"><span class="label label-primary">vcs</span></a>
+        
+      </div>
+      
+
+      <div class="post-content">
+        <blockquote>
+<p><strong>AI 生成聲明：</strong> 本文初稿由 <strong>Claude AI Sonnect 4.5 模型</strong> 生成, 再由個人手動修改而成。</p>
+</blockquote>
+<h2 id="前言git-工作流的痛點">前言：Git 工作流的痛點</h2>
+<p>當我們使用 Git 進行開發時, 經常會遇到這些情況:</p>
+<ul>
+<li>想修改歷史 commit, 需要用 <code>git rebase -i</code> 進入互動模式</li>
+<li>管理多個相關的 feature branches, 需要手動追蹤分支間的依賴關係</li>
+<li>不小心改錯了想回到之前的狀態, 得靠 <code>git reflog</code> 救援</li>
+<li>Commit 之後才發現忘記加檔案, 又要 <code>git commit --amend</code></li>
+</ul>
+<p>這些操作雖然強大, 但往往需要記住複雜的命令組合, 對新手不友善。更重要的是, 它們打斷了開發者的思考流程, 讓人把注意力從「解決問題」轉移到「操作工具」。</p>
+<p>對於追求高效工作流的開發者來說, 這些摩擦累積起來是不可忽視的時間成本。於是, 一些人開始探索更符合自己工作習慣的版本控制方式&hellip;</p>
+<hr>
+<h2 id="第一步git-revise--簡化歷史編輯">第一步：git-revise — 簡化歷史編輯</h2>
+<h3 id="誕生背景">誕生背景</h3>
+<p><code>git-revise</code> 是為了解決 <code>git rebase -i</code> 的複雜性而生。對於經常需要修改 commit 歷史的開發者來說, 互動式 rebase 的流程實在太繁瑣了。git-revise 提供了更直接的方式來達成同樣的目標。</p>
+<h3 id="核心特點">核心特點</h3>
+
+
+  <pre><code class="bash"># 傳統 git rebase 的方式
+git rebase -i HEAD~3  # 進入編輯器, 標記 edit/reword/squash...
+
+# git-revise 的方式
+# 1. 先修改檔案
+vim some_file.py
+# 2. Stage 你的修改
+git add some_file.py
+# 3. 應用到目標 commit
+git revise <commit-hash>  # 將 staged changes 應用到該 commit</code></pre>
+
+<h3 id="優勢">優勢</h3>
+<ul>
+<li><strong>更安全</strong>: 自動保留原始狀態,隨時可以恢復</li>
+<li><strong>更直覺</strong>: 直接操作目標 commit,不需要互動式編輯器</li>
+<li><strong>避免衝突</strong>: 智能處理 commit 間的依賴關係</li>
+</ul>
+<h3 id="限制">限制</h3>
+<ul>
+<li>仍然基於 Git 的 branch 模型</li>
+<li>無法徹底解決多分支管理的複雜性</li>
+</ul>
+<hr>
+<h2 id="第二步git-branchstack--branchless-工作流的個人實踐">第二步：git-branchstack — Branchless 工作流的個人實踐</h2>
+<h3 id="為什麼需要它">為什麼需要它？</h3>
+<p>許多開發者發現, 傳統的「一個 feature 一個 branch」模式在實際工作中很不順手:</p>
+<ul>
+<li>每次切換 branch 都要重新 build</li>
+<li>多個相關的 PR 需要手動維護依賴關係</li>
+<li>在不同 branch 間來回跳轉打斷思緒</li>
+</ul>
+<p>git-branchstack 是一個個人效率工具, 讓你能用更自然的方式工作: 所有開發都在一個 branch 上進行, 只在需要提交 PR 時才生成對應的分支。</p>
+<h3 id="問題場景">問題場景</h3>
+<p>你想在<strong>單一分支</strong>上開發多個功能, 每個功能對應一個 PR:</p>
+<ul>
+<li>功能 A: 重構 authentication</li>
+<li>功能 B: 新增 profile 頁面 (依賴 A)</li>
+<li>功能 C: 一個無關的 bugfix</li>
+</ul>
+<p>傳統做法需要:</p>
+<ol>
+<li>為每個功能建立獨立分支</li>
+<li>在分支間來回切換</li>
+<li>每次切換都重新 build, 浪費時間</li>
+<li>手動管理分支間的依賴關係</li>
+</ol>
+<h3 id="git-branchstack-的創新解法">git-branchstack 的創新解法</h3>
+<p>git-branchstack 讓你<strong>留在本地分支</strong>, 用 commit message 的標籤來標記主題:</p>
+
+
+  <pre><code class="bash"># 在本地分支上正常開發
+git commit -m "[auth-refactor] Update login logic"
+git commit -m "[auth-refactor] Add JWT support"
+git commit -m "[profile-page:auth-refactor] Add profile component"
+git commit -m "[bugfix-123] Fix memory leak"
+
+# 一行命令生成所有分支
+git branchstack</code></pre>
+
+<p>這會自動生成:</p>
+
+
+  <pre><code class="">* local-branch (HEAD)
+|   - [bugfix-123] Fix memory leak
+|   - [profile-page:auth-refactor] Add profile component  
+|   - [auth-refactor] Add JWT support
+|   - [auth-refactor] Update login logic
+|
+|-- bugfix-123 (branch)
+|     - Fix memory leak
+|
+|-- profile-page (branch)
+|     - Add profile component
+|     (based on auth-refactor)
+|
+|-- auth-refactor (branch)
+      - Add JWT support
+      - Update login logic</code></pre>
+
+<h3 id="核心概念">核心概念</h3>
+<ol>
+<li>
+<p><strong>標籤語法</strong>: <code>[topic]</code> 或 <code>[topic:dependency]</code></p>
+<ul>
+<li><code>[auth-refactor]</code> - 獨立主題</li>
+<li><code>[profile:auth-refactor]</code> - profile 依賴 auth-refactor</li>
+</ul>
+</li>
+<li>
+<p><strong>Branchless 開發體驗</strong>:</p>
+<ul>
+<li>所有工作在一個分支上進行</li>
+<li>不需要切換分支, build 不會失效</li>
+<li>修改任何 commit 後, 重跑 <code>git branchstack</code> 更新所有分支</li>
+</ul>
+</li>
+<li>
+<p><strong>利用 git-revise</strong>:</p>
+<ul>
+<li>底層使用 git-revise, 不碰工作目錄</li>
+<li>速度快, 不影響正在進行的工作</li>
+</ul>
+</li>
+</ol>
+<h3 id="實際工作流">實際工作流</h3>
+
+
+  <pre><code class="bash"># 1. 開發階段 - 在本地分支上自由開發
+git commit -m "[feature-A] Implement part 1"
+git commit -m "[feature-A] Implement part 2"
+git commit -m "[feature-B:feature-A] Build on A"
+
+# 2. 需要修改之前的 commit
+git revise --interactive --edit  # 編輯 commit message 加標籤
+git revise <commit-hash>          # 或直接修改內容
+
+# 3. 生成/更新分支用於 PR
+git branchstack
+
+# 4. 推送到 GitHub
+git push origin feature-A
+git push origin feature-B</code></pre>
+
+<h3 id="優勢與限制">優勢與限制</h3>
+<p><strong>優勢</strong>:</p>
+<ul>
+<li>真正的 branchless 體驗, 留在本地分支工作</li>
+<li>自動處理依賴關係</li>
+<li>支援 git rerere 記住衝突解決方案</li>
+<li>永不修改工作目錄, 不影響 build</li>
+</ul>
+<p><strong>限制</strong>:</p>
+<ul>
+<li>需要在 commit message 中手動標記主題</li>
+<li>依賴關係的改變需要修改 commit message</li>
+<li>作者本人已轉向 Jujutsu (根據 <a href="https://github.com/krobelus/git-branchstack">git-branchstack README</a>, 作者表示 <a href="https://github.com/jj-vcs/jj">jj</a> 提供了更乾淨和強大的解決方案)</li>
+</ul>
+<hr>
+<h2 id="革命性轉變jujutsu-jj--重新定義個人版本控制體驗">革命性轉變：Jujutsu (jj) — 重新定義個人版本控制體驗</h2>
+<h3 id="為什麼誕生">為什麼誕生？</h3>
+<p>即使有了 git-revise 和 git-branchstack 這些工具, Git 的基礎模型仍然存在根本性的摩擦。Jujutsu 的作者 Martin von Zweigbergk (同時也是 Google 內部版本控制系統的開發者) 決定: 與其不斷在 Git 上打補丁, 不如從頭設計一個真正符合現代工作流的版本控制系統。</p>
+<p>這不是為了取代 Git 成為「標準」, 而是為追求極致效率的個人開發者提供更好的選擇。</p>
+<h3 id="核心理念轉變">核心理念轉變</h3>
+<p>Jujutsu 不是在 Git 上加工具, 而是<strong>重新思考版本控制該是什麼樣子</strong>:</p>
+<ol>
+<li>
+<p><strong>Change-based, 而非 Commit-based</strong></p>
+<ul>
+<li>每個修改都是一個獨立的 &ldquo;change&rdquo;</li>
+<li>Change 可以隨時修改, 不需要 amend 或 rebase</li>
+</ul>
+</li>
+<li>
+<p><strong>Working Copy 即 Commit</strong></p>
+<ul>
+<li>你的工作目錄就是一個 commit</li>
+<li>不需要 <code>git add</code> + <code>git commit</code> 兩階段</li>
+</ul>
+</li>
+<li>
+<p><strong>真正的非線性歷史</strong></p>
+<ul>
+<li>不需要 branch 也能管理多條開發線</li>
+<li>衝突作為一等公民存在於歷史中</li>
+</ul>
+</li>
+</ol>
+<h3 id="實際操作對比">實際操作對比</h3>
+<h4 id="場景一修改歷史-commit">場景一：修改歷史 Commit</h4>
+<p><strong>Git 方式:</strong></p>
+
+
+  <pre><code class="bash">git rebase -i HEAD~3
+# 標記要修改的 commit 為 'edit'
+# 進行修改
+git add .
+git commit --amend
+git rebase --continue</code></pre>
+
+<p><strong>git-revise 方式:</strong></p>
+
+
+  <pre><code class="bash"># 進行修改
+vim some_file.py
+# Stage 修改
+git add some_file.py
+# 應用到目標 commit
+git revise <commit-hash>  # 直接更新該 commit</code></pre>
+
+<p><strong>Jujutsu 方式:</strong></p>
+
+
+  <pre><code class="bash">jj edit <change-id>  # 直接切換到該 change
+# 進行修改
+jj commit -m "updated"  # 自動更新該 change</code></pre>
+
+<h4 id="場景二管理多個功能開發">場景二：管理多個功能開發</h4>
+<p><strong>傳統 Git 方式:</strong></p>
+
+
+  <pre><code class="bash">git checkout -b feature-A
+# 開發 feature-A
+git commit -m "A"
+
+git checkout -b feature-B
+# 開發 feature-B
+git commit -m "B"
+
+# 要修改 A 時
+git checkout feature-A
+# 修改
+git commit --amend
+git checkout feature-B
+git rebase feature-A  # 手動 rebase</code></pre>
+
+<p><strong>git-branchstack 方式:</strong></p>
+
+
+  <pre><code class="bash"># 所有工作在本地分支進行
+git commit -m "[feature-A] Implement A"
+git commit -m "[feature-B:feature-A] Implement B"
+
+# 生成分支
+git branchstack
+
+# 要修改 A 時
+git add modified_files
+git revise <commit-hash-of-A>  # 修改 A 的 commit
+
+# 重新生成分支, 自動處理依賴
+git branchstack</code></pre>
+
+<p><strong>Jujutsu 方式:</strong></p>
+
+
+  <pre><code class="bash"># 不需要建立 branch
+jj new -m "feature A"  # 創建新 change
+# 開發 feature A
+
+jj new -m "feature B"  # 基於當前創建新 change
+# 開發 feature B
+
+# 要修改 A 時
+jj edit <change-A-id>
+# 修改完自動處理依賴</code></pre>
+
+<h3 id="jujutsu-的核心特性">Jujutsu 的核心特性</h3>
+<h4 id="1-自動追蹤所有歷史">1. 自動追蹤所有歷史</h4>
+
+
+  <pre><code class="bash">jj op log  # 查看所有操作歷史
+jj op undo  # 撤銷任何操作
+jj op restore  # 恢復到任何時間點</code></pre>
+
+<p>不需要 <code>git reflog</code>, 所有操作都可追溯和回復。</p>
+<h4 id="2-衝突處理的新思路">2. 衝突處理的新思路</h4>
+
+
+  <pre><code class="bash"># Jujutsu 讓你可以 commit 帶有衝突的狀態
+jj new  # 即使有衝突也能繼續開發
+jj resolve  # 稍後解決衝突</code></pre>
+
+<h4 id="3-與-git-無縫協作">3. 與 Git 無縫協作</h4>
+
+
+  <pre><code class="bash"># Jujutsu 可以操作 Git repo
+jj git clone <url>
+jj git push
+jj git fetch
+
+# 現有 Git repo 也能用 jj
+cd my-git-repo
+jj init --git-repo .</code></pre>
+
+<hr>
+<h2 id="為什麼-jujutsu-是個人效率工具的終極形態">為什麼 Jujutsu 是個人效率工具的終極形態？</h2>
+<h3 id="心智模型更簡單">心智模型更簡單</h3>
+<ul>
+<li><strong>Git</strong>: Branch → Stage → Commit → Push → Rebase → Merge</li>
+<li><strong>Jujutsu</strong>: Change → Edit → Evolve</li>
+</ul>
+<p>對於個人開發者來說, 這意味著更少的認知負擔, 更多的時間專注在實際問題上。</p>
+<h3 id="更安全的實驗">更安全的實驗</h3>
+<ul>
+<li>所有操作都可以輕鬆撤銷</li>
+<li>不需要擔心「搞壞」歷史</li>
+<li>鼓勵更頻繁的實驗和重構</li>
+</ul>
+<h3 id="更適合現代個人工作流">更適合現代個人工作流</h3>
+<ul>
+<li>Code Review 驅動的開發</li>
+<li>頻繁的 Commit 修改</li>
+<li>多個 PR 同時進行</li>
+<li>不需要團隊統一工具 (可以單人使用 jj, 推送時轉為 Git)</li>
+</ul>
+<hr>
+<h2 id="實戰案例用-jujutsu-管理-feature-stack">實戰案例：用 Jujutsu 管理 Feature Stack</h2>
+
+
+  <pre><code class="bash"># 初始化
+jj git clone https://github.com/user/repo.git
+cd repo
+
+# 創建第一個功能
+jj new -m "Add user authentication"
+# 開發...
+jj describe -m "Add login form and validation"
+
+# 基於此創建第二個功能
+jj new -m "Add user profile page"
+# 開發...
+
+# 創建第三個功能
+jj new -m "Add profile editing"
+# 開發...
+
+# 查看當前狀態
+jj log
+
+# 發現第一個功能需要修改
+jj edit <auth-change-id>
+# 修改...
+jj describe -m "Updated authentication logic"
+
+# 自動處理後續依賴, 不需要手動 rebase!
+
+# 推送到 GitHub
+jj git push --change <change-id>  # 為每個 change 推送對應分支</code></pre>
+
+<h3 id="學習曲線">學習曲線</h3>
+<ol>
+<li><strong>現有 Git 用戶</strong>: 可以繼續在 Git repo 中使用 <code>jj</code>, 逐步適應</li>
+<li><strong>新專案</strong>: 直接用 <code>jj git init</code> 開始, 享受完整體驗</li>
+<li><strong>團隊協作</strong>: 個人可以用 jj 提升效率, 推送時轉換為 Git, 不影響團隊其他成員</li>
+</ol>
+<p>這是一個<strong>個人選擇</strong>, 不需要說服整個團隊改變工作流程。</p>
+<hr>
+<h2 id="結語效率工具的個人化旅程">結語：效率工具的個人化旅程</h2>
+<p>從 <code>git-revise</code> 到 <code>git-branchstack</code>, 再到 Jujutsu, 這是一段持續追求更高效率的旅程。每個工具都代表了開發者對「版本控制應該如何輔助我的工作」的不同思考。</p>
+<p>這些工具的共同點是:</p>
+<ul>
+<li>它們都是<strong>個人效率工具</strong>, 不需要整個團隊採用</li>
+<li>它們都在挑戰 Git 的既有模式</li>
+<li>它們都專注於減少摩擦, 讓開發者更專注於解決問題</li>
+</ul>
+<p>Jujutsu 的特別之處在於, 它不只是改善 Git 的某個面向, 而是重新思考了整個版本控制的心智模型。對於願意投資學習新工具來提升長期效率的開發者來說, 它可能是最佳選擇。</p>
+<p>最重要的是: <strong>這是一個個人選擇</strong>。你不需要等待團隊共識, 不需要說服所有人。如果 Git 的複雜性讓你感到疲憊, 如果你想要更流暢的開發體驗, 那就試試這些工具吧。</p>
+<p>或許你會發現, 提升效率的關鍵不是更努力地使用現有工具, 而是找到更適合你的工具。</p>
+<hr>
+<h2 id="延伸資源">延伸資源</h2>
+<ul>
+<li><a href="https://jj-vcs.github.io/jj/latest/">Jujutsu 官方文檔</a></li>
+<li><a href="https://github.com/jj-vcs/jj">Jujutsu GitHub Repository</a></li>
+<li><a href="https://jj-vcs.github.io/jj/latest/git-comparison/">從 Git 遷移到 Jujutsu 指南</a></li>
+<li><a href="https://discord.gg/dkmfj3aGQN">Jujutsu Discord 社群</a></li>
+<li><a href="https://steveklabnik.github.io/jujutsu-tutorial/">Steve Klabnik 的 Jujutsu 教程</a></li>
+</ul>
+<p>試試看,你可能再也回不去 Git 了! 🚀</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2019.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

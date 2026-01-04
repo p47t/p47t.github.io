@@ -1,0 +1,462 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Scala: Under the Hood #1</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2012/12-10-scala-under-the-hood-number-1/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+    <link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/css/bootstrap-toc.css" rel="stylesheet">
+  <link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+  <link href='//fonts.googleapis.com/css?family=Julee' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Just+Me+Again+Down+Here' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Source+Code+Pro' rel='stylesheet' type='text/css'>
+  <link href='//fonts.googleapis.com/css?family=Arvo' rel='stylesheet' type='text/css'>
+
+  <link href="/css/prism.css" rel="stylesheet" />
+  <link href="/css/blog.css" rel="stylesheet" >
+
+  <link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2012/12-10-scala-under-the-hood-number-1/"/>
+  <meta property="og:title" content="Scala: Under the Hood #1"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2012-12-10 00:00:00 &#43;0000 UTC"/>
+  
+  <meta property="og:article:tag" content="scala"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">191</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cxx">cxx <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="//google.com/search" method="get">
+        <div class="form-group">
+          <input type="hidden" name="as_sitesearch" value="blog.simplypatrick.com" />
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9">
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2012/12-08-rubys-object-model/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Ruby&#39;s Object Model
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+
+          <a class="next" href="https://blog.simplypatrick.com/posts/2013/11-11-develop-android-app-with-scala/">
+            用 Scala 來開發 Android App 入門
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">Scala: Under the Hood #1</h2>
+      <div class="post-meta">
+        <span class="post-date">December 10, 2012</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/scala"><span class="label label-primary">scala</span></a>
+        
+      </div>
+      
+
+      <div class="post-content">
+        <p>我學一個東西向來喜歡盡量深入去瞭解它的運作原理，這兩天看了 Scala 覺得蠻有趣的，也會去想像如果翻譯成 Java 會是怎麼樣的做法。
+如果想知道自己的想法跟 Scala 實作的差距，可以直接做些實驗來比對。例如下面就是個求解最大公因數的實驗，我寫了四個版本 (gcd1 .. gcd4)：</p>
+
+
+  <pre><code class="scala">object GCD {
+  def main(args: Array[String]) {
+    def gcd1(m: Int, n: Int):Int = {
+      if (n == 0) {
+        return m
+      } else {
+        return gcd1(n, m % n)
+      }
+    }
+
+    def gcd2(m: Int, n: Int):Int = {
+      if (n == 0) {
+        m
+      } else {
+        gcd2(n, m % n)
+      }
+    }
+
+    def gcd3(m: Int, n: Int):Int = if (n == 0) m else gcd3(n, m % n)
+
+    var gcd4: (Int,Int) => Int = null
+    gcd4 = (m: Int, n: Int) => if (n == 0) m else gcd4(n, m % n)
+
+    val Array(m, n) = args.map(_.toInt)
+
+    println(gcd1(m, n))
+    println(gcd2(m, n))
+    println(gcd3(m, n))
+    println(gcd4(m, n))
+  }
+}</code></pre>
+
+<p>執行結果如下：</p>
+
+
+  <pre><code class="shell">$ scala GCD 1024 768
+256
+256
+256
+256</code></pre>
+
+<p>用 JD 反編譯出來的實作：</p>
+
+
+  <pre><code class="java">import scala.Array.;
+import scala.Function2;
+import scala.MatchError;
+import scala.Option;
+import scala.Predef.;
+import scala.ScalaObject;
+import scala.Serializable;
+import scala.Tuple2;
+import scala.Tuple2.mcII.sp;
+import scala.collection.IndexedSeq;
+import scala.collection.SeqLike;
+import scala.collection.TraversableLike;
+import scala.collection.immutable.StringLike;
+import scala.reflect.Manifest.;
+import scala.runtime.AbstractFunction1;
+import scala.runtime.AbstractFunction2.mcIII.sp;
+import scala.runtime.BoxesRunTime;
+import scala.runtime.ObjectRef;
+
+public final class GCD$
+
+implements ScalaObject {
+    public static final  MODULE$;
+
+    static {
+        new ();
+    }
+
+    public void main(String[] args) {
+        null; ObjectRef gcd4$1 = new ObjectRef(null);
+        gcd4$1.elem = new AbstractFunction2.mcIII.sp() {
+            public static final long serialVersionUID = 0L;
+            private final ObjectRef gcd4$1;
+
+            public final int apply(int m, int n) { return apply$mcIII$sp(m, n); }
+            public int apply$mcIII$sp(int v1, int v2) {
+                return v2 == 0 ? v1 : ((Function2)this.gcd4$1.elem).apply$mcIII$sp(v2, v1 % v2);
+            }
+        };
+
+        int[] arrayOfInt = (int[])Predef..MODULE$.refArrayOps((Object[])args).map(
+            new AbstractFunction1() {
+                public static final long serialVersionUID = 0L;
+
+                public final int apply(String paramString) {
+                    return Predef..MODULE$.augmentString(paramString).toInt();
+                }
+            }
+        , Array..MODULE$.canBuildFrom(Manifest..MODULE$.Int()));
+
+        Option localOption = Array..MODULE$.unapplySeq(arrayOfInt);
+        if (localOption.isEmpty())
+            throw new MatchError(arrayOfInt);
+
+        IndexedSeq localIndexedSeq = (IndexedSeq)localOption.get();
+
+        if ((localIndexedSeq.lengthCompare(2) == 0 ? 1 : localIndexedSeq == null ? 0 : 0) != 0) {
+            Tuple2.mcII.sp localsp = new Tuple2.mcII.sp(BoxesRunTime.unboxToInt(localIndexedSeq.apply(0)), BoxesRunTime.unboxToInt(localIndexedSeq.apply(1)));
+            int m = localsp._1$mcI$sp();
+            int n = localsp._2$mcI$sp();
+
+            Predef..MODULE$.println(BoxesRunTime.boxToInteger(gcd1$1(m, n)));
+            Predef..MODULE$.println(BoxesRunTime.boxToInteger(gcd2$1(m, n)));
+            Predef..MODULE$.println(BoxesRunTime.boxToInteger(gcd3$1(m, n)));
+            Predef..MODULE$.println(BoxesRunTime.boxToInteger(((Function2)gcd4$1.elem).apply$mcIII$sp(m, n)));
+            return;
+        }
+
+        ObjectRef gcd4$1;
+        throw new MatchError(arrayOfInt);
+    }
+
+    private final int gcd1$1(int m, int n) {
+        while (true)
+        {
+            if (n == 0) {
+                return m;
+            }
+            n = m % n; m = n;
+        }
+    }
+
+    private final int gcd2$1(int m, int n) {
+        while (true) {
+            if (n == 0) {
+                return m;
+            }
+            n = m % n; m = n;
+        }
+    }
+
+    private final int gcd3$1(int m, int n) {
+        while (true) {
+            if (n == 0) return m;
+            n = m % n; m = n;
+        }
+    }
+
+    private GCD$() {
+        MODULE$ = this;
+    }
+}</code></pre>
+
+<p>觀察到的幾點：</p>
+<ul>
+<li>GCD$ 會從 ScalaObject 繼承下來</li>
+<li>區域函數都變成了 private final method</li>
+<li>前三個 gcd 函數基本上是一樣的</li>
+<li>var gcd4 會被翻譯成一個 local ObjectRef object</li>
+<li>gcd4 這個 function literal 會用 Java anonymous function 來實現</li>
+<li>_.toInt 會翻譯成一個 AbstractFunction1 的實現</li>
+<li>augmentString 用來實現從 String 到 StringOps 的 implicit conversion</li>
+<li>unapplySeq 可以對命令列參數提取一個 Option，從其中又可拿到一個 IndexedSeq</li>
+<li>BoxesRunTime 用來負責 boxing/unboxing 的處理</li>
+</ul>
+<p>之後有時間的話會再持續挖些東西出來看。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2019.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>
