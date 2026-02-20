@@ -1,0 +1,559 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Rust 的 async_trait：為什麼 async fn 不能直接用在 trait 裡？</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-async-trait/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-async-trait/"/>
+  <meta property="og:title" content="Rust 的 async_trait：為什麼 async fn 不能直接用在 trait 裡？"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-19 02:39:27 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="async"/>
+  
+  <meta property="og:article:tag" content="futures"/>
+  
+  <meta property="og:article:tag" content="traits"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-pin/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            理解 Rust 的 Pin：從問題到解法
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-llm-provider/">
+            zeroclaw 如何設計 LLM Provider 的抽象層
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">Rust 的 async_trait：為什麼 async fn 不能直接用在 trait 裡？</h2>
+      <div class="post-meta">
+        <span class="post-date">February 19, 2026</span>
+        <a href="/tils"><span class="label label-info">TIL</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/async"><span class="label label-primary">async</span></a>
+        
+        <a href="/tags/futures"><span class="label label-primary">futures</span></a>
+        
+        <a href="/tags/traits"><span class="label label-primary">traits</span></a>
+        
+        
+
+      </div>      
+      <div class="post-content">
+        <p>本文涵蓋為什麼 Rust trait 不支援 <code>async fn</code>、<code>async_trait</code> crate 如何解決這個問題、它的代價是什麼，以及 Rust 1.75 之後的原生支援現況。</p>
+<h2 id="問題async-fn-不能直接用在-trait-裡">問題：async fn 不能直接用在 trait 裡</h2>
+<p>如果你第一次在 Rust 寫 async 相關的 trait，很可能會直覺地這樣寫：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">trait</span> MyTrait {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String; <span style="color:#75715e">// ❌ 編譯錯誤
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>但這在穩定版 Rust（1.75 之前）是不允許的。為什麼？</p>
+<hr>
+<h2 id="根本原因impl-trait-與-dyn-trait-的衝突">根本原因：impl Trait 與 dyn Trait 的衝突</h2>
+<p><code>async fn</code> 是語法糖，它會被編譯器展開成回傳 <code>impl Future</code> 的普通函式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 你寫的：
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 編譯器看到的：
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span> { <span style="color:#f92672">..</span>. }</span></span></code></pre></div>
+
+<p>問題出在 trait 裡。每個實作 trait 的型別，其 <code>do_something</code> 都會回傳一個<strong>不同的具體 Future 型別</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> MyTrait <span style="color:#66d9ef">for</span> StructA {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 回傳型別是某個只有編譯器知道名字的 Future_A
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> MyTrait <span style="color:#66d9ef">for</span> StructB {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 回傳型別是另一個 Future_B，跟 Future_A 完全不同
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這讓 trait 無法做到 <strong>object-safe</strong>（也就是無法用 <code>dyn MyTrait</code>），因為動態派發需要在執行期才知道要呼叫哪個實作，但每個實作的回傳型別大小不同，vtable 根本無法表達。</p>
+<hr>
+<h2 id="解法async_trait-crate">解法：async_trait crate</h2>
+<p><code>async_trait</code> 是由 David Tolnay（<code>serde</code>、<code>anyhow</code> 的作者）開發的 procedural macro，它的做法是把所有 <code>async fn</code> 的回傳值<strong>統一包進 <code>Box</code></strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> async_trait::async_trait;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">trait</span> MyTrait {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> MyTrait <span style="color:#66d9ef">for</span> MyStruct {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;hello&#34;</span>.to_string()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>macro 展開後，實際上變成這樣：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">trait</span> MyTrait {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span> <span style="color:#f92672">+</span> Send <span style="color:#f92672">+</span> &#39;_<span style="color:#f92672">&gt;&gt;</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> MyTrait <span style="color:#66d9ef">for</span> MyStruct {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span> <span style="color:#f92672">+</span> Send <span style="color:#f92672">+</span> &#39;_<span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>        Box::pin(<span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;hello&#34;</span>.to_string()
+</span></span><span style="display:flex;"><span>        })
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>回傳型別統一成 <code>Pin&lt;Box&lt;dyn Future&gt;&gt;</code>，大小固定，vtable 可以表達，<code>dyn MyTrait</code> 就可以正常運作了。</p>
+<hr>
+<h2 id="代價與限制">代價與限制</h2>
+<h3 id="堆積分配heap-allocation">堆積分配（Heap allocation）</h3>
+<p>每次呼叫 async trait method，都會觸發一次 <code>Box::pin()</code>，也就是一次 heap 分配。對於高頻呼叫的場景，這個開銷是需要考慮的。</p>
+<h3 id="send-bound">Send bound</h3>
+<p>預設情況下，<code>async_trait</code> 要求產生的 Future 必須是 <code>Send</code>（可以跨執行緒傳遞），適合多執行緒 async runtime（如 Tokio）。</p>
+<p>如果你的情境不需要 <code>Send</code>（例如單執行緒 runtime），可以這樣關掉：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[async_trait(?Send)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">trait</span> MyTrait {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="生命週期複雜度">生命週期複雜度</h3>
+<p>macro 會自動處理大部分生命週期，但在一些邊緣情況（例如 <code>&amp;self</code> 裡有複雜的借用關係）還是可能需要手動標注，錯誤訊息也可能比較難讀。</p>
+<hr>
+<h2 id="rust-175-的原生支援">Rust 1.75 的原生支援</h2>
+<p>Rust 1.75（2023 年 12 月）穩定了 <strong>Return Position Impl Trait in Trait（RPITIT）</strong>，讓 <code>async fn</code> 可以直接用在 trait 裡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">trait</span> MyTrait {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">do_something</span>(<span style="color:#f92672">&amp;</span>self) -&gt; String; <span style="color:#75715e">// ✅ Rust 1.75+ 可以！
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>不需要任何外部 crate，不需要 <code>Box</code>，沒有 heap 分配。</p>
+<h3 id="但-dyn-trait-仍有限制">但 dyn Trait 仍有限制</h3>
+<p>原生支援的版本有一個重要限制：<strong>動態派發（<code>dyn MyTrait</code>）尚未完全支援</strong>。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">call</span>(obj: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">dyn</span> MyTrait) {  <span style="color:#75715e">// ⚠️ 可能有限制
+</span></span></span><span style="display:flex;"><span>    obj.do_something();
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>如果你需要 <code>dyn Trait</code>，目前仍建議使用 <code>async_trait</code> crate，或者搭配 <code>dynosaur</code> 等新興 crate 來橋接。</p>
+<hr>
+<h2 id="async_trait-與-pin-的關係">async_trait 與 Pin 的關係</h2>
+<p><code>async_trait</code> 展開後的回傳型別是 <code>Pin&lt;Box&lt;dyn Future&gt;&gt;</code>，這裡的 <code>Pin</code> 是必要的——因為 <code>dyn Future</code> 可能是自引用的（async block 裡可能跨 await 持有引用），必須保證它被 poll 的過程中不會被移動。</p>
+<p>這也是為什麼 <code>async_trait</code> 的文件裡，你會看到它與 <code>Pin</code>、<code>Box</code> 密不可分。如果你對 <code>Pin</code> 還不熟悉，可以先閱讀<a href="./rust-pin-blog.md">《深入理解 Rust 的 Pin》</a>。</p>
+<hr>
+<h2 id="應該用哪個">應該用哪個？</h2>
+<table>
+  <thead>
+      <tr>
+          <th>情境</th>
+          <th>建議</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Rust 1.75+，不需要 <code>dyn Trait</code></td>
+          <td>原生 <code>async fn in trait</code></td>
+      </tr>
+      <tr>
+          <td>需要 <code>dyn Trait</code></td>
+          <td><code>async_trait</code> crate</td>
+      </tr>
+      <tr>
+          <td>效能極度敏感，避免 heap 分配</td>
+          <td>考慮手動實作或 <code>impl Trait</code> 參數</td>
+      </tr>
+      <tr>
+          <td>舊版 Rust（&lt; 1.75）</td>
+          <td><code>async_trait</code> crate</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="總結">總結</h2>
+<ul>
+<li>Rust trait 原本不支援 <code>async fn</code>，根本原因是每個實作的 Future 型別不同，無法做到 object-safe。</li>
+<li><code>async_trait</code> crate 透過把回傳值包進 <code>Pin&lt;Box&lt;dyn Future&gt;&gt;</code> 解決這個問題，代價是每次呼叫需要 heap 分配。</li>
+<li>Rust 1.75 穩定了原生的 <code>async fn in trait</code>，但動態派發（<code>dyn Trait</code>）的支援仍不完整，<code>async_trait</code> 在這個場景仍有其價值。</li>
+</ul>
+
+      </div>
+      <hr>
+      
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

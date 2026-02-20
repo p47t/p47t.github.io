@@ -1,0 +1,738 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/c&#43;&#43;/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2019-06-05 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Setup Fuchsia C&#43;&#43; Development on macOS</title>
+      <link>https://blog.simplypatrick.com/posts/2019/06-05-setup-fuchsia-c&#43;&#43;-dev/</link>
+      <pubDate>Wed, 05 Jun 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/06-05-setup-fuchsia-c&#43;&#43;-dev/</guid>
+      <description>&lt;h2 id=&#34;關於-fuchsia&#34;&gt;關於 Fuchsia&lt;/h2&gt;
+&lt;p&gt;Fuchsia 是 Google 開發中的新作業系統，它的底層原始碼可以到 &lt;a href=&#34;https://fuchsia.googlesource.com&#34;&gt;https://fuchsia.googlesource.com&lt;/a&gt; 公開下載。雖然 Google 對外宣稱 Fuchsia 是個實驗性質的專案，但蠻多人認為它有潛力成為 Google 的大一統 OS，慢慢取代掉 Android 或 Chrome OS，姑且不論這是否會發生，對於喜歡研究系統軟體或嵌入式軟體技術的開發人員，Fuchsia 可以讓你一窺如何打造一個現代化的 OS。&lt;/p&gt;
+&lt;h2 id=&#34;fuchsia-的開發環境&#34;&gt;Fuchsia 的開發環境&lt;/h2&gt;
+&lt;p&gt;目前 Fuchsia OS 可以在 Linux 或 macOS 上編譯，這篇主要是分享在 macOS 上建置 C++ 的 OS 開發環境的經驗，包括:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;基本的編輯器 (Vim 及 Visual Studio Code) 設置&lt;/li&gt;
+&lt;li&gt;Code completion 的設置&lt;/li&gt;
+&lt;li&gt;使用 &lt;a href=&#34;https://direnv.net/&#34;&gt;direnv&lt;/a&gt; 來實現設置自動化&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;編輯器選擇&#34;&gt;編輯器選擇&lt;/h2&gt;
+&lt;p&gt;我的環境建置基本是根據這份官方提供的 &lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/docs/development/languages/c-cpp/editors.md&#34;&gt;C++ Editor/IDE Setup&lt;/a&gt; 指南，裡面有提到 CLion, Vim, 以及 Visual Studio Code，試用過後個人推薦 &lt;strong&gt;Vim &amp;gt; VS Code &amp;raquo; CLion&lt;/strong&gt;，主要還是因為個人開發時通常只會需要修改全部 code base 的極小一部份，小巧的編輯器使用體驗會比較流暢，也不會耗用太多的機器資源去處理不會修改的部份。&lt;/p&gt;
+&lt;p&gt;而開發必備的 code completion 功能，個人推薦使用 &lt;strong&gt;compilation database + &lt;code&gt;clangd&lt;/code&gt;&lt;/strong&gt; 的設置。&lt;/p&gt;
+&lt;h2 id=&#34;vim-設置&#34;&gt;Vim 設置&lt;/h2&gt;
+&lt;h3 id=&#34;vim-版本&#34;&gt;Vim 版本&lt;/h3&gt;
+&lt;p&gt;推薦使用 Vim &amp;gt;= 8.1 或是最新的 Neovim (我目前用 v0.3.7)。&lt;/p&gt;
+&lt;h3 id=&#34;fuchsia_dir-及-fuchsiavim&#34;&gt;&lt;code&gt;FUCHSIA_DIR&lt;/code&gt; 及 &lt;code&gt;fuchsia.vim&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Fuchsia 預設提供了&lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/scripts/vim/README.md&#34;&gt;一些 Vim 專用的設定&lt;/a&gt;，在 &lt;code&gt;~/.vimrc&lt;/code&gt; 裡套用這些設定的修改如下:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; $FUCHSIA_DIR !&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  source $FUCHSIA_DIR/scripts/vim/fuchsia.vim
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;endif&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;我不喜歡每次手動設置 &lt;code&gt;export FUCHSIA_DIR=/path/to/fuchsia-dir&lt;/code&gt;，也不喜歡直接修改 &lt;code&gt;~/.bashrc&lt;/code&gt;，所以用 &lt;a href=&#34;https://direnv.net/&#34;&gt;direnv&lt;/a&gt; (直接用 Homebrew 安裝) 在進目錄時自動套用設定。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;path/to/fuchsia-dir/.envrc&lt;/code&gt; 加入:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# For VIM to find fuchsia.vim&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;export FUCHSIA_DIR&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;pwd&lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;之後 &lt;code&gt;cd&lt;/code&gt; 進去就會幫你把 &lt;code&gt;FUCHSIA_DIR&lt;/code&gt; 的環境變量設定好了。&lt;/p&gt;
+&lt;h3 id=&#34;code-completion-設置&#34;&gt;Code Completion 設置&lt;/h3&gt;
+&lt;h4 id=&#34;前置準備&#34;&gt;前置準備&lt;/h4&gt;
+&lt;p&gt;確認 &lt;code&gt;fx build&lt;/code&gt; 是成功的，然後使用 &lt;code&gt;fx compdb&lt;/code&gt; 產生 &lt;code&gt;compile_commands.json&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;language-server-clangd&#34;&gt;Language Server &lt;code&gt;clangd&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;同樣利用 direnv 來套用 &lt;code&gt;PATH&lt;/code&gt; 的修改，因此新增這一行到 &lt;code&gt;path/to/fuchsia-dir/.envrc&lt;/code&gt; :&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;export PATH&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;$FUCHSIA_DIR/buildtools/mac-x64/clang/bin:$PATH&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;目的是讓 Vim 優先使用 Fuchsia 自帶的 &lt;code&gt;clangd&lt;/code&gt;，否則使用其他版本的 &lt;code&gt;clangd&lt;/code&gt; 可能會有 C++ 編譯的問題產生。&lt;/p&gt;
+&lt;h4 id=&#34;conquer-of-completion-coc&#34;&gt;Conquer of Completion (CoC)&lt;/h4&gt;
+&lt;p&gt;因為 &lt;a href=&#34;https://github.com/Valloric/YouCompleteMe&#34;&gt;YCM&lt;/a&gt; 其實有點肥大，安裝上也比較麻煩，我現在比較喜歡用 &lt;a href=&#34;https://github.com/neoclide/coc.nvim&#34;&gt;Coc&lt;/a&gt;，Coc 的詳細配置可以參考 &lt;a href=&#34;https://medium.com/@rohmanhakim/how-to-set-up-code-completion-for-vim-in-macos-9766dd459385&#34;&gt;How to Set Up Code-Completion for Vim in macOS&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;基本上在 Vim 裡執行 &lt;code&gt;:CocConfig&lt;/code&gt; 把以下配置填上應該就行了。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;languageserver&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;clangd&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;command&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;clangd&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rootPatterns&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compile_flags.txt&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compile_commands.json&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.vim/&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.git/&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.hg/&amp;#34;&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;filetypes&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;c&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cc&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cpp&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;objc&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;objcpp&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;visual-studio-code-設置&#34;&gt;Visual Studio Code 設置&lt;/h2&gt;
+&lt;p&gt;VS Code 設置上比較簡單，基本上只要把 &lt;a href=&#34;https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd&#34;&gt;vscode-clangd&lt;/a&gt; 安裝起來並確保 Fuchsia 自帶的 &lt;code&gt;clangd&lt;/code&gt; 可以在 &lt;code&gt;PATH&lt;/code&gt; 裡找到就可以用了。使用速度上雖然比起 Vim 遲鈍了一些，但整體流暢度還是可是在我可以接受的範圍。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>C&#43;&#43; 套件管理: 使用 Conan</title>
+      <link>https://blog.simplypatrick.com/posts/2018/03-12-c&#43;&#43;-conan/</link>
+      <pubDate>Mon, 12 Mar 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/03-12-c&#43;&#43;-conan/</guid>
+      <description>&lt;h3 id=&#34;手動管理-cc-套件&#34;&gt;手動管理 C/C++ 套件&lt;/h3&gt;
+&lt;p&gt;想像你需要使用 &lt;a href=&#34;https://llvm.org/&#34;&gt;LLVM&lt;/a&gt; 開發一個程式，如果在 macOS 上，最簡單的安裝方法是用 Homebrew，一行就搞定: &lt;code&gt;brew install llvm&lt;/code&gt;。但 Homebrew 上的版本不一定是最新的而且也無法同時安裝不同的版本 (例如 LLVM 5.0/6.0 共存) 或同版本但不同設置（例如 LLVM 6.0 的 debug/release 版本)；而在 Linux 及 Windows 上也有各自不同的安裝問題。&lt;/p&gt;
+&lt;p&gt;安裝完畢後，麻煩才剛開始：通常第一步是設置編譯環境的 CPPFLAGS 及 LDFLAGS:&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;For compilers to find this software you may need to set:
+    LDFLAGS:  -L/usr/local/opt/llvm/lib
+    CPPFLAGS: -I/usr/local/opt/llvm/include&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;根據不同的開發環境或編譯器，設置的方法也都不同。最後設置完後編譯及連結也不一定能成功，因為 LLVM 本身可能又依賴其他套件，還需要把它的 dependencies 一一安裝及設置。&lt;/p&gt;
+&lt;h3 id=&#34;conan-介紹&#34;&gt;Conan 介紹&lt;/h3&gt;
+&lt;p&gt;Conan 企圖幫助 C/C++ 脫離這個窘境：沒有一個像樣的套件管理 (package management) 工具。&lt;/p&gt;
+&lt;p&gt;我建議先讀一下 Conan 的文檔來了解如何&lt;a href=&#34;http://docs.conan.io/en/latest/installation.html&#34;&gt;安裝 Conan&lt;/a&gt; 以及&lt;a href=&#34;http://docs.conan.io/en/latest/getting_started.html&#34;&gt;利用 Conan 來使用現成的程式庫&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;如果你是使用 CMake，事情會簡單一些，因為 Conan 提供的 CMake 整合還算好用，使用範例可以參考這個基於 LLVM 的小程式: &lt;a href=&#34;https://github.com/p47r1ck7541/clike&#34;&gt;clike&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;下載套件&#34;&gt;下載套件&lt;/h3&gt;
+&lt;p&gt;除了預設的 &lt;code&gt;conan-center&lt;/code&gt;，Conan 官網建議也可以到 &lt;a href=&#34;https://bintray.com/bincrafters/public-conan&#34;&gt;&lt;code&gt;bincrafters&lt;/code&gt;&lt;/a&gt; 及 &lt;a href=&#34;https://bintray.com/conan-community/conan&#34;&gt;&lt;code&gt;conan-community&lt;/code&gt;&lt;/a&gt; 裡尋找，可以用下列指令新增這兩個 remote:&lt;/p&gt;
+&lt;pre class=&#34;command-line&#34; data-user=&#34;pat&#34; data-host=&#34;host&#34;&gt;&lt;code class=&#34;language-bash&#34;&gt;$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; remote add conan-community https://api.bintray.com/conan/conan-community/conan
+$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; remote add bincrafters https://api.bintray.com/conan/bincrafters/public-conan&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;之後就可以指定 remote 搜尋 package:&lt;/p&gt;
+&lt;pre class=&#34;command-line&#34; data-user=&#34;pat&#34; data-host=&#34;host&#34; data-output=&#34;2-4&#34;&gt;&lt;code class=&#34;language-bash&#34;&gt;$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; search ffmpeg -r=bincrafters
+Existing package recipes:
+
+ffmpeg/3.4@bincrafters/stable&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;目前 server 上面的套件數量不算多，有可能你會找不到你想要的，因此你不能期待很快地有人會幫你做出來，相反地你&lt;strong&gt;必須學會自己創建套件&lt;/strong&gt;才能充分得到使用 Conan 的好處。&lt;/p&gt;
+&lt;h3 id=&#34;創建-package&#34;&gt;創建 package&lt;/h3&gt;
+&lt;p&gt;自己創建一個套件其實也不難，基本的概念如下:&lt;/p&gt;
+&lt;img src=&#39;https://blog.simplypatrick.com/posts/2018/03-12-c&amp;#43;&amp;#43;-conan/package_create_flow.png&#39; width=&#34;100%&#34;&gt;
+&lt;p&gt;整個建置過程需要的目錄結構及流程會是由 Conan 來控制，但你需要提供一個 &lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html&#34;&gt;conanfile.py&lt;/a&gt; 描述每個步驟裡的需要執行的動作。Conan 會把打包的套件放在一個 local cache 裡讓其他的程式來使用。&lt;/p&gt;
+&lt;p&gt;以下示範如何下載 LLVM 6.0 的原始碼, 編譯，最後把它包裝成套件：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;from&lt;/span&gt; conans &lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; ConanFile, CMake
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; glob
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; os
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;LlvmConan&lt;/span&gt;(ConanFile):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    name &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;LLVM&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    version &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;release_60&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    license &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;LLVM Release License&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    url &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;https://github.com/p47r1ck7541/llvm-60&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    description &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; (name, version)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    settings &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;os&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compiler&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;build_type&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;arch&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    generators &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cmake&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;source&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;run(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;git clone https://github.com/llvm-mirror/llvm -b &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt; --depth 1 src&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;version)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;build&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; CMake(self)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;configure(source_folder&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;install()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;package&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;# nothing to do here now because we reuse &amp;#39;cmake install&amp;#39; to package files&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;pass&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;package_info&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp\_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;libs &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[os&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;path&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;basename(a) &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; a &lt;span style=&#34;color:#f92672&#34;&gt;in&lt;/span&gt; glob&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;glob(os&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;path&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;join(self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;package\_folder, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;*.a&amp;#34;&lt;/span&gt;))\]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cppflags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-std=c++11&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-fno-rtti&amp;#34;&lt;/span&gt;\]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;exelinkflags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-lcurses&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-lz&amp;#34;&lt;/span&gt;\]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;幾個關鍵步驟：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#source&#34;&gt;&lt;code&gt;source()&lt;/code&gt;&lt;/a&gt;: 利用 &lt;code&gt;git clone&lt;/code&gt; 下載原始碼&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#build&#34;&gt;&lt;code&gt;build()&lt;/code&gt;&lt;/a&gt;: 負責編譯，這裏我們直接使用 Conan 提供的 CMake class 來控制 cmake 的執行，值得注意的是我們直接利用 &lt;code&gt;cmake.install()&lt;/code&gt; 來取代實際打包套件的工作。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#package&#34;&gt;&lt;code&gt;package()&lt;/code&gt;&lt;/a&gt;: 如上解釋，不需做任何事。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#package-info&#34;&gt;&lt;code&gt;package_info()&lt;/code&gt;&lt;/a&gt;: 提供套件的相關使用資訊。例如 &lt;code&gt;cppflags&lt;/code&gt; 及 &lt;code&gt;exelinkflags&lt;/code&gt; 是寫死的，但 &lt;code&gt;libs&lt;/code&gt; 則是運行 Python script 搜尋編譯結果找出來的。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;完整範例可以參考這個 GitHub project: &lt;a href=&#34;https://github.com/p47r1ck7541/conan-llvm-60&#34;&gt;conan-llvm-60&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;實際運作過程如下(中間請自行快轉):&lt;/p&gt;
+&lt;script src=&#34;https://asciinema.org/a/9yi010lhV4Bvjk321P8h151aB.js&#34; id=&#34;asciicast-9yi010lhV4Bvjk321P8h151aB&#34; async&gt;&lt;/script&gt;
+&lt;h3 id=&#34;總結&#34;&gt;總結&lt;/h3&gt;
+&lt;p&gt;就簡化自己手動管理 C/C++ 套件的工作來看，我認為 Conan 提供的好處值得你花時間去學它，至於它是否能成為主流的 C/C++ 套件管理工具，那就等待時間來驗證了。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>C&#43;&#43; 單元測試: 使用 Catch2</title>
+      <link>https://blog.simplypatrick.com/posts/2018/03-10-catch2/</link>
+      <pubDate>Sat, 10 Mar 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/03-10-catch2/</guid>
+      <description>&lt;h3 id=&#34;catch2-介紹&#34;&gt;Catch2 介紹&lt;/h3&gt;
+&lt;p&gt;介紹一下最近有在使用的一個 C++ test framework, &lt;a href=&#34;https://github.com/catchorg/Catch2&#34;&gt;Catch2&lt;/a&gt;，它對自己的描述是:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;A modern, C++-native, header-only, test framework for unit-tests, TDD and BDD - using C++11, C++14, C++17 and later (or C++03 on the Catch1.x branch)&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;我主要的用途是做一些 C++ 小程式的簡單驗證，因此&lt;strong&gt;簡單易用&lt;/strong&gt;是我首要的選擇條件，而 Catch2 應該是目前找的到最好的選擇，例如這是個 &lt;a href=&#34;https://en.wikipedia.org/wiki/Huffman_coding&#34;&gt;Huffman coding&lt;/a&gt; 的測試代碼:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;TEST_CASE(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;HuffmanEncoding&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Symbol&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; symbols{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;8.17&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;b&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.49&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;c&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.78&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;d&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;4.25&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;e&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;12.7&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;f&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.23&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;g&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.02&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;h&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;6.09&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;i&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;6.97&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;j&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.15&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;k&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.77&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;l&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;4.03&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;m&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.41&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;n&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;6.75&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;o&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;7.51&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;p&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.93&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;q&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.10&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;r&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;5.99&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;s&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;6.33&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;t&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;9.06&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;u&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.76&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;v&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.98&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;w&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2.36&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;x&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.15&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;y&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.97&lt;/span&gt;}, {&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;z&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.07&lt;/span&gt;},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    HuffmanEncoding(symbols);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    REQUIRE(symbols[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt;].code &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;1110&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    REQUIRE(symbols[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;e&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt;].code &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;100&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    REQUIRE(symbols[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;t&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt;].code &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;000&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    REQUIRE(symbols[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;z&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;a&amp;#39;&lt;/span&gt;].code &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;001001000&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;可以看到代碼非常地簡潔而易懂，你只要學怎麼用 &lt;code&gt;TEST_CASE&lt;/code&gt; 及 &lt;code&gt;REQUIRE&lt;/code&gt; 就好了。&lt;/p&gt;
+&lt;h3 id=&#34;如何使用-catch&#34;&gt;如何使用 Catch&lt;/h3&gt;
+&lt;p&gt;中文的介紹可以參考 &lt;a href=&#34;http://blog.guorongfei.com/2016/08/22/cpp-unit-test-catch/&#34;&gt;“C++ 的单元测试工具 —— Catch | 时习之”&lt;/a&gt;，只是關於如何 &lt;code&gt;#include &amp;quot;catch.hpp&amp;quot;&lt;/code&gt; 的部分我覺得描述的不是很精確，建議可以讀一下 &lt;a href=&#34;https://github.com/catchorg/Catch2/blob/master/docs/slow-compiles.md&#34;&gt;&amp;ldquo;Why do my tests take so long to compile?&amp;rdquo;&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;真的很介意 compile time 受到影響的人，可以考慮關掉一些沒用到的功能來加速編譯: &lt;a href=&#34;https://github.com/catchorg/Catch2/blob/master/docs/configuration.md#other-toggles&#34;&gt;Catch2/configuration&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;catch2-的原理&#34;&gt;Catch2 的原理&lt;/h3&gt;
+&lt;h3 id=&#34;神奇的-require&#34;&gt;神奇的 REQUIRE&lt;/h3&gt;
+&lt;p&gt;有用過其他的 C++ test framework 例如 &lt;a href=&#34;https://github.com/google/googletest&#34;&gt;googletest&lt;/a&gt; 的人，應該會對 Catch 的 &lt;code&gt;REQUIRE&lt;/code&gt; 感到好奇:&lt;/p&gt;
+&lt;p&gt;為什麼 googletest 需要使用較不自然的 &lt;code&gt;ASSERT_EQ(a, b)&lt;/code&gt;, &lt;code&gt;ASSERT_NE(a, b)&lt;/code&gt; 而 Catch 只需要寫 &lt;code&gt;REQUIRE(a == b)&lt;/code&gt; 及 &lt;code&gt;REQUIRE(a != b)&lt;/code&gt;？&lt;/p&gt;
+&lt;h4 id=&#34;拆解表達式-decomposing-an-expression&#34;&gt;拆解表達式 (Decomposing an expression)&lt;/h4&gt;
+&lt;p&gt;考慮下列這個有問題的 &lt;code&gt;Factorial&lt;/code&gt; 實作及它的測試代碼:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Factorial&lt;/span&gt;( &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; number ) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;   &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; number &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; number : Factorial( number &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; ) &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; number;  &lt;span style=&#34;color:#75715e&#34;&gt;// fail
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;TEST_CASE( &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Factorial of 0 is 1 (fail)&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;[single-file]&amp;#34;&lt;/span&gt; ) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    REQUIRE( Factorial(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; );
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;REQUIRE(Factorial(0) == 1);&lt;/code&gt; 會輸出下列的結果:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;010&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;TestCase.cpp:&lt;span style=&#34;color:#ae81ff&#34;&gt;14&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; failed: &lt;span style=&#34;color:#a6e22e&#34;&gt;Factorial&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這表示 &lt;code&gt;REQUIRE&lt;/code&gt; 需要從 &lt;code&gt;Factorial(1) == 1&lt;/code&gt; 拆解出下列五個資訊：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;整個表達式 &amp;ldquo;Factorial(0) == 1&amp;rdquo; 的字串值&lt;/li&gt;
+&lt;li&gt;表達式左邊 Factorial(0) 的結果，也就是 0&lt;/li&gt;
+&lt;li&gt;使用的 operator, 也就是 &amp;ldquo;==&amp;rdquo;&lt;/li&gt;
+&lt;li&gt;表達式右邊 1 的值，也就是常量 1&lt;/li&gt;
+&lt;li&gt;表達式的結果，在這個例子是 false&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;也就是說 Catch2 必須在 compile time 拆解這個表達式，這裡需要用到一些 &lt;a href=&#34;https://en.wikipedia.org/wiki/Template_metaprogramming&#34;&gt;template metaprogramming&lt;/a&gt; 的技巧。&lt;/p&gt;
+&lt;h4 id=&#34;require&#34;&gt;REQUIRE&lt;/h4&gt;
+&lt;p&gt;&lt;code&gt;REQUIRE&lt;/code&gt; 是用 macro 來定義的，所以整個表達式的字串值可以簡單用 &lt;a href=&#34;http://gcc.gnu.org/onlinedocs/gcc-3.4.3/cpp/Stringification.html&#34;&gt;stringification&lt;/a&gt; 拿到。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#define REQUIRE( ... ) INTERNAL_CATCH_TEST( &amp;#34;REQUIRE&amp;#34;, Catch::ResultDisposition::Normal, __VA_ARGS__  )
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#define INTERNAL_CATCH_TEST( macroName, resultDisposition, ... ) \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;    do { \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;        Catch::AssertionHandler catchAssertionHandler( macroName, CATCH_INTERNAL_LINEINFO, CATCH_INTERNAL_STRINGIFY(__VA_ARGS__), resultDisposition ); \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;        INTERNAL_CATCH_TRY { \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;            CATCH_INTERNAL_SUPPRESS_PARENTHESES_WARNINGS \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;            catchAssertionHandler.handleExpr( Catch::Decomposer() &amp;lt;= __VA_ARGS__ ); \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;            CATCH_INTERNAL_UNSUPPRESS_PARENTHESES_WARNINGS \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;        } INTERNAL_CATCH_CATCH( catchAssertionHandler ) \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;        INTERNAL_CATCH_REACT( catchAssertionHandler ) \
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;    } while( (void)0, false &amp;amp;&amp;amp; static_cast&amp;lt;bool&amp;gt;( !!(__VA_ARGS__) ) ) &lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// the expression here is never evaluated at runtime but it forces the compiler to give it a look
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// The double negation silences MSVC&amp;#39;s C4800 warning, the static_cast forces short-circuit evaluation if the type has overloaded &amp;amp;&amp;amp;.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;catchdecomposer&#34;&gt;Catch::Decomposer&lt;/h4&gt;
+&lt;p&gt;而 2, 3, 4 的部分就要靠 &lt;code&gt;Catch::Decomposer&lt;/code&gt;，這裡用的
+template metaprogramming 技巧叫作 &lt;a href=&#34;https://en.wikipedia.org/wiki/Expression_templates&#34;&gt;expression template&lt;/a&gt;。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Decomposer&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; ( T &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; lhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; ExprLhs&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; ExprLhs&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt;{ lhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; ( &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; value ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; ExprLhs&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; ExprLhs&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;{ value };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;Decomposer&lt;/code&gt; 用 &lt;code&gt;&amp;lt;=&lt;/code&gt; 跟表達式的左邊結合變成 &lt;code&gt;ExprLhs&amp;lt;T const &amp;amp;&amp;gt;&lt;/code&gt;，&lt;code&gt;ExprLhs&lt;/code&gt; 是個 C++ template:&lt;/p&gt;
+&lt;h4 id=&#34;exprlhs&#34;&gt;ExprLhs&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; LhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ExprLhs&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    LhsT m_lhs;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;explicit&lt;/span&gt; ExprLhs( LhsT lhs ) &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; m_lhs( lhs ) {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { compareEqual( m_lhs, rhs ), m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;==&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; ( &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;==&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { compareNotEqual( m_lhs, rhs ), m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;!=&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; ( &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;!=&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;gt;&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;lt;&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;gt;=&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; ( RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; rhs ) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; BinaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT, RhsT &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; { m_lhs &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; rhs, m_lhs, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;lt;=&amp;#34;&lt;/span&gt;, rhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;makeUnaryExpr&lt;/span&gt;() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; UnaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; UnaryExpr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;LhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;{ m_lhs };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;ExprLhr&lt;/code&gt; 利用 operator overloading 來知道是用那個 operator 跟表達式的右邊做運算，最後把整個表達式轉換成一個 &lt;code&gt;BinaryExpr&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;binaryexpr&#34;&gt;BinaryExpr&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; LhsT, &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RhsT&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;BinaryExpr&lt;/span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt; ITransientExpression {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    LhsT m_lhs;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    StringRef m_op;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    RhsT m_rhs;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    BinaryExpr( &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; comparisonResult, LhsT lhs, StringRef op, RhsT rhs )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;   ITransientExpression{ true, comparisonResult },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        m_lhs( lhs ),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        m_op( op ),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        m_rhs( rhs )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;之前我們提到的 2, 3, 4, 5 的資訊就存在 &lt;code&gt;BinaryExpr&lt;/code&gt; 的 &lt;code&gt;m_lhs&lt;/code&gt;, &lt;code&gt;m_op&lt;/code&gt;, &lt;code&gt;m_rhs&lt;/code&gt;, 及 &lt;code&gt;ITransientExpression&lt;/code&gt; 裡面。&lt;/p&gt;
+&lt;h3 id=&#34;搭配-clion-使用&#34;&gt;搭配 CLion 使用&lt;/h3&gt;
+&lt;p&gt;另外我還蠻推薦使用 JetBrains 的 C++ IDE: &lt;a href=&#34;https://www.jetbrains.com/clion/&#34;&gt;CLion&lt;/a&gt;，它目前有&lt;a href=&#34;https://blog.jetbrains.com/clion/2017/03/to-catch-a-clion/&#34;&gt;內建 Catch2 的支援&lt;/a&gt;，用它執行測試非常地簡單方便:&lt;/p&gt;
+&lt;img width=&#34;100%&#34; src=&#39;https://blog.simplypatrick.com/posts/2018/03-10-catch2/failing-test.png&#39;&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Reference Counting in Android libutils</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</link>
+      <pubDate>Sun, 12 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-12-reference-counting-in-android-libutils/</guid>
+      <description>&lt;p&gt;從事 Android native framework 層的開發一定會接觸到兩個 C++ template class: sp 及 wp，分別是 strong pointer 及 weak pointer 的簡稱，是兩個看似簡單但卻有著魔鬼細節的 utility class。&lt;/p&gt;
+&lt;p&gt;一個比較典型使用 weak pointer 的狀況就是 Listener pattern，例如:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TimedTextPlayer&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    wp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;MediaPlayerBase&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; mListener;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; TimedTextPlayer&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;postTextEvent(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; sp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;ParcelEvent&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;amp;&lt;/span&gt; parcel, &lt;span style=&#34;color:#66d9ef&#34;&gt;int64_t&lt;/span&gt; timeUs) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;MediaPlayerBase&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; listener &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; mListener.promote();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (listener &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; NULL) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        listener&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getCurrentPosition(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;positionMs);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這個例子如果使用 sp 來記錄 listener 很容易因為忘了移除 listener 而造成 memory leak。用了 wp 也就沒有這個困擾，不過額外的開銷就是 wp 必須先呼叫 promote() 拿到一個 sp 才能使用。&lt;/p&gt;
+&lt;p&gt;如果要了解 sp 及 wp 的原理，必定要先了解 RefBase，因為這兩個 class 都必須搭配繼承自 RefBase 的 class 才能運作，以下是他們之間的大致關係：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;http://www.plantuml.com:80/plantuml/png/VLB1IiD04BtdAuOMIXhjGRr9BQXO43o85iHJMPD93IRPPNVQ8bg_tPriqcPZwcd3l3Tlthn9d0jZu0dJ6s4GlWA0autC4iZA-9cqB5TXbeptrGJxggdKCTvt6xAIBiwN12ia1zpATKdXE61mY-93OxgaJuKHn1e5uOkjDSq-RYKOj2wDwn_MXaCc3pUPfhN8uQUtMbcKvJpJXYoX5tmGfZR93EUXozalU4s4XI9CmZGNAtCA_NpMh5rNYhiWQ6AUVayci7Xzl0k2kCg_lQv_X7OepGdQjJSfSn3EqNydu9xc0BlksAnGkHlRT1HEo2kn11VgBI8e-F4eSmw4zRs5gdNRimv93Cu645cKNy_D9HHyxhrJDUMyPfNBoSBENYhI_Et_AONc9cl9s8OPA2qBIUw7SF75EGhjCjWg64I7yQpFOolX3kQjmnpTycQEURCcHY0LQa5INuKMaVIEUlmNYcLfg1AQZHgITMYEE_m5&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;!--
+class RefBase {
+  +void incStrong(id)
+  +void decStrong(id)
+  +void forceIncStrong(id)
+  +int32_t getStrongCount()
+
+  +weakref_type* createWeak(id)
+  +weakref_type* getWeakRefs()
+
+  #RefBase()
+  #virtual ~RefBase()
+  #virtual void onFirstRef()
+  #virtual void onLastStrongRef(id)
+  #virtual void onIncStrongAttempted(flags, id)
+  #virtual void onLastWeakRef(id)
+}
+
+RefBase &lt;|-- TYPE
+
+class weakref_type {
+  +void incWeak(id)
+  +void decWeak(id)
+  +bool attemptIncStrong(id)
+  +int32_t getWeakCount()
+}
+
+class weakref_impl {
+  +int32_t mStrong
+  +int32_t mWeak
+  +RefBase* mBase
+  +int32_t mFlags
+}
+
+weakref_type &lt;|-- weakref_impl
+
+RefBase &#34;1&#34; *-- &#34;1&#34; weakref_impl : mRefs
+
+class wp&lt;TYPE&gt; {
+  -T* m_ptr
+  -weakref_type* mrefs
+  +sp&lt;T&gt; promote()
+  +void clear()
+}
+
+wp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+wp &#34;*&#34; *-- &#34;1&#34; weakref_type : m_refs
+
+class sp&lt;TYPE&gt; {
+  -T* m_ptr
+  +sp&amp; operator=(T* other)
+  +sp&amp; operator=(const sp&lt;T&gt;&amp; other)
+}
+
+sp &#34;*&#34; *-- &#34;1&#34; TYPE : m_ptr
+```
+
+其中 strong pointer 的實現相當簡單：
+
+```cpp
+template&lt;typename T&gt; sp&lt;T&gt;::sp(T* other) : m_ptr(other) {
+    if (other) other-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::sp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(U* other) : m_ptr(other) {
+    if (other) ((T*)other)-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; sp&lt;T&gt;::sp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) m_ptr-&gt;incStrong(this);
+}
+
+template&lt;typename T&gt; sp&lt;T&gt;::~sp() {
+    if (m_ptr) m_ptr-&gt;decStrong(this);
+}
+```
+
+而 weak pointer 則是需要經由 `RefBase::createWeak` 或是 `weakref_type::incWeak` 來增加 weak reference：
+
+```cpp
+template&lt;typename T&gt; wp&lt;T&gt;::wp(T* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const wp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr), m_refs(other.m_refs) {
+    if (m_ptr) m_refs-&gt;incWeak(this);
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::wp(const sp&lt;T&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(U* other) : m_ptr(other) {
+    if (other) m_refs = other-&gt;createWeak(this);
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const wp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = other.m_refs;
+        m_refs-&gt;incWeak(this);
+    }
+}
+
+template&lt;typename T&gt; template&lt;typename U&gt; wp&lt;T&gt;::wp(const sp&lt;U&gt;&amp; other) : m_ptr(other.m_ptr) {
+    if (m_ptr) {
+        m_refs = m_ptr-&gt;createWeak(this);
+    }
+}
+
+template&lt;typename T&gt; wp&lt;T&gt;::~wp() {
+    if (m_ptr) m_refs-&gt;decWeak(this);
+}
+--&gt;
+&lt;p&gt;其中的 promote() 實現如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; sp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; wp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;promote() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; result;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (m_ptr &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; m_refs&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;attemptIncStrong(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;result)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        result.set_pointer(m_ptr);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; result;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; RefBase&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;weakref_type&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;attemptIncStrong(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; id)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    incWeak(id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    weakref_impl&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; impl &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;weakref_impl&lt;span style=&#34;color:#f92672&#34;&gt;*&amp;gt;&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int32_t&lt;/span&gt; curCount &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mStrong;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ALOG_ASSERT(curCount &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;attemptIncStrong called on %p after underflow&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;              &lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (curCount &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; curCount &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; INITIAL_STRONG_VALUE) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (android_atomic_cmpxchg(curCount, curCount&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mStrong) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        curCount &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mStrong;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (curCount &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; curCount &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; INITIAL_STRONG_VALUE) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; allow;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (curCount &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; INITIAL_STRONG_VALUE) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// Attempting to acquire first strong reference...  this is allowed
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// if the object does NOT have a longer lifetime (meaning the
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// implementation doesn&amp;#39;t need to see this), or if the implementation
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// allows it to happen.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            allow &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mFlags&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;OBJECT_LIFETIME_WEAK) &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; OBJECT_LIFETIME_WEAK
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                  &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mBase&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// Attempting to revive the object...  this is allowed
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// if the object DOES have a longer lifetime (so we can safely
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// call the object with only a weak ref) and the implementation
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// allows it to happen.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            allow &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mFlags&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;OBJECT_LIFETIME_WEAK) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; OBJECT_LIFETIME_WEAK
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mBase&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;onIncStrongAttempted(FIRST_INC_STRONG, id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;allow) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            decWeak(id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; false;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        curCount &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; android_atomic_inc(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mStrong);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// If the strong reference count has already been incremented by
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// someone else, the implementor of onIncStrongAttempted() is holding
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// an unneeded reference.  So call onLastStrongRef() here to remove it.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// (No, this is not pretty.)  Note that we MUST NOT do this if we
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// are in fact acquiring the first reference.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (curCount &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; curCount &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; INITIAL_STRONG_VALUE) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mBase&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;onLastStrongRef(id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;addStrongRef(id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#if PRINT_REFS
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ALOGD(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;attemptIncStrong of %p from %p: cnt=%d&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;, id, curCount);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#endif
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (curCount &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; INITIAL_STRONG_VALUE) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        android_atomic_add(&lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;INITIAL_STRONG_VALUE, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mStrong);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        impl&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;mBase&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;onFirstRef();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; true;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;有幾個重點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Reference count 其實是存在 weakref_impl 裡面的，跟被參考物件 T 的生命週期是獨立的。&lt;/li&gt;
+&lt;li&gt;RefBase 有宣告virtual function，比較 heavy weight 一點，在一些比較簡單的狀況可以考慮使用 &lt;code&gt;LightRefBase&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;目前的實現是 thread-safe 的，所以對於 strong/weak ref count 的操作都用使用 atomic operation 例如 &lt;code&gt;android_atomic_inc&lt;/code&gt; 或 &lt;code&gt;android_atomic_dec&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;從目前實現看來，原本的設計是希望在第一個 strong ref 被加上前，也就是 constructor 裡面不應該做太 heavy weight 的事。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::onFirstRef()&lt;/code&gt; 是當第一次被 strong ref 時會被呼叫，通常是 override 它來做資源配置或是準備工作，算是一種 lazy initialization。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;RefBase::OnLastStrongRef()&lt;/code&gt; 是當最後一個 strong ref 被釋放時會被呼叫，跟 &lt;code&gt;OnFirstRef&lt;/code&gt; 相反是用來做資源釋放或是收尾工作。&lt;/li&gt;
+&lt;li&gt;預設是最後一個 strong ref 時，實際的物件就會被摧毀；但是也可以透過 &lt;code&gt;extendObjectLifeTime(OBJECT_LIFETIME_WEAK)&lt;/code&gt; 讓物件只有要 weak ref 還在時便存活著，目前的唯一的應用實例是 Binder proxy (繼承自 &lt;code&gt;BpRefBase&lt;/code&gt;)。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;有了這些認知，來看 &lt;code&gt;BpRefBase&lt;/code&gt; 的實現便會比較容易了解其意義：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;BpRefBase&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;BpRefBase(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; sp&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;IBinder&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;amp;&lt;/span&gt; o)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; mRemote(o.get()), mRefs(NULL), mState(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    extendObjectLifetime(OBJECT_LIFETIME_WEAK);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (mRemote) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        mRemote&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;incStrong(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);           &lt;span style=&#34;color:#75715e&#34;&gt;// Removed on first IncStrong().
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        mRefs &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; mRemote&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;createWeak(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// Held for our entire lifetime.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;BpRefBase&lt;span style=&#34;color:#f92672&#34;&gt;::~&lt;/span&gt;BpRefBase()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (mRemote) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;(mState&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;kRemoteAcquired)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            mRemote&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;decStrong(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        mRefs&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;decWeak(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; BpRefBase&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;onFirstRef()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    android_atomic_or(kRemoteAcquired, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;mState);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; BpRefBase&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;onLastStrongRef(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; id)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (mRemote) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        mRemote&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;decStrong(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; BpRefBase&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;onIncStrongAttempted(&lt;span style=&#34;color:#66d9ef&#34;&gt;uint32_t&lt;/span&gt; flags, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; id)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; mRemote &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; mRefs&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;attemptIncStrong(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; false;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Stan Lippman on C&#43;&#43;/CLI</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-12-06-205/</link>
+      <pubDate>Mon, 06 Dec 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-12-06-205/</guid>
+      <description>&lt;p&gt;我一直很好奇為什麼在 C++ 領域赫赫有名的 Stan Lippman 及 Herb Sutter 會加入 Microsoft?&lt;/p&gt;
+&lt;p&gt;從&lt;a href=&#34;http://blog.csdn.net/myan/archive/2004/10/13/134978.aspx&#34;&gt;孟岩對 Stan 的訪談&lt;/a&gt;或許可以一窺其究竟。從文中可以看出，透過 C++/CLI 一方面可以實現 Stan 個人對 C++ 改進的期許，一方面也大大增強了 C++ 在 .NET 平台上的實用性。或許有許多人認為 Stan 這樣的作法是叛離 C++ 的正統道路，我倒是很樂觀其成。如果今天 Microsoft 不做 C++ 與 .NET 的 Interop，一定會有其他的公司或開放原始碼的專案會去做，畢竟有需求就會有人想辦法供給。&lt;/p&gt;
+&lt;p&gt;看看訪談文章的評論，發現有些人總是喜歡把別人當成笨蛋或是認為別人做任何事都是出於自私的目的，胸襟及眼光實在是小了些。人們所以為的往往是自己想法的反射。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>C&#43;&#43; Coding Standards</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-11-23-202/</link>
+      <pubDate>Tue, 23 Nov 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-11-23-202/</guid>
+      <description>&lt;p&gt;預覽 Herb Sutter 及 Andrei Alexandrescu 的新書《&lt;a href=&#34;http://www.artima.com/cppsource/codestandards.html&#34;&gt;C++ Coding Standards&lt;/a&gt;》。&lt;/p&gt;
+&lt;p&gt;還沒有機會去書店買，但從 &lt;a href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/0321113586/002-8340650-8752853?v=glance&#34;&gt;Amazon.com 裡的評論&lt;/a&gt;看來，這本書與 Effective C++ 似乎頗有互補作用。&lt;/p&gt;
+&lt;ol start=&#34;0&#34;&gt;
+&lt;li&gt;Don’t sweat the small stuff. (Or: Know what not to standardize.) 2&lt;/li&gt;
+&lt;li&gt;Compile cleanly at high warning levels. 4&lt;/li&gt;
+&lt;li&gt;Use an automated build system. 7&lt;/li&gt;
+&lt;li&gt;Use a version control system. 8&lt;/li&gt;
+&lt;li&gt;Invest in code reviews. 9&lt;/li&gt;
+&lt;li&gt;Give one entity one cohesive responsibility. 12&lt;/li&gt;
+&lt;li&gt;Correctness, simplicity, and clarity come first. 13&lt;/li&gt;
+&lt;li&gt;Know when and how to code for scalability. 14&lt;/li&gt;
+&lt;li&gt;Don’t optimize prematurely. 16&lt;/li&gt;
+&lt;li&gt;Don’t pessimize prematurely. 18&lt;/li&gt;
+&lt;li&gt;Minimize global and shared data. 19&lt;/li&gt;
+&lt;li&gt;Hide information. 20&lt;/li&gt;
+&lt;li&gt;Know when and how to code for concurrency. 21&lt;/li&gt;
+&lt;li&gt;Ensure resources are owned by objects. Use explicit RAII and smart pointers. 24&lt;/li&gt;
+&lt;li&gt;Prefer compile- and link-time errors to run-time errors. 28&lt;/li&gt;
+&lt;li&gt;Use const proactively. 30&lt;/li&gt;
+&lt;li&gt;Avoid macros. 32&lt;/li&gt;
+&lt;li&gt;Avoid magic numbers. 34&lt;/li&gt;
+&lt;li&gt;Declare variables as locally as possible. 35&lt;/li&gt;
+&lt;li&gt;Always initialize variables. 36&lt;/li&gt;
+&lt;li&gt;Avoid long functions. Avoid deep nesting. 38&lt;/li&gt;
+&lt;li&gt;Avoid initialization dependencies across compilation units. 39&lt;/li&gt;
+&lt;li&gt;Minimize definitional dependencies. Avoid cyclic dependencies. 40&lt;/li&gt;
+&lt;li&gt;Make header files self-sufficient. 42&lt;/li&gt;
+&lt;li&gt;Always write internal #include guards. Never write external #include guards. 43&lt;/li&gt;
+&lt;li&gt;Take parameters appropriately by value, (smart) pointer, or reference. 46&lt;/li&gt;
+&lt;li&gt;Preserve natural semantics for overloaded operators. 47&lt;/li&gt;
+&lt;li&gt;Prefer the canonical forms of arithmetic and assignment operators. 48&lt;/li&gt;
+&lt;li&gt;Prefer the canonical form of ++ and &amp;ndash;. Prefer calling the prefix forms. 50&lt;/li&gt;
+&lt;li&gt;Consider overloading to avoid implicit type conversions. 51&lt;/li&gt;
+&lt;li&gt;Avoid overloading &amp;amp;&amp;amp;, ||, or , (comma). 52&lt;/li&gt;
+&lt;li&gt;Don’t write code that depends on the order of evaluation of function arguments. 54&lt;/li&gt;
+&lt;li&gt;Be clear what kind of class you’re writing. 56&lt;/li&gt;
+&lt;li&gt;Prefer minimal classes to monolithic classes. 57&lt;/li&gt;
+&lt;li&gt;Prefer composition to inheritance. 58&lt;/li&gt;
+&lt;li&gt;Avoid inheriting from classes that were not designed to be base classes. 60&lt;/li&gt;
+&lt;li&gt;Prefer providing abstract interfaces. 62&lt;/li&gt;
+&lt;li&gt;Public inheritance is substitutability. Inherit, not to reuse, but to be reused. 64&lt;/li&gt;
+&lt;li&gt;Practice safe overriding. 66&lt;/li&gt;
+&lt;li&gt;Consider making virtual functions nonpublic, and public functions nonvirtual. 68&lt;/li&gt;
+&lt;li&gt;Avoid providing implicit conversions. 70&lt;/li&gt;
+&lt;li&gt;Make data members private, except in behaviorless aggregates (C-style structs). 72&lt;/li&gt;
+&lt;li&gt;Don’t give away your internals. 74&lt;/li&gt;
+&lt;li&gt;Pimpl judiciously. 76&lt;/li&gt;
+&lt;li&gt;Prefer writing nonmember nonfriend functions. 79&lt;/li&gt;
+&lt;li&gt;Always provide new and delete together. 80&lt;/li&gt;
+&lt;li&gt;If you provide any class-specific new, provide all of the standard forms (plain, in-place, and nothrow). 82&lt;/li&gt;
+&lt;li&gt;Define and initialize member variables in the same order. 86&lt;/li&gt;
+&lt;li&gt;Prefer initialization to assignment in constructors. 87&lt;/li&gt;
+&lt;li&gt;Avoid calling virtual functions in constructors and destructors. 88&lt;/li&gt;
+&lt;li&gt;Make base class destructors public and virtual, or protected and nonvirtual. 90&lt;/li&gt;
+&lt;li&gt;Destructors, deallocation, and swap never fail. 92&lt;/li&gt;
+&lt;li&gt;Copy and destroy consistently. 94&lt;/li&gt;
+&lt;li&gt;Explicitly enable or disable copying. 95&lt;/li&gt;
+&lt;li&gt;Avoid slicing. Consider Clone instead of copying in base classes. 96&lt;/li&gt;
+&lt;li&gt;Prefer the canonical form of assignment. 99&lt;/li&gt;
+&lt;li&gt;Whenever it makes sense, provide a no-fail swap (and provide it correctly). 100&lt;/li&gt;
+&lt;li&gt;Keep a type and its nonmember function interface in the same namespace. 104&lt;/li&gt;
+&lt;li&gt;Keep types and functions in separate namespaces unless they’re specifically intended to work together. 106&lt;/li&gt;
+&lt;li&gt;Don’t write namespace usings in a header file or before an #include. 108&lt;/li&gt;
+&lt;li&gt;Avoid allocating and deallocating memory in different modules. 111&lt;/li&gt;
+&lt;li&gt;Don’t define entities with linkage in a header file. 112&lt;/li&gt;
+&lt;li&gt;Don’t allow exceptions to propagate across module boundaries. 114&lt;/li&gt;
+&lt;li&gt;Use sufficiently portable types in a module’s interface. 116&lt;/li&gt;
+&lt;li&gt;Blend static and dynamic polymorphism judiciously. 120&lt;/li&gt;
+&lt;li&gt;Customize intentionally and explicitly. 122&lt;/li&gt;
+&lt;li&gt;Don’t specialize function templates. 126&lt;/li&gt;
+&lt;li&gt;Don’t write unintentionally nongeneric code. 128&lt;/li&gt;
+&lt;li&gt;Assert liberally to document internal assumptions and invariants. 130&lt;/li&gt;
+&lt;li&gt;Establish a rational error handling policy, and follow it strictly. 132&lt;/li&gt;
+&lt;li&gt;Distinguish between errors and non-errors. 134&lt;/li&gt;
+&lt;li&gt;Design and write error-safe code. 137&lt;/li&gt;
+&lt;li&gt;Prefer to use exceptions to report errors. 140&lt;/li&gt;
+&lt;li&gt;Throw by value, catch by reference. 144&lt;/li&gt;
+&lt;li&gt;Report, handle, and translate errors appropriately. 145&lt;/li&gt;
+&lt;li&gt;Avoid exception specifications. 146&lt;/li&gt;
+&lt;li&gt;Use vector by default. Otherwise, choose an appropriate container. 150&lt;/li&gt;
+&lt;li&gt;Use vector and string instead of arrays. 152&lt;/li&gt;
+&lt;li&gt;Use vector (and string::c_str) to exchange data with non-C++ APIs. 153&lt;/li&gt;
+&lt;li&gt;Store only values and smart pointers in containers. 154&lt;/li&gt;
+&lt;li&gt;Prefer push_back to other ways of expanding a sequence. 155&lt;/li&gt;
+&lt;li&gt;Prefer range operations to single-element operations. 156&lt;/li&gt;
+&lt;li&gt;Use the accepted idioms to really shrink capacity and really erase elements. 157&lt;/li&gt;
+&lt;li&gt;Use a checked STL implementation. 160&lt;/li&gt;
+&lt;li&gt;Prefer algorithm calls to handwritten loops. 162&lt;/li&gt;
+&lt;li&gt;Use the right STL search algorithm. 165&lt;/li&gt;
+&lt;li&gt;Use the right STL sort algorithm. 166&lt;/li&gt;
+&lt;li&gt;Make predicates pure functions. 168&lt;/li&gt;
+&lt;li&gt;Prefer function objects over functions as algorithm and comparer arguments. 170&lt;/li&gt;
+&lt;li&gt;Write function objects correctly. 172&lt;/li&gt;
+&lt;li&gt;Avoid type switching; prefer polymorphism. 174&lt;/li&gt;
+&lt;li&gt;Rely on types, not on representations. 176&lt;/li&gt;
+&lt;li&gt;Avoid using reinterpret_cast. 177&lt;/li&gt;
+&lt;li&gt;Avoid using static_cast on pointers. 178&lt;/li&gt;
+&lt;li&gt;Avoid casting away const. 179&lt;/li&gt;
+&lt;li&gt;Don’t use C-style casts. 180&lt;/li&gt;
+&lt;li&gt;Don’t memcpy or memcmp non-PODs. 182&lt;/li&gt;
+&lt;li&gt;Don’t use unions to reinterpret representation. 183&lt;/li&gt;
+&lt;li&gt;Don’t use varargs (ellipsis). 184&lt;/li&gt;
+&lt;li&gt;Don’t use invalid objects. Don’t use unsafe functions. 185&lt;/li&gt;
+&lt;li&gt;Don’t treat arrays polymorphically. 186&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Free Visual C&#43;&#43; Compiler</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-05-07-152/</link>
+      <pubDate>Fri, 07 May 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-05-07-152/</guid>
+      <description>&lt;p&gt;Microsoft 提供免費的 &lt;A href=&#34;http://msdn.microsoft.com/visualc/vctoolkit2003/&#34;&gt;Microsoft Visual C++ Toolkit 2003&lt;/A&gt;，其中包含了跟 Visual Studio .NET 2003 一樣的 C++ compiler。其實 Microsoft 早就應該這樣做了，畢竟現在有誰在 Windows 上不用整合開發環境 (IDE) 來寫程式，提供免費的 C++ compiler 一點也不會影響 Visual Studio 的銷售。提供免費的 C++ 編譯器來推廣 .NET 平台的普及，我想是這個事情最主要的原因吧。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Exceptional C&#43;&#43;</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-05-22-35/</link>
+      <pubDate>Thu, 22 May 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-05-22-35/</guid>
+      <description>&lt;p&gt;&lt;img src=&#34;http://www.gotw.ca/images/xc++cover-small.gif&#34; alt=&#34;&#34;&gt;&lt;/p&gt;
+&lt;p&gt;C++ 的信徒應該對 &lt;a href=&#34;http://www.gotw.ca/&#34; title=&#34;GotW.ca Home Page&#34;&gt;Herb Sutter&lt;/a&gt; 不感到陌生。草藥兄最常發表技術文章的地方是&lt;a href=&#34;http://www.cuj.com/&#34;&gt;C/C++ Users Journal&lt;/a&gt; 的 C++ 專欄。不才也有一本他寫的 &lt;a href=&#34;http://www.gotw.ca/publications/xc++.htm&#34;&gt;Exceptional C++&lt;/a&gt;，雖是薄薄的一本卻是字字珠璣，沒有多餘的廢話。任何自認為 C++ 的專家都應該來挑戰看看書中所提的問題。每次我誤入書中所設的的陷阱時，彷彿都能聽見 Herb 在耳邊說 &amp;ldquo;&lt;a href=&#34;http://info.astrian.net/jargon/terms/g/gotcha.html&#34;&gt;gotcha&lt;/a&gt;&amp;quot;。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

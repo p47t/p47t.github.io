@@ -1,0 +1,791 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>zeroclaw 如何設計 Memory 的抽象層</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/"/>
+  <meta property="og:title" content="zeroclaw 如何設計 Memory 的抽象層"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-19 13:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="agent"/>
+  
+  <meta property="og:article:tag" content="design-patterns"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            zeroclaw 如何設計 Tool 的抽象層
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h2 class="post-title">zeroclaw 如何設計 Memory 的抽象層</h2>
+      <div class="post-meta">
+        <span class="post-date">February 19, 2026</span>
+        <a href="/tils"><span class="label label-info">TIL</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/agent"><span class="label label-primary">agent</span></a>
+        
+        <a href="/tags/design-patterns"><span class="label label-primary">design-patterns</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>zeroclaw</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/">zeroclaw 如何設計 Memory 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/">zeroclaw 如何設計 Tool 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/">zeroclaw 如何設計 Channel 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-llm-provider/">zeroclaw 如何設計 LLM Provider 的抽象層</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>      
+      <div class="post-content">
+        <blockquote>
+<p>zeroclaw 的 Memory 是 agent 的長期記憶——它記錄對話歷史、使用者偏好、決策紀錄，並在每次對話前把相關記憶召回注入給 LLM。這篇記錄它如何用一個 trait 統一四種後端（SQLite、Markdown、Lucid、Postgres），以及它最有趣的設計：混合式語意搜尋、Embedding LRU 快取、還有讓 agent 在冷啟動時從 Markdown 文字檔重建「靈魂」的機制。</p>
+</blockquote>
+<h2 id="memory-trait七個方法全部必填"><code>Memory</code> Trait：七個方法，全部必填</h2>
+<p>跟 <a href="./2026-02-19-zeroclaw-channel.md">Channel</a> 和 <a href="./2026-02-19-zeroclaw-llm-provider.md">Provider</a> 的設計不同——後兩者都有預設實作——<code>Memory</code> trait 的七個方法<strong>全部是必填的</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> Memory: Send <span style="color:#f92672">+</span> Sync {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">name</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">store</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>        key: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>,
+</span></span><span style="display:flex;"><span>        content: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>,
+</span></span><span style="display:flex;"><span>        category: <span style="color:#a6e22e">MemoryCategory</span>,
+</span></span><span style="display:flex;"><span>        session_id: Option<span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">str</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    ) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">recall</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>        query: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>,
+</span></span><span style="display:flex;"><span>        limit: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>        session_id: Option<span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">str</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    ) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>MemoryEntry<span style="color:#f92672">&gt;&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">get</span>(<span style="color:#f92672">&amp;</span>self, key: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Option<span style="color:#f92672">&lt;</span>MemoryEntry<span style="color:#f92672">&gt;&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">list</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>        category: Option<span style="color:#f92672">&lt;&amp;</span>MemoryCategory<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>        session_id: Option<span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">str</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    ) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>MemoryEntry<span style="color:#f92672">&gt;&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">forget</span>(<span style="color:#f92672">&amp;</span>self, key: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">bool</span><span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">count</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">health_check</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">bool</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這反映了「每種後端的搜尋策略都根本不同」——SQLite 用 FTS5 + 向量搜尋，Markdown 用關鍵字比對，Postgres 用 <code>ILIKE</code>——沒有一個合理的預設實作能套用在所有後端，所以索性不提供。</p>
+<hr>
+<h2 id="核心資料型別">核心資料型別</h2>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">MemoryEntry</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> id: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> key: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> content: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> category: <span style="color:#a6e22e">MemoryCategory</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> timestamp: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> session_id: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> score: Option<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>,  <span style="color:#75715e">// 只有 recall() 會填，get()/list() 都是 None
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">MemoryCategory</span> {
+</span></span><span style="display:flex;"><span>    Core,             <span style="color:#75715e">// 長期事實、偏好、決策
+</span></span></span><span style="display:flex;"><span>    Daily,            <span style="color:#75715e">// 每日工作日誌
+</span></span></span><span style="display:flex;"><span>    Conversation,     <span style="color:#75715e">// 對話上下文
+</span></span></span><span style="display:flex;"><span>    Custom(String),   <span style="color:#75715e">// 開放式擴充點
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>score</code> 的設計很有趣：它是 <code>recall()</code> 的副產品，代表這筆記憶和查詢的相關度。<code>get()</code> 和 <code>list()</code> 都是精確查找，沒有「相關度」的概念，所以這個欄位在那兩個情境下永遠是 <code>None</code>。<code>Custom(String)</code> 則是一個逃生艙，讓使用者可以自訂任意分類而不需要修改 enum。</p>
+<hr>
+<h2 id="四個後端一個介面">四個後端，一個介面</h2>
+<p>zeroclaw 目前有四個實作（加上一個 no-op）：</p>
+<table>
+  <thead>
+      <tr>
+          <th>後端</th>
+          <th>搜尋方式</th>
+          <th>特性</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>SqliteMemory</code></td>
+          <td>FTS5 + 向量 (cosine)</td>
+          <td>推薦預設，單一 <code>.db</code> 檔</td>
+      </tr>
+      <tr>
+          <td><code>MarkdownMemory</code></td>
+          <td>關鍵字比對</td>
+          <td>純文字，只能追加</td>
+      </tr>
+      <tr>
+          <td><code>LucidMemory</code></td>
+          <td>SQLite + 外部 CLI</td>
+          <td>橋接第三方記憶工具</td>
+      </tr>
+      <tr>
+          <td><code>PostgresMemory</code></td>
+          <td><code>ILIKE</code> 模糊比對</td>
+          <td>雲端持久化，無 pgvector</td>
+      </tr>
+      <tr>
+          <td><code>NoneMemory</code></td>
+          <td>—</td>
+          <td>完全 no-op，停用記憶</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="sqlite真正的大腦">SQLite：真正的大腦</h2>
+<p><code>SqliteMemory</code> 是推薦的預設後端，資料存在 <code>workspace/memory/brain.db</code>。它的設計最複雜，也最值得細看。</p>
+<h3 id="schema">Schema</h3>
+<p>三張表，各有不同用途：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#75715e">-- 主要記憶表
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> memories (
+</span></span><span style="display:flex;"><span>    id         TEXT <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">key</span>        TEXT <span style="color:#66d9ef">UNIQUE</span> <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,   <span style="color:#75715e">-- upsert 的 identity key
+</span></span></span><span style="display:flex;"><span>    content    TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    category   TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span> <span style="color:#66d9ef">DEFAULT</span> <span style="color:#e6db74">&#39;core&#39;</span>,
+</span></span><span style="display:flex;"><span>    embedding  BLOB,                   <span style="color:#75715e">-- f32 向量，little-endian bytes
+</span></span></span><span style="display:flex;"><span>    created_at TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    updated_at TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    session_id TEXT
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- FTS5 全文搜尋虛擬表
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">CREATE</span> VIRTUAL <span style="color:#66d9ef">TABLE</span> memories_fts <span style="color:#66d9ef">USING</span> fts5(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">key</span>, content,
+</span></span><span style="display:flex;"><span>    content<span style="color:#f92672">=</span>memories, content_rowid<span style="color:#f92672">=</span>rowid
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- Embedding LRU 快取
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">CREATE</span> <span style="color:#66d9ef">TABLE</span> embedding_cache (
+</span></span><span style="display:flex;"><span>    content_hash TEXT <span style="color:#66d9ef">PRIMARY</span> <span style="color:#66d9ef">KEY</span>,  <span style="color:#75715e">-- SHA-256 前 16 hex chars
+</span></span></span><span style="display:flex;"><span>    embedding    BLOB <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    created_at   TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>,
+</span></span><span style="display:flex;"><span>    accessed_at  TEXT <span style="color:#66d9ef">NOT</span> <span style="color:#66d9ef">NULL</span>      <span style="color:#75715e">-- LRU 用
+</span></span></span><span style="display:flex;"><span>);</span></span></code></pre></div>
+
+<p>FTS5 透過三個 trigger（INSERT、DELETE、UPDATE）和主表保持同步。<code>store()</code> 用的是 <code>INSERT ... ON CONFLICT(key) DO UPDATE</code>——upsert 語意，<code>key</code> 是唯一識別碼，<code>id</code> 是 UUID（每次 upsert 都會更新）。</p>
+<p>SQLite 開啟時的 PRAGMA 調校：WAL 模式、8 MB mmap、2 MB page cache、MEMORY temp store。</p>
+<h3 id="為什麼用-spawn_blocking">為什麼用 <code>spawn_blocking</code>？</h3>
+<p><code>rusqlite</code> 是 blocking API，直接在 async context 呼叫會卡住 tokio runtime。所有 SQLite 操作都包在 <code>tokio::task::spawn_blocking</code> 裡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> result <span style="color:#f92672">=</span> tokio::task::spawn_blocking(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> conn <span style="color:#f92672">=</span> db.lock();
+</span></span><span style="display:flex;"><span>    conn.execute(<span style="color:#e6db74">&#34;INSERT INTO memories ...&#34;</span>, <span style="color:#a6e22e">params!</span>[<span style="color:#f92672">..</span>.])<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}).<span style="color:#66d9ef">await</span><span style="color:#f92672">??</span>;</span></span></code></pre></div>
+
+<p>連線的開啟還多了一層防護——用 worker thread + <code>mpsc::channel</code> 加上 <code>recv_timeout</code>，防止 SQLite 檔案被鎖住時永遠卡住：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (tx, rx) <span style="color:#f92672">=</span> mpsc::channel();
+</span></span><span style="display:flex;"><span>thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> _ <span style="color:#f92672">=</span> tx.send(Connection::open(<span style="color:#f92672">&amp;</span>path));
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">match</span> rx.recv_timeout(Duration::from_secs(capped)) {
+</span></span><span style="display:flex;"><span>    Ok(Ok(conn)) <span style="color:#f92672">=&gt;</span> conn,
+</span></span><span style="display:flex;"><span>    Ok(Err(e)) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Err(e.into()),
+</span></span><span style="display:flex;"><span>    Err(_) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Err(<span style="color:#a6e22e">anyhow!</span>(<span style="color:#e6db74">&#34;SQLite open timed out&#34;</span>)),
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="混合語意搜尋fts5--向量">混合語意搜尋：FTS5 + 向量</h2>
+<p><code>recall()</code> 的實作是整個記憶系統最有趣的部分。它不是單一的搜尋策略，而是三層 fallback：</p>
+
+  <div class="mermaid">
+    graph TD
+    A["recall(query, limit)"] --> B{有設定 Embedding provider?}
+    B -->|是| C[生成查詢向量]
+    C --> D[FTS5 BM25 搜尋]
+    D --> E["hybrid_merge(向量結果, 關鍵字結果)"]
+    E --> F[回傳 Top-N]
+    B -->|否| G[純 BM25 搜尋]
+    G --> F
+    D -->|FTS5 解析錯誤| H["LIKE %keyword% 兜底"]
+    H --> F
+  </div>
+
+<h3 id="向量純-rust-cosine-similarity">向量：純 Rust Cosine Similarity</h3>
+<p>向量以 <code>f32</code> little-endian bytes 存在 BLOB 欄位。Cosine similarity 是純 Rust 實作，刻意用 <code>f64</code> 累加以減少高維向量的浮點誤差：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">cosine_similarity</span>(a: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>], b: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>]) -&gt; <span style="color:#66d9ef">f32</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> dot <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0_</span><span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> norm_a <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0_</span><span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> norm_b <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0_</span><span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (x, y) <span style="color:#66d9ef">in</span> a.iter().zip(b.iter()) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> <span style="color:#66d9ef">f64</span>::from(<span style="color:#f92672">*</span>x);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> y <span style="color:#f92672">=</span> <span style="color:#66d9ef">f64</span>::from(<span style="color:#f92672">*</span>y);
+</span></span><span style="display:flex;"><span>        dot <span style="color:#f92672">+=</span> x <span style="color:#f92672">*</span> y;
+</span></span><span style="display:flex;"><span>        norm_a <span style="color:#f92672">+=</span> x <span style="color:#f92672">*</span> x;
+</span></span><span style="display:flex;"><span>        norm_b <span style="color:#f92672">+=</span> y <span style="color:#f92672">*</span> y;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> denom <span style="color:#f92672">=</span> norm_a.sqrt() <span style="color:#f92672">*</span> norm_b.sqrt();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>denom.is_finite() <span style="color:#f92672">||</span> denom <span style="color:#f92672">&lt;</span> <span style="color:#66d9ef">f64</span>::<span style="color:#66d9ef">EPSILON</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0.0</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    (dot <span style="color:#f92672">/</span> denom).clamp(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這是暴力掃描所有有 embedding 的 row，沒有 ANN index（如 HNSW、IVFFlat）。對一個本地 agent 的記憶量來說夠用，不需要引入 pgvector 或外部向量 DB 的依賴。</p>
+<h3 id="關鍵字fts5-bm25">關鍵字：FTS5 BM25</h3>
+<p>查詢前先把每個 token 用雙引號包住再用 <code>OR</code> 連接，避免 FTS5 特殊字元造成解析錯誤：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> fts_query <span style="color:#f92672">=</span> query
+</span></span><span style="display:flex;"><span>    .split_whitespace()
+</span></span><span style="display:flex;"><span>    .map(<span style="color:#f92672">|</span>w<span style="color:#f92672">|</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\&#34;</span><span style="color:#e6db74">{w}</span><span style="color:#ae81ff">\&#34;</span><span style="color:#e6db74">&#34;</span>))
+</span></span><span style="display:flex;"><span>    .collect::<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>_<span style="color:#f92672">&gt;&gt;</span>()
+</span></span><span style="display:flex;"><span>    .join(<span style="color:#e6db74">&#34; OR &#34;</span>);</span></span></code></pre></div>
+
+<p>FTS5 的 <code>bm25()</code> 分數是負數（越負越相關），取負後變成越大越好，和 cosine similarity 的方向統一。</p>
+<h3 id="混合合併">混合合併</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">hybrid_merge</span>(
+</span></span><span style="display:flex;"><span>    vector_results: <span style="color:#66d9ef">&amp;</span>[(String, <span style="color:#66d9ef">f32</span>)],   <span style="color:#75715e">// (id, cosine)
+</span></span></span><span style="display:flex;"><span>    keyword_results: <span style="color:#66d9ef">&amp;</span>[(String, <span style="color:#66d9ef">f32</span>)],  <span style="color:#75715e">// (id, -BM25)
+</span></span></span><span style="display:flex;"><span>    vector_weight: <span style="color:#66d9ef">f32</span>,                 <span style="color:#75715e">// 預設 0.7
+</span></span></span><span style="display:flex;"><span>    keyword_weight: <span style="color:#66d9ef">f32</span>,                <span style="color:#75715e">// 預設 0.3
+</span></span></span><span style="display:flex;"><span>    limit: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>) -&gt; Vec<span style="color:#f92672">&lt;</span>ScoredResult<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// BM25 分數正規化到 [0,1]
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// final_score = 0.7 * cosine + 0.3 * normalized_BM25
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 去重：HashMap keyed on id
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>合併後的 Top-N ID 用一次 <code>WHERE id IN (...)</code> 批次撈出，避免 N+1 query。</p>
+<hr>
+<h2 id="embedding-lru-快取">Embedding LRU 快取</h2>
+<p>每次 <code>store()</code> 都需要為新內容生成 embedding，但相同的文字不應該重複打 API。快取的 key 是內容的 <strong>SHA-256 前 16 hex chars</strong>——明確選擇 SHA-256 而不是 <code>DefaultHasher</code>，因為後者的輸出在不同 Rust 版本之間不保證穩定。</p>
+<p>LRU 淘汰不在 Rust 記憶體裡維護資料結構，而是直接在 SQL 裡做：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sql" data-lang="sql"><span style="display:flex;"><span><span style="color:#75715e">-- 保留最新的 N 筆，刪除多餘的舊資料
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">DELETE</span> <span style="color:#66d9ef">FROM</span> embedding_cache <span style="color:#66d9ef">WHERE</span> content_hash <span style="color:#66d9ef">IN</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">SELECT</span> content_hash <span style="color:#66d9ef">FROM</span> embedding_cache
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">ORDER</span> <span style="color:#66d9ef">BY</span> accessed_at <span style="color:#66d9ef">ASC</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">LIMIT</span> <span style="color:#66d9ef">MAX</span>(<span style="color:#ae81ff">0</span>, (<span style="color:#66d9ef">SELECT</span> <span style="color:#66d9ef">COUNT</span>(<span style="color:#f92672">*</span>) <span style="color:#66d9ef">FROM</span> embedding_cache) <span style="color:#f92672">-</span> <span style="color:#f92672">?</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>)</span></span></code></pre></div>
+
+<p>這樣快取的淘汰邏輯完全不依賴記憶體狀態，重啟之後一樣有效。</p>
+<hr>
+<h2 id="embedding-provider">Embedding Provider</h2>
+<p>Embedding 本身也是一個 trait：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> EmbeddingProvider: Send <span style="color:#f92672">+</span> Sync {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">name</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">dimensions</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">embed</span>(<span style="color:#f92672">&amp;</span>self, texts: <span style="color:#66d9ef">&amp;</span>[<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">str</span>]) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 唯一的預設方法：批次 embed 的單一版本
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">embed_one</span>(<span style="color:#f92672">&amp;</span>self, text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> results <span style="color:#f92672">=</span> self.embed(<span style="color:#f92672">&amp;</span>[text]).<span style="color:#66d9ef">await</span><span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        results.pop().ok_or_else(<span style="color:#f92672">||</span> <span style="color:#a6e22e">anyhow!</span>(<span style="color:#e6db74">&#34;Empty embedding result&#34;</span>))
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>兩個具體實作：</p>
+<ul>
+<li><strong><code>NoopEmbedding</code></strong>：<code>dimensions() = 0</code>，回傳空向量。啟用後自動降級為純關鍵字搜尋。</li>
+<li><strong><code>OpenAiEmbedding</code></strong>：打 <code>/v1/embeddings</code> endpoint。支援自訂 base URL，用 <code>custom:</code> 前綴指定：</li>
+</ul>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">create_embedding_provider</span>(provider: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, api_key: <span style="color:#f92672">..</span>., model: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, dims: <span style="color:#66d9ef">usize</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> provider {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;openai&#34;</span> <span style="color:#f92672">=&gt;</span> Box::new(OpenAiEmbedding::new(<span style="color:#e6db74">&#34;https://api.openai.com&#34;</span>, <span style="color:#f92672">..</span>.)),
+</span></span><span style="display:flex;"><span>        name <span style="color:#66d9ef">if</span> name.starts_with(<span style="color:#e6db74">&#34;custom:&#34;</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> base_url <span style="color:#f92672">=</span> name.strip_prefix(<span style="color:#e6db74">&#34;custom:&#34;</span>).unwrap_or(<span style="color:#e6db74">&#34;&#34;</span>);
+</span></span><span style="display:flex;"><span>            Box::new(OpenAiEmbedding::new(base_url, <span style="color:#f92672">..</span>.))  <span style="color:#75715e">// 指向 Ollama、本地推理伺服器等
+</span></span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> Box::new(NoopEmbedding),
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="markdownmemory只能追加的審計日誌">MarkdownMemory：只能追加的審計日誌</h2>
+<p><code>MarkdownMemory</code> 的 <code>forget()</code> 永遠回傳 <code>false</code>——這個後端是<strong>只能追加的</strong>，設計上就是個審計日誌：</p>
+
+  <pre tabindex="0"><code>workspace/MEMORY.md                  ← Core 類別
+workspace/memory/2026-02-19.md       ← Daily 類別（按日期分檔）</code></pre>
+
+<p>每次 <code>store()</code> 就在對應的 Markdown 檔尾端追加一行 <code>- **key**: content</code>。<code>recall()</code> 則是把查詢拆成關鍵字，計算每筆記憶裡出現了幾個，算出比例當作分數。</p>
+<p>雖然搜尋能力差，但好處是人類可讀、可以直接用 Git 追蹤，也容易備份。</p>
+<hr>
+<h2 id="lucidmemory橋接外部-cli">LucidMemory：橋接外部 CLI</h2>
+<p><code>LucidMemory</code> 是一個橋接層，SQLite 是主要儲存，外部 <code>lucid-memory</code> CLI 是輔助：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">LucidMemory</span> {
+</span></span><span style="display:flex;"><span>    local: <span style="color:#a6e22e">SqliteMemory</span>,
+</span></span><span style="display:flex;"><span>    recall_timeout: <span style="color:#a6e22e">Duration</span>,           <span style="color:#75715e">// 預設 500ms
+</span></span></span><span style="display:flex;"><span>    store_timeout: <span style="color:#a6e22e">Duration</span>,            <span style="color:#75715e">// 預設 800ms
+</span></span></span><span style="display:flex;"><span>    local_hit_threshold: <span style="color:#66d9ef">usize</span>,         <span style="color:#75715e">// 預設 3：本地結果夠多就不問 Lucid
+</span></span></span><span style="display:flex;"><span>    failure_cooldown: <span style="color:#a6e22e">Duration</span>,         <span style="color:#75715e">// 任何錯誤後冷卻 15 秒
+</span></span></span><span style="display:flex;"><span>    last_failure_at: <span style="color:#a6e22e">Mutex</span><span style="color:#f92672">&lt;</span>Option<span style="color:#f92672">&lt;</span>Instant<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>store()</code> 先寫 SQLite，再 fire-and-forget 同步到 Lucid。<code>recall()</code> 的策略：先問 SQLite，如果結果數量低於 <code>local_hit_threshold</code> 且 Lucid 不在冷卻期，才去呼叫 <code>lucid context &lt;query&gt;</code>，然後合併結果。</p>
+<p>去重用的是一個 <code>NUL</code> 字元分隔的簽名：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> signature <span style="color:#f92672">=</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{}</span><span style="color:#ae81ff">\u{0}</span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, entry.key.to_lowercase(), entry.content.to_lowercase());</span></span></code></pre></div>
+
+<p>Lucid 的輸出是自訂的 XML-like 格式：</p>
+
+  <pre tabindex="0"><code>&lt;lucid-context&gt;
+- [decision] Use token refresh middleware
+- [context] Working in src/auth.rs
+&lt;/lucid-context&gt;</code></pre>
+
+<p>方括號裡的標籤（<code>decision</code>、<code>context</code>、<code>bug</code>、<code>learning</code>）會被映射回 <code>MemoryCategory</code>。</p>
+<hr>
+<h2 id="agent-的靈魂snapshot-與冷啟動恢復">Agent 的靈魂：Snapshot 與冷啟動恢復</h2>
+<p>最讓我覺得有趣的設計是「靈魂快照」機制。</p>
+<p>在每次記憶體清理（hygiene）時，如果啟用了 <code>snapshot_on_hygiene</code>，所有 <code>Core</code> 類別的記憶都會被 dump 到工作目錄的 <code>MEMORY_SNAPSHOT.md</code>。這個檔案是 Git 可追蹤的純文字。</p>
+<p>更厲害的是<strong>冷啟動恢復</strong>：如果 <code>brain.db</code> 不存在（例如全新部署、或資料庫損毀刪除），但 <code>MEMORY_SNAPSHOT.md</code> 存在，factory 會在開啟後端之前先呼叫 <code>hydrate_from_snapshot()</code>，把 Markdown 裡的記憶逐筆還原回 SQLite。</p>
+
+  <div class="mermaid">
+    graph LR
+    A["brain.db 存在?"] -->|是| B[正常開啟 SqliteMemory]
+    A -->|否| C["MEMORY_SNAPSHOT.md 存在?"]
+    C -->|是| D[hydrate_from_snapshot]
+    D --> E[重新開啟 SqliteMemory]
+    C -->|否| F[全新 SqliteMemory]
+    B --> G[完成]
+    E --> G
+    F --> G
+  </div>
+
+<p>每次清理也會刪掉 <code>MemoryCategory::Conversation</code> 類別超過 <code>conversation_retention_days</code> 的舊紀錄——對話上下文是短暫的，不該無限累積。</p>
+<hr>
+<h2 id="在-agent-loop-裡的角色">在 Agent Loop 裡的角色</h2>
+<p>Memory 在每輪對話的三個時機被使用：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    participant U as 使用者
+    participant AL as Agent Loop
+    participant M as Memory
+    participant LLM as LLM
+
+    U->>AL: 送出訊息
+    AL->>M: recall(user_msg, 5)
+    M-->>AL: 相關記憶（score >= 0.4 才納入）
+    AL->>LLM: [Memory context]\n- key: content\n...\n{user_msg}
+    LLM-->>AL: 回應
+    AL->>M: store("user_msg_{uuid}", msg, Conversation)
+    AL->>M: store("assistant_resp_{uuid}", summary[:100], Daily)
+    AL-->>U: 最終答覆
+  </div>
+
+<p>注意幾個細節：</p>
+<ul>
+<li><strong>相關度門檻</strong>：<code>score &gt;= 0.4</code> 才注入，低分記憶不進 context，避免雜訊干擾 LLM。</li>
+<li><strong>自動儲存</strong>：使用者訊息存 <code>Conversation</code> 類別（會被清理），助理回應只存前 100 字存 <code>Daily</code> 類別（會保留較久）。</li>
+<li><strong>LLM 直接操控記憶</strong>：<code>memory_store</code>、<code>memory_recall</code>、<code>memory_forget</code> 這三個工具也被當成普通的 <code>Tool</code> 掛載到 agent 上，LLM 自己可以主動讀寫記憶。</li>
+</ul>
+<hr>
+<h2 id="小結">小結</h2>
+<p>zeroclaw Memory 設計幾個值得注意的地方：</p>
+<ul>
+<li><strong>全部必填，沒有預設</strong>：每種後端的搜尋策略差太多，預設實作沒有意義。</li>
+<li><strong>SQLite 就夠用</strong>：FTS5 + 向量暴力搜尋在本地 agent 的規模不需要 pgvector，單一 <code>.db</code> 檔沒有外部依賴。</li>
+<li><strong>三層 fallback 搜尋</strong>：Hybrid（FTS5 + 向量）→ BM25 only → <code>LIKE</code> 兜底，優雅降級。</li>
+<li><strong>SHA-256 快取，LRU 在 SQL 裡做</strong>：快取邏輯不依賴記憶體狀態，重啟後仍然有效。</li>
+<li><strong>靈魂快照</strong>：<code>MEMORY_SNAPSHOT.md</code> 是 Git 可追蹤的，讓 agent 可以從純文字重建長期記憶，冷啟動不代表失憶。</li>
+<li><strong>Conversation 記憶會被清理</strong>：對話上下文是短暫的，設計上就不打算永久保留。</li>
+</ul>
+
+      </div>
+      <hr>
+      
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

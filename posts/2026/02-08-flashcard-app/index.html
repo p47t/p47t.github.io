@@ -1,0 +1,802 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>從間隔重複記憶卡學習 Rust 程式設計</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/"/>
+  <meta property="og:title" content="從間隔重複記憶卡學習 Rust 程式設計"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-08 00:00:00 &#43;0000 UTC"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="slint"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="android"/>
+  
+  <meta property="og:article:tag" content="spaced-repetition"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:tag" content="claude-code"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            從吉他指板視覺化學習 Rust 程式設計
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">
+            深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">從間隔重複記憶卡學習 Rust 程式設計</h2>
+      <div class="post-meta">
+        <span class="post-date">February 8, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/slint"><span class="label label-primary">slint</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/android"><span class="label label-primary">android</span></a>
+        
+        <a href="/tags/spaced-repetition"><span class="label label-primary">spaced-repetition</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        <a href="/tags/claude-code"><span class="label label-primary">claude-code</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-08-flashcard-app/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>最近用 <a href="https://slint.dev/">Slint</a> UI 框架實作了一個間隔重複記憶卡應用，可以在桌面和 Android 上執行。這個專案涵蓋了狀態管理、演算法實作、跨平台建置等實用的 Rust 程式設計概念。</p>
+<h3 id="專案概述">專案概述</h3>
+<p>這個記憶卡應用的功能：</p>
+<ul>
+<li>SM-2 間隔重複演算法排程複習</li>
+<li>四個畫面：卡牌組列表、學習、新增卡片、統計</li>
+<li>JSON 檔案持久化儲存</li>
+<li>同時支援桌面與 Android 平台</li>
+<li>內建範例卡牌組（Rust 基礎、世界首都）</li>
+</ul>
+<h3 id="1-slint-的宣告式-ui-與頁面路由">1. Slint 的宣告式 UI 與頁面路由</h3>
+<p>Slint 使用自己的標記語言定義 UI，和 Rust 程式碼分離。頁面路由透過一個整數屬性控制，用條件渲染切換畫面：</p>
+
+  <pre tabindex="0"><code class="language-slint" data-lang="slint">export component MainWindow inherits Window {
+    // 0=卡牌組列表, 1=學習, 2=編輯, 3=統計
+    in-out property &lt;int&gt; current-page: 0;
+
+    // 條件渲染：只有符合條件的頁面會被建立
+    if current-page == 0: DeckListPage {
+        study-deck(idx) =&gt; { root.study-deck(idx); }
+    }
+
+    if current-page == 1: StudyPage {
+        revealed: root.card-revealed;
+        reveal-card() =&gt; { root.reveal-card(); }
+        rate-card(q) =&gt; { root.rate-card(q); }
+    }
+}</code></pre>
+
+<p>Slint 的 <code>.slint</code> 檔案在編譯時由 <code>slint-build</code> 轉換為 Rust 程式碼，所以 UI 結構的型別檢查在編譯期就完成。<code>.slint</code> 中定義的 struct 和 callback 會自動產生對應的 Rust 型別和方法。</p>
+<p>值得注意的是，Slint 的屬性名稱使用 kebab-case（例如 <code>card-count</code>），在 Rust 端會自動轉換為 snake_case（<code>card_count</code>）。</p>
+<h3 id="2-rcrefcellt單執行緒的內部可變性">2. <code>Rc&lt;RefCell&lt;T&gt;&gt;</code>：單執行緒的內部可變性</h3>
+<p>Slint 的事件迴圈是單執行緒的，所以不需要 <code>Arc&lt;Mutex&lt;T&gt;&gt;</code>。改用 <code>Rc&lt;RefCell&lt;T&gt;&gt;</code> 來在多個閉包間共享可變狀態：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> state <span style="color:#f92672">=</span> Rc::new(RefCell::new(AppState {
+</span></span><span style="display:flex;"><span>    decks,
+</span></span><span style="display:flex;"><span>    current_session: None,
+</span></span><span style="display:flex;"><span>    editor_deck_index: None,
+</span></span><span style="display:flex;"><span>    data_path: <span style="color:#a6e22e">path</span>,
+</span></span><span style="display:flex;"><span>}));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 每個 callback 閉包都 clone 一份 Rc
+</span></span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> state <span style="color:#f92672">=</span> Rc::clone(<span style="color:#f92672">&amp;</span>state);
+</span></span><span style="display:flex;"><span>    window.on_study_deck(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>deck_index<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> st <span style="color:#f92672">=</span> state.borrow_mut(); <span style="color:#75715e">// 執行時借用檢查
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 修改 st...
+</span></span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> state <span style="color:#f92672">=</span> Rc::clone(<span style="color:#f92672">&amp;</span>state);
+</span></span><span style="display:flex;"><span>    window.on_rate_card(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>rating_int<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> st <span style="color:#f92672">=</span> state.borrow_mut();
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 修改 st...
+</span></span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵觀念：</p>
+<ul>
+<li><strong><code>Rc</code></strong>：引用計數智慧指標，讓多個閉包共享同一份資料的所有權</li>
+<li><strong><code>RefCell</code></strong>：將借用檢查從編譯期移到執行期，允許在不可變引用的情況下修改內容</li>
+<li><strong><code>Rc::clone</code></strong>：只增加引用計數（O(1)），不會深複製資料</li>
+<li>這個模式比 <code>Arc&lt;Mutex&lt;T&gt;&gt;</code> 更輕量——沒有原子操作、沒有鎖的開銷——但<strong>只能在單執行緒使用</strong>（多執行緒會無法編譯）</li>
+</ul>
+<h3 id="3-weak-引用避免循環參考">3. Weak 引用避免循環參考</h3>
+<p>每個 callback 都需要存取 Slint 視窗來更新 UI，但直接持有視窗的強引用會造成循環參考。Slint 提供 <code>as_weak()</code> 來解決：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> window_weak <span style="color:#f92672">=</span> window.as_weak();
+</span></span><span style="display:flex;"><span>window.on_reveal_card(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> window <span style="color:#f92672">=</span> window_weak.unwrap(); <span style="color:#75715e">// 從 Weak 升級為強引用
+</span></span></span><span style="display:flex;"><span>    window.set_card_revealed(<span style="color:#66d9ef">true</span>);
+</span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+
+<p><code>ComponentHandle</code> 和 <code>Model</code> 是 Slint 的 trait，需要明確引入才能使用 <code>as_weak()</code>、<code>run()</code>、<code>row_count()</code> 等方法：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> slint::{ComponentHandle, Model, ModelRc, VecModel};</span></span></code></pre></div>
+
+<h3 id="4-借用衝突的實戰解法">4. 借用衝突的實戰解法</h3>
+<p><code>rate_card</code> callback 是整個專案最複雜的部分——需要同時讀取 session 資訊和修改卡片資料，但它們都在同一個 <code>AppState</code> 裡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 這樣寫會編譯失敗！
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> session <span style="color:#f92672">=</span> st.current_session.as_mut(); <span style="color:#75715e">// &amp;mut st
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> card <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>st.decks[session.deck_index];  <span style="color:#75715e">// &amp;st — 衝突！
+</span></span></span></code></pre></div>
+
+<p>解法：先用 <code>as_ref()</code> 從 session 提取需要的純值到區域變數，釋放對 <code>st</code> 的借用後再存取 <code>st.decks</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 先提取 session 的純值（Copy 型別），立即釋放借用
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (deck_idx, card_idx, _position, due_len) <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> session <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> st.current_session.as_ref() {
+</span></span><span style="display:flex;"><span>        Some(s) <span style="color:#f92672">=&gt;</span> s,
+</span></span><span style="display:flex;"><span>        None <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span>,
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    (
+</span></span><span style="display:flex;"><span>        session.deck_index,
+</span></span><span style="display:flex;"><span>        session.due_cards[session.current_position],
+</span></span><span style="display:flex;"><span>        session.current_position,
+</span></span><span style="display:flex;"><span>        session.due_cards.len(),
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>}; <span style="color:#75715e">// session 的借用在這裡結束
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 現在可以安全地借用 st.decks
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> result <span style="color:#f92672">=</span> sm2::review(<span style="color:#f92672">&amp;</span>st.decks[deck_idx].cards[card_idx], rating);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> card <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> st.decks[deck_idx].cards[card_idx];
+</span></span><span style="display:flex;"><span>card.ease_factor <span style="color:#f92672">=</span> result.new_ease_factor;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 再次借用 session 來更新進度
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> session <span style="color:#f92672">=</span> st.current_session.as_mut().unwrap();
+</span></span><span style="display:flex;"><span>session.cards_reviewed <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>session.current_position <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;</span></span></code></pre></div>
+
+<p>這個模式的核心概念：<strong>當同一個 struct 的不同欄位需要不同的借用模式時，用區域變數搭配作用域來交錯借用</strong>。Rust 的借用檢查器是以作用域為單位的，所以只要確保可變和不可變借用不重疊，就能通過編譯。</p>
+<h3 id="5-sm-2-間隔重複演算法">5. SM-2 間隔重複演算法</h3>
+<p>SM-2 是 SuperMemo 2 演算法的簡稱，核心概念很簡單：答對的卡片間隔越來越長，答錯就重置。實作為純函數，方便測試：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">review</span>(card: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Card</span>, rating: <span style="color:#a6e22e">ReviewRating</span>) -&gt; <span style="color:#a6e22e">ReviewResult</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> q <span style="color:#f92672">=</span> rating.quality() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 更新簡易度因子：EF&#39; = EF + (0.1 - (5-q) * (0.08 + (5-q) * 0.02))
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> new_ef <span style="color:#f92672">=</span> (card.ease_factor
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">+</span> (<span style="color:#ae81ff">0.1</span> <span style="color:#f92672">-</span> (<span style="color:#ae81ff">5.0</span> <span style="color:#f92672">-</span> q) <span style="color:#f92672">*</span> (<span style="color:#ae81ff">0.08</span> <span style="color:#f92672">+</span> (<span style="color:#ae81ff">5.0</span> <span style="color:#f92672">-</span> q) <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.02</span>)))
+</span></span><span style="display:flex;"><span>        .max(<span style="color:#ae81ff">1.3</span>); <span style="color:#75715e">// 最低 1.3
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (new_interval, new_repetition) <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> rating <span style="color:#f92672">==</span> ReviewRating::Again {
+</span></span><span style="display:flex;"><span>        (<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>) <span style="color:#75715e">// 答錯：重置為 1 天
+</span></span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> new_rep <span style="color:#f92672">=</span> card.repetition <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> interval <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> new_rep {
+</span></span><span style="display:flex;"><span>            <span style="color:#ae81ff">1</span> <span style="color:#f92672">=&gt;</span> <span style="color:#ae81ff">1</span>,                                          <span style="color:#75715e">// 第一次：1 天
+</span></span></span><span style="display:flex;"><span>            <span style="color:#ae81ff">2</span> <span style="color:#f92672">=&gt;</span> <span style="color:#ae81ff">6</span>,                                          <span style="color:#75715e">// 第二次：6 天
+</span></span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=&gt;</span> (card.interval <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">*</span> new_ef).ceil() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u32</span>, <span style="color:#75715e">// 之後：前次間隔 × EF
+</span></span></span><span style="display:flex;"><span>        };
+</span></span><span style="display:flex;"><span>        (interval, new_rep)
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ReviewResult {
+</span></span><span style="display:flex;"><span>        new_ease_factor: <span style="color:#a6e22e">new_ef</span>,
+</span></span><span style="display:flex;"><span>        new_interval,
+</span></span><span style="display:flex;"><span>        new_repetition,
+</span></span><span style="display:flex;"><span>        next_review: <span style="color:#a6e22e">Utc</span>::now() <span style="color:#f92672">+</span> chrono::Duration::days(new_interval <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>),
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個設計重點：</p>
+<ul>
+<li><strong>純函數</strong>：輸入卡片狀態和評分，輸出新的排程結果。不修改任何全域狀態</li>
+<li><strong><code>match</code> 做模式比對</strong>：前兩次複習有固定間隔（1 天、6 天），第三次開始才用 EF 計算</li>
+<li><strong><code>max(1.3)</code> 限制下限</strong>：避免 EF 降到太低讓間隔收斂到 0</li>
+</ul>
+<p>判斷哪些卡片到期也很直觀：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">due_cards</span>(cards: <span style="color:#66d9ef">&amp;</span>[Card]) -&gt; Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> now <span style="color:#f92672">=</span> Utc::now();
+</span></span><span style="display:flex;"><span>    cards
+</span></span><span style="display:flex;"><span>        .iter()
+</span></span><span style="display:flex;"><span>        .enumerate()
+</span></span><span style="display:flex;"><span>        .filter(<span style="color:#f92672">|</span>(_, card)<span style="color:#f92672">|</span> card.next_review <span style="color:#f92672">&lt;=</span> now)
+</span></span><span style="display:flex;"><span>        .map(<span style="color:#f92672">|</span>(i, _)<span style="color:#f92672">|</span> i)
+</span></span><span style="display:flex;"><span>        .collect()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="6-跨平台建置桌面與-android">6. 跨平台建置：桌面與 Android</h3>
+<p>這個專案同時支援桌面和 Android。關鍵在於 Cargo 的條件編譯和 feature flag：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">lib</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">crate-type</span> = [<span style="color:#e6db74">&#34;cdylib&#34;</span>, <span style="color:#e6db74">&#34;lib&#34;</span>]  <span style="color:#75715e"># cdylib 給 Android，lib 給桌面</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[[<span style="color:#a6e22e">bin</span>]]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">name</span> = <span style="color:#e6db74">&#34;flashcard&#34;</span>              <span style="color:#75715e"># 桌面執行檔名稱和 package 不同，避免 PDB 衝突</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">path</span> = <span style="color:#e6db74">&#34;src/main.rs&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">slint</span> = <span style="color:#e6db74">&#34;1.9&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[<span style="color:#a6e22e">features</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">android</span> = [<span style="color:#e6db74">&#34;slint/backend-android-activity-06&#34;</span>]  <span style="color:#75715e"># Android 後端用 feature 控制</span></span></span></code></pre></div>
+
+<p>入口點用 <code>#[cfg]</code> 區分：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// src/main.rs — 桌面入口
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    flashcard_app::run();
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// src/lib.rs — Android 入口
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[cfg(target_os = </span><span style="color:#e6db74">&#34;android&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[no_mangle]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">android_main</span>(app: <span style="color:#a6e22e">slint</span>::android::AndroidApp) {
+</span></span><span style="display:flex;"><span>    slint::android::init(app).unwrap();
+</span></span><span style="display:flex;"><span>    run();
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>踩過的坑：</p>
+<ul>
+<li><strong>PDB 檔名衝突</strong>：在 Windows 上，<code>crate-type = [&quot;cdylib&quot;, &quot;lib&quot;]</code> 搭配同名的 <code>[[bin]]</code> 會產生 PDB（程式偵錯資訊）衝突。解法是讓 bin 名稱和 package 名稱不同（package = <code>flashcard-app</code>，bin = <code>flashcard</code>）</li>
+<li><strong>Feature 統一問題</strong>：用 <code>[target.'cfg(target_os = &quot;android&quot;)'.dependencies]</code> 指定 Android 依賴，Cargo 仍會統一 feature，導致桌面建置也拉入 NDK 依賴。解法是改用 <code>[features]</code> 區段，建置 Android 時明確傳入 <code>--features android</code></li>
+<li><strong><code>#[unsafe(no_mangle)]</code></strong>：這個語法需要 nightly Rust，stable 上要用 <code>#[no_mangle]</code></li>
+</ul>
+<h3 id="7-共享結構避免循環匯入">7. 共享結構避免循環匯入</h3>
+<p>Slint 的多檔案架構可能遇到循環匯入。例如 <code>main.slint</code> 匯入 <code>deck_list.slint</code>，而 <code>deck_list.slint</code> 又需要 <code>main.slint</code> 中定義的 <code>DeckInfo</code> struct。</p>
+<p>解法：把共享的 struct 抽到獨立的 <code>types.slint</code>：</p>
+
+  <pre tabindex="0"><code class="language-slint" data-lang="slint">// ui/types.slint — 共享的資料結構
+export struct DeckInfo {
+    name: string,
+    description: string,
+    card-count: int,
+    due-count: int,
+}</code></pre>
+
+
+  <pre tabindex="0"><code class="language-slint" data-lang="slint">// ui/deck_list.slint — 從 types.slint 匯入，不匯入 main.slint
+import { DeckInfo } from &#34;types.slint&#34;;
+
+export component DeckListPage inherits Rectangle {
+    in property &lt;[DeckInfo]&gt; decks;
+    // ...
+}</code></pre>
+
+
+  <pre tabindex="0"><code class="language-slint" data-lang="slint">// ui/main.slint — 匯入 components 和 re-export types
+import { DeckListPage } from &#34;deck_list.slint&#34;;
+export { DeckInfo, DeckStats } from &#34;types.slint&#34;;</code></pre>
+
+<h3 id="8-json-序列化與-include_str">8. JSON 序列化與 <code>include_str!</code></h3>
+<p>資料持久化用 serde + serde_json，模型上加 derive 就搞定：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, Serialize, Deserialize)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Card</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> id: <span style="color:#a6e22e">Uuid</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> front: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> back: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ease_factor: <span style="color:#66d9ef">f64</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> interval: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> repetition: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> next_review: <span style="color:#a6e22e">DateTime</span><span style="color:#f92672">&lt;</span>Utc<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>範例資料用 <code>include_str!</code> 在編譯時嵌入二進位檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">sample_decks</span>() -&gt; Vec<span style="color:#f92672">&lt;</span>Deck<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> data <span style="color:#f92672">=</span> <span style="color:#a6e22e">include_str!</span>(<span style="color:#e6db74">&#34;../data/sample_decks.json&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> samples: Vec<span style="color:#f92672">&lt;</span>SampleDeck<span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> serde_json::from_str(data)
+</span></span><span style="display:flex;"><span>        .expect(<span style="color:#e6db74">&#34;invalid sample data&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    samples.into_iter().map(<span style="color:#f92672">|</span>sd<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> deck <span style="color:#f92672">=</span> Deck::new(sd.name, sd.description);
+</span></span><span style="display:flex;"><span>        deck.cards <span style="color:#f92672">=</span> sd.cards.into_iter()
+</span></span><span style="display:flex;"><span>            .map(<span style="color:#f92672">|</span>c<span style="color:#f92672">|</span> Card::new(c.front, c.back))
+</span></span><span style="display:flex;"><span>            .collect();
+</span></span><span style="display:flex;"><span>        deck
+</span></span><span style="display:flex;"><span>    }).collect()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>include_str!</code> 在編譯期讀取檔案內容，嵌入到二進位檔中。好處是不需要在執行時處理檔案路徑問題，特別適合 Android 環境。</p>
+<h3 id="總結">總結</h3>
+<p>這個記憶卡專案涵蓋了多個重要的 Rust 概念：</p>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>應用場景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>Rc&lt;RefCell&lt;T&gt;&gt;</code></td>
+          <td>單執行緒多閉包共享可變狀態</td>
+      </tr>
+      <tr>
+          <td>Weak 引用</td>
+          <td>避免 UI 元件的循環參考</td>
+      </tr>
+      <tr>
+          <td>借用衝突解法</td>
+          <td>用作用域交錯不同借用模式</td>
+      </tr>
+      <tr>
+          <td>SM-2 演算法</td>
+          <td>純函數實作間隔重複排程</td>
+      </tr>
+      <tr>
+          <td>Feature flag</td>
+          <td>條件編譯控制跨平台依賴</td>
+      </tr>
+      <tr>
+          <td><code>cfg</code> 屬性</td>
+          <td>桌面 vs Android 入口點切換</td>
+      </tr>
+      <tr>
+          <td>Slint 宣告式 UI</td>
+          <td>編譯時型別安全的 UI 定義</td>
+      </tr>
+      <tr>
+          <td><code>include_str!</code></td>
+          <td>編譯期嵌入靜態資源</td>
+      </tr>
+      <tr>
+          <td>serde derive</td>
+          <td>零樣板的 JSON 序列化</td>
+      </tr>
+  </tbody>
+</table>
+<p>如果你想找一個結合 UI 框架、演算法和跨平台建置的 Rust 練習專案，間隔重複記憶卡是個很好的選擇。從 SM-2 演算法開始，逐步加入 UI、持久化、Android 支援，每一步都能學到不同面向的 Rust 技巧。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/flashcard-app">flashcard-app 原始碼</a> - 本文範例的完整程式碼</li>
+<li><a href="https://slint.dev/">Slint 官方網站</a> - Rust 跨平台 UI 框架</li>
+<li><a href="https://super-memory.com/english/ol/sm2.htm">SM-2 演算法</a> - Wozniak 的原始規格</li>
+<li><a href="https://docs.slint.dev/latest/docs/rust/slint/android/">Slint Android 文件</a> - Android 平台支援</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

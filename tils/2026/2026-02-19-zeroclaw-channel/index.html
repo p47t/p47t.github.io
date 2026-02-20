@@ -1,0 +1,697 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>zeroclaw 如何設計 Channel 的抽象層</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/"/>
+  <meta property="og:title" content="zeroclaw 如何設計 Channel 的抽象層"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-19 11:01:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="agent"/>
+  
+  <meta property="og:article:tag" content="design-patterns"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-llm-provider/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            zeroclaw 如何設計 LLM Provider 的抽象層
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/">
+            zeroclaw 如何設計 Tool 的抽象層
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">zeroclaw 如何設計 Channel 的抽象層</h2>
+      <div class="post-meta">
+        <span class="post-date">February 19, 2026</span>
+        <a href="/tils"><span class="label label-info">TIL</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/agent"><span class="label label-primary">agent</span></a>
+        
+        <a href="/tags/design-patterns"><span class="label label-primary">design-patterns</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>zeroclaw</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/">zeroclaw 如何設計 Memory 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/">zeroclaw 如何設計 Tool 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/">zeroclaw 如何設計 Channel 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-llm-provider/">zeroclaw 如何設計 LLM Provider 的抽象層</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>      
+      <div class="post-content">
+        <blockquote>
+<p>zeroclaw 的 Channel 負責接收與傳送訊息，支援 Telegram、Discord、Slack、Matrix、iMessage、Signal、IRC、Email 等 14 種平台。這篇記錄它如何用一個乾淨的 trait 把這些平台統一起來，以及 runtime 如何把訊息分派給 LLM 處理。</p>
+</blockquote>
+<h2 id="trait-設計三個必填其餘自選">Trait 設計：三個必填，其餘自選</h2>
+<p><code>Channel</code> trait 定義在 <code>src/channels/traits.rs</code>，只有三個方法是必須實作的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> Channel: Send <span style="color:#f92672">+</span> Sync {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">name</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">send</span>(<span style="color:#f92672">&amp;</span>self, message: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">SendMessage</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">listen</span>(<span style="color:#f92672">&amp;</span>self, tx: <span style="color:#a6e22e">tokio</span>::sync::mpsc::Sender<span style="color:#f92672">&lt;</span>ChannelMessage<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 以下都有預設空實作（no-op）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">health_check</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">bool</span> { <span style="color:#66d9ef">true</span> }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">start_typing</span>(<span style="color:#f92672">&amp;</span>self, _recipient: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> { Ok(()) }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">stop_typing</span>(<span style="color:#f92672">&amp;</span>self, _recipient: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> { Ok(()) }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 串流草稿更新（目前只有 Telegram 實作）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">supports_draft_updates</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">bool</span> { <span style="color:#66d9ef">false</span> }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">send_draft</span>(<span style="color:#f92672">&amp;</span>self, _message: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">SendMessage</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;&gt;</span> { Ok(None) }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">update_draft</span>(<span style="color:#f92672">&amp;</span>self, _recipient: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, _message_id: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, _text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> { Ok(()) }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">finalize_draft</span>(<span style="color:#f92672">&amp;</span>self, _recipient: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, _message_id: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, _text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> { Ok(()) }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>最有趣的是 <code>listen</code> 的簽名：它拿到一個 <code>mpsc::Sender&lt;ChannelMessage&gt;</code>，然後把收到的訊息<strong>推進去</strong>——而不是回呼（callback）。這是 push-based observer pattern，讓所有平台的訊息都匯聚到同一條 mpsc 管道，runtime 只需要從一個地方消費。</p>
+<hr>
+<h2 id="訊息型別">訊息型別</h2>
+<p>進來的訊息（<code>ChannelMessage</code>）和出去的訊息（<code>SendMessage</code>）分開定義：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ChannelMessage</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> id: String,           <span style="color:#75715e">// 去重用的 ID
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> sender: String,       <span style="color:#75715e">// 發送者識別碼
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> reply_target: String, <span style="color:#75715e">// 要回覆的目標（chat_id、channel_id 等）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> content: String,      <span style="color:#75715e">// 正規化後的純文字內容
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> channel: String,      <span style="color:#75715e">// &#34;telegram&#34; | &#34;discord&#34; | &#34;slack&#34; | ...
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> timestamp: <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SendMessage</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> content: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> recipient: String,        <span style="color:#75715e">// 平台專屬的目標識別碼
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> subject: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,  <span style="color:#75715e">// Email 用的主旨
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>各平台的 sender/reply_target 格式天差地別（Telegram 是數字 chat_id、Discord 是 snowflake ID、Email 是郵件地址），但對上層 runtime 來說一律是字串，不需要知道細節。</p>
+<hr>
+<h2 id="14-個平台一個介面">14 個平台，一個介面</h2>
+<p><code>src/channels/mod.rs</code> 列出了目前支援的所有 channel：</p>
+<table>
+  <thead>
+      <tr>
+          <th>分類</th>
+          <th>平台</th>
+          <th>底層協議</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>終端</td>
+          <td>CLI</td>
+          <td>stdin/stdout</td>
+      </tr>
+      <tr>
+          <td>即時通訊</td>
+          <td>Telegram</td>
+          <td>HTTP long-polling</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>Discord</td>
+          <td>WebSocket Gateway</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>Slack</td>
+          <td>HTTP polling</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>Mattermost</td>
+          <td>WebSocket / HTTP</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>WhatsApp</td>
+          <td>Meta Cloud API webhook</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>iMessage</td>
+          <td>macOS <code>osascript</code></td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>Matrix</td>
+          <td>matrix-sdk 同步</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>Signal</td>
+          <td>signal-cli HTTP daemon</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>IRC</td>
+          <td>TCP/TLS</td>
+      </tr>
+      <tr>
+          <td>企業通訊</td>
+          <td>Lark/Feishu</td>
+          <td>WebSocket + Protobuf</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>DingTalk</td>
+          <td>WebSocket</td>
+      </tr>
+      <tr>
+          <td></td>
+          <td>QQ</td>
+          <td>HTTP API</td>
+      </tr>
+      <tr>
+          <td>電子郵件</td>
+          <td>Email</td>
+          <td>SMTP + IMAP</td>
+      </tr>
+  </tbody>
+</table>
+<p>每個 channel 一個 struct，實作 <code>Channel</code> trait，差異只在各自的 struct 欄位和協議處理。</p>
+<hr>
+<h2 id="有趣的實作細節">有趣的實作細節</h2>
+<h3 id="discord手刻-gateway-websocket">Discord：手刻 Gateway WebSocket</h3>
+<p>Discord 沒有用任何 Discord SDK，而是用 <code>tokio-tungstenite</code> 手刻了整個 Gateway 協議：</p>
+<ol>
+<li>先打 REST 拿 Gateway URL</li>
+<li>建立 WebSocket 連線</li>
+<li>走完 <code>Hello → Identify → READY</code> 握手流程</li>
+<li>另開一個 task 發心跳（heartbeat）</li>
+<li>處理各種 opcode：1（心跳請求）、7（重連）、9（session 失效）</li>
+</ol>
+<p>這樣做的好處是二進位體積可控、依賴少，但代價是要自己維護協議細節。</p>
+<h3 id="telegram串流草稿更新">Telegram：串流草稿更新</h3>
+<p>Telegram 是唯一實作 <code>supports_draft_updates()</code> 的 channel，可以做到「LLM 邊生成邊更新訊息」的效果：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    participant U as 使用者
+    participant TG as Telegram
+    participant A as Agent
+    participant LLM as LLM
+
+    U->>TG: 送出訊息
+    TG->>A: ChannelMessage
+    A->>TG: send_draft("...") → message_id
+    A->>+LLM: 串流請求
+    loop 每隔 N ms
+        LLM-->>A: delta token
+        A->>TG: update_draft(message_id, 累積文字)
+        Note over TG,U: 使用者看到訊息逐漸變長
+    end
+    LLM-->>-A: 生成完畢
+    A->>TG: finalize_draft(message_id, 最終格式)
+  </div>
+
+<p>這個效果類似 ChatGPT 網頁版的逐字輸出，但是在 Telegram 上實現。</p>
+<h3 id="larkfeishuprotobuf-frame">Lark/Feishu：Protobuf Frame</h3>
+<p>Lark 的 WebSocket 協議不是 JSON，而是用 <code>prost</code>（Rust 的 protobuf 實作）解析自訂的 <code>PbFrame</code> 格式，區分 <code>method=0</code>（ping/pong）和 <code>method=1</code>（實際事件）。是這 14 個 channel 裡協議最複雜的一個。</p>
+<hr>
+<h2 id="runtime把一切串起來">Runtime：把一切串起來</h2>
+<p>所有 channel 都跑起來之後，<code>start_channels()</code> 做的事情：</p>
+<ol>
+<li><strong>一條共用 mpsc</strong>：所有 channel 的 <code>listen</code> 都推到同一個 <code>Sender&lt;ChannelMessage&gt;</code></li>
+<li><strong>監控重啟（supervised restart）</strong>：每個 <code>listen</code> 都包在一個重試迴圈裡，失敗後指數退避重試</li>
+<li><strong>信號量限流的 worker pool</strong>：從 mpsc 讀訊息，用 <code>Semaphore</code> 限制同時在飛的請求數</li>
+</ol>
+
+  <div class="mermaid">
+    graph LR
+    TG[Telegram] -->|listen| Q[(mpsc queue)]
+    DC[Discord] -->|listen| Q
+    SL[Slack] -->|listen| Q
+    MT[Matrix ...] -->|listen| Q
+
+    Q --> W1[Worker]
+    Q --> W2[Worker]
+    Q --> W3[Worker]
+
+    W1 --> LLM[LLM Provider]
+    W2 --> LLM
+    W3 --> LLM
+  </div>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 監控重啟
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> result <span style="color:#f92672">=</span> ch.listen(tx.clone()).<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 正常退出 → 重置退避；錯誤 → 等待後重試
+</span></span></span><span style="display:flex;"><span>    tokio::time::sleep(Duration::from_secs(backoff)).<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>    backoff <span style="color:#f92672">=</span> backoff.saturating_mul(<span style="color:#ae81ff">2</span>).min(max_backoff);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 信號量限流
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> semaphore <span style="color:#f92672">=</span> Arc::new(Semaphore::new(max_in_flight));
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> <span style="color:#66d9ef">let</span> Some(msg) <span style="color:#f92672">=</span> rx.recv().<span style="color:#66d9ef">await</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> permit <span style="color:#f92672">=</span> semaphore.acquire_owned().<span style="color:#66d9ef">await</span><span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    workers.spawn(<span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> _permit <span style="color:#f92672">=</span> permit;  <span style="color:#75715e">// drop 時自動釋放
+</span></span></span><span style="display:flex;"><span>        process_channel_message(worker_ctx, msg).<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>最大並發數是 <code>channel 數量 × 4</code>，夾在 8 到 64 之間。</p>
+<h3 id="每則訊息的處理流程">每則訊息的處理流程</h3>
+<p><code>process_channel_message()</code> 做的事遠不只是「丟給 LLM」：</p>
+<ol>
+<li>攔截 runtime 指令（<code>/models</code>、<code>/model</code>）— 支援不重啟切換 LLM provider</li>
+<li>從 per-sender 對話歷史取得上下文（最多 50 輪）</li>
+<li>從記憶體召回相關內容（向量相似度搜尋）</li>
+<li>依平台注入特殊指令（例如告訴 Telegram 版的 LLM 可以用 <code>[IMAGE:path]</code> 語法發圖）</li>
+<li>如果支援 draft update，先發 <code>&quot;...&quot;</code> 佔位，再串流更新</li>
+<li>送進 LLM + tool call 迴圈（最多 300 秒 timeout）</li>
+<li>把結果存回對話歷史，回覆給使用者</li>
+</ol>
+<hr>
+<h2 id="gateway-vs-channel">Gateway vs Channel</h2>
+<p>zeroclaw 有兩種接收訊息的模式，不要搞混：</p>
+<ul>
+<li><strong>Channel</strong>（<code>start_channels</code>）：agent 主動出去建立連線（WebSocket、long-polling），agent 是 client。</li>
+<li><strong>Gateway</strong>（<code>src/gateway/</code>）：用 axum 開一個 HTTP server，等平台打 webhook 進來，agent 是 server。</li>
+</ul>
+
+  <div class="mermaid">
+    graph TB
+    subgraph channel_mode["Channel 模式（Agent 主動連出）"]
+        direction LR
+        A1[Agent] <-->|WebSocket / long-polling| P1["Telegram / Discord\nSlack / Matrix ..."]
+    end
+
+    subgraph gateway_mode["Gateway 模式（等 Webhook 打入）"]
+        direction LR
+        P2["WhatsApp\n(Meta Cloud API)"] -->|HTTP POST + HMAC 驗簽| A2["Agent\n(axum HTTP server)"]
+    end
+  </div>
+
+<p>WhatsApp（Meta Cloud API）就是用 Gateway 模式，因為 Meta 只支援 webhook，不提供讓你長連的協議。Gateway 還內建了滑動視窗的 rate limiter、HMAC-SHA256 簽名驗證和請求去重（idempotency store）。</p>
+<hr>
+<h2 id="小結">小結</h2>
+<p>zeroclaw Channel 設計的幾個值得學習的地方：</p>
+<ul>
+<li><strong>Push to mpsc，不用 callback</strong>：<code>listen</code> 只管推訊息，runtime 只管消費，兩邊完全解耦。</li>
+<li><strong>Supervised restart 是一等公民</strong>：每個 channel 的生命週期都有人顧，不怕某個平台偶爾斷線。</li>
+<li><strong>Draft updates 是 opt-in 擴充</strong>：預設 no-op，只有真的需要的平台實作，不污染介面。</li>
+<li><strong>Gateway 和 Channel 分開</strong>：推（長連）和拉（webhook）兩種模式有各自的架構，互不混淆。</li>
+</ul>
+
+      </div>
+      <hr>
+      
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

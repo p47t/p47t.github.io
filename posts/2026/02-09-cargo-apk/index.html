@@ -1,0 +1,1132 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/"/>
+  <meta property="og:title" content="深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-08 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="android"/>
+  
+  <meta property="og:article:tag" content="build-tools"/>
+  
+  <meta property="og:article:tag" content="ndk"/>
+  
+  <meta property="og:article:tag" content="gradle"/>
+  
+  <meta property="og:article:tag" content="cargo-apk"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:tag" content="claude-code"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            從間隔重複記憶卡學習 Rust 程式設計
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">
+            用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</h2>
+      <div class="post-meta">
+        <span class="post-date">February 8, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/android"><span class="label label-primary">android</span></a>
+        
+        <a href="/tags/build-tools"><span class="label label-primary">build-tools</span></a>
+        
+        <a href="/tags/ndk"><span class="label label-primary">ndk</span></a>
+        
+        <a href="/tags/gradle"><span class="label label-primary">gradle</span></a>
+        
+        <a href="/tags/cargo-apk"><span class="label label-primary">cargo-apk</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        <a href="/tags/claude-code"><span class="label label-primary">claude-code</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-09-cargo-apk/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>當我們用 Rust 開發 Android 應用時，cargo-apk 是一個自動化整個建置流程的工具——從 Rust 原始碼編譯、產生 AndroidManifest.xml、整合 Gradle、到最後簽章產出 APK。這篇文章深入探討 cargo-apk 的內部運作機制，以及現代替代方案。</p>
+<h3 id="什麼是-cargo-apk">什麼是 cargo-apk</h3>
+<p>cargo-apk 是 rust-mobile 團隊開發的命令列工具，負責：</p>
+<ul>
+<li>將 Rust cdylib 編譯為多個架構的 <code>.so</code> 檔案（ARM64、ARMv7、x86 等）</li>
+<li>從 Cargo.toml 自動產生 AndroidManifest.xml</li>
+<li>呼叫 aapt/aapt2 處理 Android 資源</li>
+<li>透過 Gradle 組裝 APK（DEX 編譯 + ZIP 打包）</li>
+<li>用 keystore 簽章 APK</li>
+</ul>
+<p><strong>重要提醒</strong>：cargo-apk 在 2024-2025 年已標記為 deprecated，官方推薦改用 <a href="https://github.com/rust-mobile/xbuild">xbuild</a>，後者支援跨平台（Android、iOS、Web、桌面）且持續維護。本文仍詳細介紹 cargo-apk 的運作原理，因為理解這些底層機制有助於除錯和選擇合適的建置工具。</p>
+<h3 id="1-apk-檔案結構剖析">1. APK 檔案結構剖析</h3>
+<p>APK 本質上是一個 ZIP 壓縮檔，包含應用程式執行所需的所有元件。理解 APK 結構是掌握建置流程的第一步。</p>
+<h4 id="標準-apk-目錄結構">標準 APK 目錄結構</h4>
+
+  <pre tabindex="0"><code>app.apk (ZIP archive)
+├── AndroidManifest.xml         # 應用程式中繼資料（二進位 XML）
+├── classes.dex                 # Dalvik Executable（Android Runtime 執行檔）
+├── classes2.dex                # 額外的 DEX 檔案（若超過大小限制）
+├── resources.arsc              # 編譯後的資源表（二進位格式）
+├── META-INF/                   # 簽章和資訊清單
+│   ├── MANIFEST.MF             # 套件資訊清單
+│   ├── CERT.SF                 # 簽章檔案
+│   └── CERT.RSA                # 憑證和簽章資料
+├── assets/                     # 開發者自訂的未編譯資源
+│   └── (custom files)
+├── res/                        # 編譯後的資源（不在 resources.arsc 中）
+│   ├── drawable/
+│   ├── layout/
+│   └── values/
+└── lib/                        # 平台特定的原生函式庫
+    ├── arm64-v8a/              # ARM 64-bit（現代裝置主流）
+    │   └── libflashcard_app.so
+    ├── armeabi-v7a/            # ARM 32-bit（舊裝置支援）
+    │   └── libflashcard_app.so
+    ├── x86/                    # Intel 32-bit（模擬器/平板）
+    │   └── libflashcard_app.so
+    └── x86_64/                 # Intel 64-bit（模擬器）
+        └── libflashcard_app.so</code></pre>
+
+<h4 id="rust-為什麼編譯成-so-檔案">Rust 為什麼編譯成 <code>.so</code> 檔案？</h4>
+<p>Android 要求所有原生程式碼編譯為<strong>動態連結函式庫</strong>（shared object, <code>.so</code>），放在 <code>lib/&lt;ABI&gt;/</code> 目錄下。Rust 專案必須將 <code>crate-type</code> 設為 <code>[&quot;cdylib&quot;]</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">lib</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">crate-type</span> = [<span style="color:#e6db74">&#34;cdylib&#34;</span>]</span></span></code></pre></div>
+
+<p><code>cdylib</code> 產生 C-compatible 的動態函式庫，Android Runtime 可以在執行時載入並呼叫其中的符號（透過 <code>System.loadLibrary()</code>）。</p>
+<h3 id="2-建置流程五階段">2. 建置流程五階段</h3>
+<p>cargo-apk 的建置流程可以拆解為五個連續的階段。理解每個階段的輸入輸出，有助於除錯建置問題。</p>
+<h4 id="phase-1-rust-編譯">Phase 1: Rust 編譯</h4>
+<p>cargo-apk 針對每個目標架構呼叫 <code>rustc</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 對於 ARM64</span>
+</span></span><span style="display:flex;"><span>rustc --target aarch64-linux-android <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      --crate-type cdylib <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      -C linker<span style="color:#f92672">=</span>aarch64-linux-android-clang <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      ...
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 對於 ARMv7</span>
+</span></span><span style="display:flex;"><span>rustc --target armv7-linux-androideabi <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      --crate-type cdylib <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      -C linker<span style="color:#f92672">=</span>armv7a-linux-androideabi-clang <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>      ...</span></span></code></pre></div>
+
+<p>關鍵環節：</p>
+<ul>
+<li><strong>NDK 工具鏈選擇</strong>：每個架構使用對應的 clang linker（由 <code>ANDROID_NDK_ROOT</code> 提供）</li>
+<li><strong>Sysroot 連結</strong>：連結到 NDK 的平台 headers 和 libraries</li>
+<li><strong>RUSTFLAGS 設定</strong>：加入 <code>-L</code> 指定 NDK 函式庫路徑</li>
+</ul>
+<p>輸出：</p>
+
+  <pre tabindex="0"><code>target/aarch64-linux-android/release/libmyapp.so
+target/armv7-linux-androideabi/release/libmyapp.so
+target/x86_64-linux-android/release/libmyapp.so</code></pre>
+
+<h4 id="phase-2-androidmanifestxml-產生">Phase 2: AndroidManifest.xml 產生</h4>
+<p>cargo-apk 從 Cargo.toml 的 <code>[package.metadata.android]</code> 讀取設定，自動產生 manifest：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">package</span> = <span style="color:#e6db74">&#34;com.example.flashcard_app&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">min_sdk_version</span> = <span style="color:#ae81ff">21</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">target_sdk_version</span> = <span style="color:#ae81ff">33</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 權限宣告</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">permissions</span> = [
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;android.permission.INTERNET&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;android.permission.WRITE_EXTERNAL_STORAGE&#34;</span>
+</span></span><span style="display:flex;"><span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 建置目標架構</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">build_targets</span> = [<span style="color:#e6db74">&#34;aarch64-linux-android&#34;</span>, <span style="color:#e6db74">&#34;armv7-linux-androideabi&#34;</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Activity 主題</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">activity_theme</span> = <span style="color:#e6db74">&#34;@android:style/Theme.NoTitleBar.Fullscreen&#34;</span></span></span></code></pre></div>
+
+<p>產生的 AndroidManifest.xml 範例：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#f92672">&lt;manifest</span> <span style="color:#a6e22e">xmlns:android=</span><span style="color:#e6db74">&#34;http://schemas.android.com/apk/res/android&#34;</span>
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">package=</span><span style="color:#e6db74">&#34;com.example.flashcard_app&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;uses-sdk</span> <span style="color:#a6e22e">android:minSdkVersion=</span><span style="color:#e6db74">&#34;21&#34;</span> <span style="color:#a6e22e">android:targetSdkVersion=</span><span style="color:#e6db74">&#34;33&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;uses-permission</span> <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;android.permission.INTERNET&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;application&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;activity</span> <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;android.app.NativeActivity&#34;</span>
+</span></span><span style="display:flex;"><span>                  <span style="color:#a6e22e">android:theme=</span><span style="color:#e6db74">&#34;@android:style/Theme.NoTitleBar.Fullscreen&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">&lt;!-- 指定要載入的原生函式庫名稱 --&gt;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&lt;meta-data</span> <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;android.app.lib_name&#34;</span>
+</span></span><span style="display:flex;"><span>                       <span style="color:#a6e22e">android:value=</span><span style="color:#e6db74">&#34;flashcard_app&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&lt;intent-filter&gt;</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#f92672">&lt;action</span> <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;android.intent.action.MAIN&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#f92672">&lt;category</span> <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;android.intent.category.LAUNCHER&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&lt;/intent-filter&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;/activity&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;/application&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/manifest&gt;</span></span></span></code></pre></div>
+
+<p>關鍵觀念：</p>
+<ul>
+<li><strong>NativeActivity</strong>：Android 提供的類別，自動處理原生程式碼的生命週期</li>
+<li><strong>android.app.lib_name</strong>：指定要載入的 <code>.so</code> 檔案名稱（不含 <code>lib</code> 前綴和 <code>.so</code> 後綴）</li>
+<li>Rust 程式碼必須實作 <code>android_main</code> 函式作為進入點</li>
+</ul>
+<h4 id="phase-3-資源處理aaptaapt2">Phase 3: 資源處理（aapt/aapt2）</h4>
+<p>Android Asset Packaging Tool 負責編譯資源檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>aapt2 compile --dir res/ -o compiled_resources/
+</span></span><span style="display:flex;"><span>aapt2 link --manifest AndroidManifest.xml <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>           -o base.apk <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>           compiled_resources/*.flat</span></span></code></pre></div>
+
+<p>輸出：</p>
+<ul>
+<li><code>resources.arsc</code>：二進位資源表，包含所有字串、顏色、尺寸定義</li>
+<li>編譯後的 XML 資源檔案</li>
+</ul>
+<h4 id="phase-4-gradle-apk-組裝">Phase 4: Gradle APK 組裝</h4>
+<p>cargo-apk 呼叫 Gradle 進行最終組裝：</p>
+<ol>
+<li><strong>複製 .so 檔案</strong>到 <code>jniLibs/&lt;arch&gt;/</code></li>
+<li><strong>編譯 Java/Kotlin 程式碼</strong>（若有）為 bytecode</li>
+<li><strong>產生 DEX</strong>：將 bytecode 轉換為 Dalvik Executable</li>
+<li><strong>打包 ZIP</strong>：將所有元件組合成 APK</li>
+</ol>
+<p>Gradle 的 build.gradle 片段：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-groovy" data-lang="groovy"><span style="display:flex;"><span>android <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>    compileSdkVersion <span style="color:#ae81ff">33</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    sourceSets <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>        main <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>            jniLibs<span style="color:#f92672">.</span><span style="color:#a6e22e">srcDirs</span> <span style="color:#f92672">=</span> <span style="color:#f92672">[</span><span style="color:#e6db74">&#39;jniLibs&#39;</span><span style="color:#f92672">]</span>  <span style="color:#75715e">// 原生函式庫來源
+</span></span></span><span style="display:flex;"><span>        <span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">}</span></span></span></code></pre></div>
+
+<h4 id="phase-5-apk-簽章">Phase 5: APK 簽章</h4>
+<p>最後一步是用 keystore 簽章 APK：</p>
+<p><strong>Debug 簽章</strong>（預設）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>apksigner sign --ks ~/.android/debug.keystore <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>               --ks-pass pass:android <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>               --ks-key-alias androiddebugkey <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>               app-debug.apk</span></span></code></pre></div>
+
+<p><strong>Release 簽章</strong>（自訂 keystore）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_path</span> = <span style="color:#e6db74">&#34;/path/to/release.jks&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_password</span> = <span style="color:#e6db74">&#34;env:KEYSTORE_PASSWORD&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_key_alias</span> = <span style="color:#e6db74">&#34;my-key&#34;</span></span></span></code></pre></div>
+
+<p>簽章過程會在 APK 的 <code>META-INF/</code> 目錄加入三個檔案：</p>
+<ul>
+<li><strong>MANIFEST.MF</strong>：列出 APK 中所有檔案及其 SHA-256 雜湊值</li>
+<li><strong>CERT.SF</strong>：MANIFEST.MF 的簽章</li>
+<li><strong>CERT.RSA</strong>：憑證和 RSA 簽章資料</li>
+</ul>
+<p>Android OS 在安裝時會驗證這些簽章，確保 APK 沒有被竄改。</p>
+<h3 id="3-cargotoml-設定詳解">3. Cargo.toml 設定詳解</h3>
+<p>完整的 <code>[package.metadata.android]</code> 設定範例：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>]
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 應用程式識別碼</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">package</span> = <span style="color:#e6db74">&#34;com.example.flashcard_app&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">apk_name</span> = <span style="color:#e6db74">&#34;flashcard-app&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># SDK 版本</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">min_sdk_version</span> = <span style="color:#ae81ff">21</span>      <span style="color:#75715e"># Android 5.0 Lollipop</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">target_sdk_version</span> = <span style="color:#ae81ff">33</span>   <span style="color:#75715e"># Android 13</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">max_sdk_version</span> = <span style="color:#ae81ff">34</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 建置目標架構</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">build_targets</span> = [
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;aarch64-linux-android&#34;</span>,      <span style="color:#75715e"># ARM64（主要）</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;armv7-linux-androideabi&#34;</span>     <span style="color:#75715e"># ARMv7（相容性）</span>
+</span></span><span style="display:flex;"><span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 權限宣告</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">permissions</span> = [
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;android.permission.INTERNET&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;android.permission.ACCESS_FINE_LOCATION&#34;</span>
+</span></span><span style="display:flex;"><span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 硬體功能需求</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;android.hardware.location&#34;</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Activity 設定</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">activity_theme</span> = <span style="color:#e6db74">&#34;@android:style/Theme.NoTitleBar.Fullscreen&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">main_activity_attributes</span> = {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;android:screenOrientation&#34;</span> = <span style="color:#e6db74">&#34;portrait&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Intent Filters（深度連結）</span>
+</span></span><span style="display:flex;"><span>[[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>.<span style="color:#a6e22e">intent_filters</span>]]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">actions</span> = [<span style="color:#e6db74">&#34;android.intent.action.VIEW&#34;</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">categories</span> = [<span style="color:#e6db74">&#34;android.intent.category.DEFAULT&#34;</span>, <span style="color:#e6db74">&#34;android.intent.category.BROWSABLE&#34;</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">data</span> = [{ <span style="color:#a6e22e">scheme</span> = <span style="color:#e6db74">&#34;https&#34;</span>, <span style="color:#a6e22e">host</span> = <span style="color:#e6db74">&#34;example.com&#34;</span>, <span style="color:#a6e22e">path_prefix</span> = <span style="color:#e6db74">&#34;/app&#34;</span> }]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 除錯設定</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">strip_symbols</span> = <span style="color:#66d9ef">false</span>     <span style="color:#75715e"># 保留符號以供除錯</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">debug</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Release 簽章</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_path</span> = <span style="color:#e6db74">&#34;/path/to/release.jks&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_password</span> = <span style="color:#e6db74">&#34;env:KEYSTORE_PASSWORD&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_key_alias</span> = <span style="color:#e6db74">&#34;my-key&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">release_keystore_key_password</span> = <span style="color:#e6db74">&#34;env:KEY_PASSWORD&#34;</span></span></span></code></pre></div>
+
+<h3 id="4-ndk-整合機制">4. NDK 整合機制</h3>
+<p>cargo-apk 如何找到並使用 Android NDK：</p>
+<h4 id="ndk-路徑解析">NDK 路徑解析</h4>
+<p>優先順序：</p>
+<ol>
+<li><code>ANDROID_NDK_ROOT</code> 環境變數</li>
+<li><code>ANDROID_NDK_HOME</code> 環境變數</li>
+<li><code>local.properties</code> 檔案中的 <code>ndk.dir</code></li>
+</ol>
+<h4 id="工具鏈選擇按架構">工具鏈選擇（按架構）</h4>
+<table>
+  <thead>
+      <tr>
+          <th>架構</th>
+          <th>Rust Target</th>
+          <th>NDK Linker</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>ARM 64-bit</td>
+          <td><code>aarch64-linux-android</code></td>
+          <td><code>aarch64-linux-android-clang</code></td>
+      </tr>
+      <tr>
+          <td>ARM 32-bit</td>
+          <td><code>armv7-linux-androideabi</code></td>
+          <td><code>armv7a-linux-androideabi-clang</code></td>
+      </tr>
+      <tr>
+          <td>Intel 64-bit</td>
+          <td><code>x86_64-linux-android</code></td>
+          <td><code>x86_64-linux-android-clang</code></td>
+      </tr>
+      <tr>
+          <td>Intel 32-bit</td>
+          <td><code>i686-linux-android</code></td>
+          <td><code>i686-linux-android-clang</code></td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="sysroot-和-api-level">Sysroot 和 API Level</h4>
+<p>NDK 為每個 API level 提供不同的 sysroot（系統標頭檔和函式庫）：</p>
+
+  <pre tabindex="0"><code>$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/
+├── sysroot/
+│   └── usr/
+│       ├── include/         # C/C++ 標頭檔
+│       └── lib/
+│           ├── aarch64-linux-android/21/  # API 21 的 ARM64 函式庫
+│           ├── aarch64-linux-android/28/  # API 28 的 ARM64 函式庫
+│           └── ...</code></pre>
+
+<p>Rust 編譯時會連結到對應 API level 的 sysroot，確保產生的 <code>.so</code> 與目標 Android 版本相容。</p>
+<h3 id="5-與手動-ndk-整合的比較">5. 與手動 NDK 整合的比較</h3>
+<table>
+  <thead>
+      <tr>
+          <th>面向</th>
+          <th>cargo-apk</th>
+          <th>手動 NDK 整合</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>設定複雜度</strong></td>
+          <td><code>cargo install cargo-apk</code></td>
+          <td>下載 NDK、設定路徑、撰寫建置腳本</td>
+      </tr>
+      <tr>
+          <td><strong>Manifest 產生</strong></td>
+          <td>自動從 Cargo.toml</td>
+          <td>手動編寫 XML</td>
+      </tr>
+      <tr>
+          <td><strong>多架構建置</strong></td>
+          <td>自動迴圈處理</td>
+          <td>每個架構手動呼叫</td>
+      </tr>
+      <tr>
+          <td><strong>APK 組裝</strong></td>
+          <td>Gradle 自動整合</td>
+          <td>手動呼叫 aapt + gradle</td>
+      </tr>
+      <tr>
+          <td><strong>簽章</strong></td>
+          <td>自動 keystore 處理</td>
+          <td>手動呼叫 apksigner</td>
+      </tr>
+      <tr>
+          <td><strong>控制粒度</strong></td>
+          <td>高層自動化</td>
+          <td>完全控制每個步驟</td>
+      </tr>
+      <tr>
+          <td><strong>學習曲線</strong></td>
+          <td>低（單一指令）</td>
+          <td>高（理解整個 Android 建置鏈）</td>
+      </tr>
+  </tbody>
+</table>
+<p>cargo-apk 的核心價值是<strong>自動化</strong>——一行指令完成從 Rust 到 APK 的所有步驟。但代價是較少的客製化彈性，並且依賴 Gradle（可能增加建置時間）。</p>
+<h3 id="6-目前狀態與替代方案">6. 目前狀態與替代方案</h3>
+<h4 id="cargo-apk-的現況">cargo-apk 的現況</h4>
+<p>cargo-apk 在 2024 年標記為 deprecated，原因：</p>
+<ul>
+<li>缺乏跨平台支援（僅限 Android）</li>
+<li>維護資源有限</li>
+<li>更現代的工具（xbuild）提供更好的開發體驗</li>
+</ul>
+<h4 id="xbuild現代化的替代方案">xbuild：現代化的替代方案</h4>
+<p><a href="https://github.com/rust-mobile/xbuild">xbuild</a> 是 rust-mobile 團隊的新工具，支援多平台：</p>
+<p><strong>優勢</strong>：</p>
+<ul>
+<li><strong>跨平台支援</strong>：Android、iOS、Windows、Linux、Web</li>
+<li><strong>統一命令介面</strong>：<code>x build</code>、<code>x run</code>、<code>x doctor</code></li>
+<li><strong>裝置管理</strong>：<code>x devices</code> 列出所有連接的裝置</li>
+<li><strong>持續開發</strong>：活躍維護，積極修復問題</li>
+<li><strong>App Store 發佈</strong>：內建發佈到 Google Play 和 App Store 的支援</li>
+</ul>
+<p><strong>安裝與使用</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 安裝</span>
+</span></span><span style="display:flex;"><span>cargo install xbuild
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 檢查環境</span>
+</span></span><span style="display:flex;"><span>x doctor
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 建置並部署到裝置</span>
+</span></span><span style="display:flex;"><span>x devices                        <span style="color:#75715e"># 列出裝置</span>
+</span></span><span style="display:flex;"><span>x build --device adb:&lt;device-id&gt; <span style="color:#75715e"># 建置並安裝</span></span></span></code></pre></div>
+
+<p><strong>三階段建置流程</strong>：</p>
+<ol>
+<li><strong>Fetch</strong>：下載預編譯的 Rust 標準函式庫</li>
+<li><strong>Build</strong>：透過 Cargo 編譯 Rust 程式碼</li>
+<li><strong>Package</strong>：產生平台特定套件（APK、iOS bundle 等）</li>
+</ol>
+<h4 id="cargo-ndk函式庫專用工具">cargo-ndk：函式庫專用工具</h4>
+<p><a href="https://github.com/bbqsrc/cargo-ndk">cargo-ndk</a> 適合只需要編譯 Rust 函式庫（不需要完整 APK）的專案：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo install cargo-ndk
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>cargo ndk -t arm64-v8a -t armeabi-v7a <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>          -o ./jniLibs <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>          build --release</span></span></code></pre></div>
+
+<p>輸出為標準的 <code>jniLibs/</code> 目錄結構，可直接整合到現有的 Android Studio 專案。</p>
+<h4 id="工具比較表">工具比較表</h4>
+<table>
+  <thead>
+      <tr>
+          <th>工具</th>
+          <th>用途</th>
+          <th>平台支援</th>
+          <th>開發狀態</th>
+          <th>適用場景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>cargo-apk</strong></td>
+          <td>完整 APK 建置</td>
+          <td>Android only</td>
+          <td>Deprecated (2024)</td>
+          <td>舊專案維護</td>
+      </tr>
+      <tr>
+          <td><strong>xbuild</strong></td>
+          <td>跨平台應用建置</td>
+          <td>Android/iOS/Web/Desktop</td>
+          <td>活躍開發</td>
+          <td>新專案首選</td>
+      </tr>
+      <tr>
+          <td><strong>cargo-ndk</strong></td>
+          <td>NDK 函式庫編譯</td>
+          <td>Android (library)</td>
+          <td>活躍開發</td>
+          <td>整合到現有 Android 專案</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="7-踩過的坑與解決方案">7. 踩過的坑與解決方案</h3>
+<p>實際使用 cargo-apk 時常見的問題：</p>
+<h4 id="問題-1ndk-找不到">問題 1：NDK 找不到</h4>
+
+  <pre tabindex="0"><code>Error: Failed to read source.properties: Os { code: 2, kind: NotFound }</code></pre>
+
+<p><strong>原因</strong>：cargo-apk 找不到 NDK 安裝路徑。</p>
+<p><strong>解法</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 設定環境變數（Windows PowerShell）</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>Environment<span style="color:#f92672">]</span>::SetEnvironmentVariable<span style="color:#f92672">(</span><span style="color:#e6db74">&#34;ANDROID_NDK_ROOT&#34;</span>, <span style="color:#e6db74">&#34;C:\Users\p47ts\scoop\apps\android-clt\current\ndk\29.0.14206865&#34;</span>, <span style="color:#e6db74">&#34;User&#34;</span><span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>Environment<span style="color:#f92672">]</span>::SetEnvironmentVariable<span style="color:#f92672">(</span><span style="color:#e6db74">&#34;ANDROID_HOME&#34;</span>, <span style="color:#e6db74">&#34;C:\Users\p47ts\scoop\apps\android-clt\current&#34;</span>, <span style="color:#e6db74">&#34;User&#34;</span><span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 或在當前 shell（bash）</span>
+</span></span><span style="display:flex;"><span>export ANDROID_NDK_ROOT<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;/path/to/ndk/29.0.14206865&#34;</span>
+</span></span><span style="display:flex;"><span>export ANDROID_HOME<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;/path/to/android-sdk&#34;</span></span></span></code></pre></div>
+
+<h4 id="問題-2錯誤的架構">問題 2：錯誤的架構</h4>
+<p>APK 安裝後閃退，logcat 顯示：</p>
+
+  <pre tabindex="0"><code>E/linker: library &#34;libmyapp.so&#34; not found</code></pre>
+
+<p><strong>原因</strong>：裝置的 ABI 與 <code>build_targets</code> 不符（例如裝置是 ARM64，但只編譯了 ARMv7）。</p>
+<p><strong>解法</strong>：</p>
+<p>確認裝置 ABI：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>adb shell getprop ro.product.cpu.abi
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 輸出：arm64-v8a</span></span></span></code></pre></div>
+
+<p>修改 Cargo.toml 加入對應架構：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">build_targets</span> = [<span style="color:#e6db74">&#34;aarch64-linux-android&#34;</span>]  <span style="color:#75715e"># 對應 arm64-v8a</span></span></span></code></pre></div>
+
+<h4 id="問題-3apk-檔案過大">問題 3：APK 檔案過大</h4>
+<p>Release APK 超過 100MB，包含大量除錯符號。</p>
+<p><strong>解法</strong>：</p>
+<p>啟用符號剝離：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>.<span style="color:#a6e22e">metadata</span>.<span style="color:#a6e22e">android</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">strip_symbols</span> = <span style="color:#66d9ef">true</span>  <span style="color:#75715e"># 移除除錯符號</span></span></span></code></pre></div>
+
+<p>或在 Cargo.toml 設定 release profile：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">profile</span>.<span style="color:#a6e22e">release</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">strip</span> = <span style="color:#66d9ef">true</span>       <span style="color:#75715e"># 剝離符號</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">opt-level</span> = <span style="color:#e6db74">&#34;z&#34;</span>    <span style="color:#75715e"># 最小化檔案大小</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">lto</span> = <span style="color:#66d9ef">true</span>         <span style="color:#75715e"># Link-Time Optimization</span></span></span></code></pre></div>
+
+<h4 id="問題-4feature-flag-統一導致桌面建置失敗">問題 4：Feature flag 統一導致桌面建置失敗</h4>
+<p>使用 target-conditional 依賴時，Cargo 仍會統一 feature：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span><span style="color:#75715e"># ❌ 錯誤：桌面建置也會拉入 Android 依賴</span>
+</span></span><span style="display:flex;"><span>[<span style="color:#a6e22e">target</span>.<span style="color:#e6db74">&#39;cfg(target_os = &#34;android&#34;)&#39;</span>.<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">slint</span> = { <span style="color:#a6e22e">version</span> = <span style="color:#e6db74">&#34;1.9&#34;</span>, <span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;backend-android-activity-06&#34;</span>] }</span></span></code></pre></div>
+
+<p><strong>解法</strong>：</p>
+<p>改用 feature flag：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">features</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">android</span> = [<span style="color:#e6db74">&#34;slint/backend-android-activity-06&#34;</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">slint</span> = <span style="color:#e6db74">&#34;1.9&#34;</span></span></span></code></pre></div>
+
+<p>建置時明確啟用：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo apk build --features android --target aarch64-linux-android --lib</span></span></code></pre></div>
+
+<h4 id="問題-5windows-上的-pdb-檔名衝突">問題 5：Windows 上的 PDB 檔名衝突</h4>
+
+  <pre tabindex="0"><code>warning: output filename collision.
+The bin target `flashcard-app` has the same output filename as the lib target `flashcard_app`.
+Colliding filename is: flashcard_app.pdb</code></pre>
+
+<p><strong>原因</strong>：<code>crate-type = [&quot;cdylib&quot;, &quot;lib&quot;]</code> 搭配同名的 <code>[[bin]]</code> 在 Windows 產生相同的 PDB 除錯檔案。</p>
+<p><strong>解法</strong>：</p>
+<p>讓 bin 名稱與 package 名稱不同：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">package</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">name</span> = <span style="color:#e6db74">&#34;flashcard-app&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[[<span style="color:#a6e22e">bin</span>]]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">name</span> = <span style="color:#e6db74">&#34;flashcard&#34;</span>  <span style="color:#75715e"># 不同於 package name</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">path</span> = <span style="color:#e6db74">&#34;src/main.rs&#34;</span></span></span></code></pre></div>
+
+<h3 id="8-完整建置範例">8. 完整建置範例</h3>
+<p>從零開始建置 Android APK 的完整流程：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 建立專案</span>
+</span></span><span style="display:flex;"><span>cargo new --lib my-android-app
+</span></span><span style="display:flex;"><span>cd my-android-app
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 設定 Cargo.toml</span>
+</span></span><span style="display:flex;"><span>cat &gt;&gt; Cargo.toml <span style="color:#e6db74">&lt;&lt; &#39;EOF&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">[lib]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">crate-type = [&#34;cdylib&#34;]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">[package.metadata.android]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">package = &#34;com.example.myapp&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">min_sdk_version = 21
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">target_sdk_version = 33
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">build_targets = [&#34;aarch64-linux-android&#34;, &#34;armv7-linux-androideabi&#34;]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">EOF</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 撰寫 Rust 入口點（src/lib.rs）</span>
+</span></span><span style="display:flex;"><span>cat &gt; src/lib.rs <span style="color:#e6db74">&lt;&lt; &#39;EOF&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">#[cfg(target_os = &#34;android&#34;)]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">#[no_mangle]
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">fn android_main(app: android_activity::AndroidApp) {
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    // 應用程式邏輯
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">}
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">EOF</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 4. 設定環境變數（依實際路徑調整）</span>
+</span></span><span style="display:flex;"><span>export ANDROID_NDK_ROOT<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;/path/to/ndk/29.0.14206865&#34;</span>
+</span></span><span style="display:flex;"><span>export ANDROID_HOME<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;/path/to/android-sdk&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 5. 安裝 Rust Android target</span>
+</span></span><span style="display:flex;"><span>rustup target add aarch64-linux-android armv7-linux-androideabi
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 6. 安裝 cargo-apk</span>
+</span></span><span style="display:flex;"><span>cargo install cargo-apk
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 7. 建置 APK</span>
+</span></span><span style="display:flex;"><span>cargo apk build --release
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 內部流程：</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   [Phase 1] rustc --target aarch64-linux-android ...</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#             → target/aarch64-linux-android/release/libmyapp.so</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   [Phase 2] Generate AndroidManifest.xml from Cargo.toml</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   [Phase 3] aapt2 compile resources</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   [Phase 4] Gradle: package DEX + .so → APK</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#   [Phase 5] apksigner sign with release.jks</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 輸出：target/release/apk/my-android-app.apk</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 8. 安裝到裝置</span>
+</span></span><span style="display:flex;"><span>cargo apk run --release</span></span></code></pre></div>
+
+<p>建置完成後，APK 位置：</p>
+
+  <pre tabindex="0"><code>target/
+└── release/
+    └── apk/
+        └── my-android-app.apk  # 已簽章的 APK</code></pre>
+
+<p>檢查 APK 內容：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>unzip -l target/release/apk/my-android-app.apk
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 輸出：</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># lib/arm64-v8a/libmyapp.so</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># lib/armeabi-v7a/libmyapp.so</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># AndroidManifest.xml</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># classes.dex</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># META-INF/MANIFEST.MF</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># ...</span></span></span></code></pre></div>
+
+<h3 id="總結">總結</h3>
+<p>從 Rust 程式碼到可安裝的 Android APK，cargo-apk 自動化了複雜的建置鏈：</p>
+<table>
+  <thead>
+      <tr>
+          <th>階段</th>
+          <th>輸入</th>
+          <th>輸出</th>
+          <th>關鍵技術</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>1. Rust 編譯</strong></td>
+          <td>src/*.rs + Cargo.toml</td>
+          <td>libmyapp.so (多架構)</td>
+          <td>rustc + NDK toolchain</td>
+      </tr>
+      <tr>
+          <td><strong>2. Manifest 產生</strong></td>
+          <td>[package.metadata.android]</td>
+          <td>AndroidManifest.xml</td>
+          <td>NativeActivity 設定</td>
+      </tr>
+      <tr>
+          <td><strong>3. 資源處理</strong></td>
+          <td>res/, assets/</td>
+          <td>resources.arsc</td>
+          <td>aapt/aapt2</td>
+      </tr>
+      <tr>
+          <td><strong>4. APK 組裝</strong></td>
+          <td>.so + DEX + resources</td>
+          <td>unsigned APK (ZIP)</td>
+          <td>Gradle</td>
+      </tr>
+      <tr>
+          <td><strong>5. 簽章</strong></td>
+          <td>APK + keystore</td>
+          <td>signed APK</td>
+          <td>apksigner</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>何時使用哪個工具？</strong></p>
+<ul>
+<li><strong>新專案</strong>：優先選擇 <strong>xbuild</strong>（跨平台、活躍開發、統一工具鏈）</li>
+<li><strong>整合現有 Android 專案</strong>：使用 <strong>cargo-ndk</strong>（只編譯 .so，由 Android Studio 處理其餘）</li>
+<li><strong>舊專案維護</strong>：可繼續使用 <strong>cargo-apk</strong>，但建議遷移到 xbuild</li>
+</ul>
+<p><strong>關鍵觀念回顧</strong>：</p>
+<ol>
+<li><strong>APK 是 ZIP</strong>：理解目錄結構有助於除錯打包問題</li>
+<li><strong>cdylib 必要性</strong>：Android 只能載入動態函式庫</li>
+<li><strong>多架構建置</strong>：一個 APK 包含所有架構的 .so，安裝時系統自動選擇</li>
+<li><strong>Manifest 自動化</strong>：Cargo.toml 配置轉換為 Android 設定</li>
+<li><strong>NDK 整合</strong>：正確設定環境變數是成功建置的關鍵</li>
+</ol>
+<p>透過理解這些底層機制，即使遇到建置問題也能快速定位原因並解決。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/rust-mobile/cargo-apk">cargo-apk GitHub</a> - 官方原始碼與文件</li>
+<li><a href="https://github.com/rust-mobile/xbuild">xbuild GitHub</a> - 現代化的跨平台建置工具</li>
+<li><a href="https://github.com/bbqsrc/cargo-ndk">cargo-ndk GitHub</a> - NDK 函式庫編譯工具</li>
+<li><a href="https://developer.android.com/ndk">Android NDK 文件</a> - 官方 NDK 開發指南</li>
+<li><a href="https://en.wikipedia.org/wiki/Apk_(file_format)">APK 檔案格式</a> - APK 結構詳解</li>
+<li><a href="https://developer.android.com/build/gradle-build-overview">Android Gradle Build 流程</a> - Gradle 建置系統文件</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,155 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/traits/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-19 02:39:27 -0800 -0800</updated>
+    
+    <item>
+      <title>Rust 的 async_trait：為什麼 async fn 不能直接用在 trait 裡？</title>
+      <link>https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-async-trait/</link>
+      <pubDate>Thu, 19 Feb 2026 02:39:27 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-async-trait/</guid>
+      <description>&lt;p&gt;本文涵蓋為什麼 Rust trait 不支援 &lt;code&gt;async fn&lt;/code&gt;、&lt;code&gt;async_trait&lt;/code&gt; crate 如何解決這個問題、它的代價是什麼，以及 Rust 1.75 之後的原生支援現況。&lt;/p&gt;
+&lt;h2 id=&#34;問題async-fn-不能直接用在-trait-裡&#34;&gt;問題：async fn 不能直接用在 trait 裡&lt;/h2&gt;
+&lt;p&gt;如果你第一次在 Rust 寫 async 相關的 trait，很可能會直覺地這樣寫：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; MyTrait {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String; &lt;span style=&#34;color:#75715e&#34;&gt;// ❌ 編譯錯誤
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;但這在穩定版 Rust（1.75 之前）是不允許的。為什麼？&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;根本原因impl-trait-與-dyn-trait-的衝突&#34;&gt;根本原因：impl Trait 與 dyn Trait 的衝突&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;async fn&lt;/code&gt; 是語法糖，它會被編譯器展開成回傳 &lt;code&gt;impl Future&lt;/code&gt; 的普通函式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 你寫的：
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 編譯器看到的：
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;impl&lt;/span&gt; Future&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;問題出在 trait 裡。每個實作 trait 的型別，其 &lt;code&gt;do_something&lt;/code&gt; 都會回傳一個&lt;strong&gt;不同的具體 Future 型別&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; MyTrait &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; StructA {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 回傳型別是某個只有編譯器知道名字的 Future_A
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; MyTrait &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; StructB {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 回傳型別是另一個 Future_B，跟 Future_A 完全不同
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這讓 trait 無法做到 &lt;strong&gt;object-safe&lt;/strong&gt;（也就是無法用 &lt;code&gt;dyn MyTrait&lt;/code&gt;），因為動態派發需要在執行期才知道要呼叫哪個實作，但每個實作的回傳型別大小不同，vtable 根本無法表達。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;解法async_trait-crate&#34;&gt;解法：async_trait crate&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;async_trait&lt;/code&gt; 是由 David Tolnay（&lt;code&gt;serde&lt;/code&gt;、&lt;code&gt;anyhow&lt;/code&gt; 的作者）開發的 procedural macro，它的做法是把所有 &lt;code&gt;async fn&lt;/code&gt; 的回傳值&lt;strong&gt;統一包進 &lt;code&gt;Box&lt;/code&gt;&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; async_trait::async_trait;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[async_trait]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; MyTrait {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[async_trait]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; MyTrait &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; MyStruct {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;hello&amp;#34;&lt;/span&gt;.to_string()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;macro 展開後，實際上變成這樣：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; MyTrait {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Pin&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Box&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;dyn&lt;/span&gt; Future&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; Send &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &amp;#39;_&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; MyTrait &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; MyStruct {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Pin&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Box&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;dyn&lt;/span&gt; Future&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; Send &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &amp;#39;_&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Box::pin(&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;hello&amp;#34;&lt;/span&gt;.to_string()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        })
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;回傳型別統一成 &lt;code&gt;Pin&amp;lt;Box&amp;lt;dyn Future&amp;gt;&amp;gt;&lt;/code&gt;，大小固定，vtable 可以表達，&lt;code&gt;dyn MyTrait&lt;/code&gt; 就可以正常運作了。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;代價與限制&#34;&gt;代價與限制&lt;/h2&gt;
+&lt;h3 id=&#34;堆積分配heap-allocation&#34;&gt;堆積分配（Heap allocation）&lt;/h3&gt;
+&lt;p&gt;每次呼叫 async trait method，都會觸發一次 &lt;code&gt;Box::pin()&lt;/code&gt;，也就是一次 heap 分配。對於高頻呼叫的場景，這個開銷是需要考慮的。&lt;/p&gt;
+&lt;h3 id=&#34;send-bound&#34;&gt;Send bound&lt;/h3&gt;
+&lt;p&gt;預設情況下，&lt;code&gt;async_trait&lt;/code&gt; 要求產生的 Future 必須是 &lt;code&gt;Send&lt;/code&gt;（可以跨執行緒傳遞），適合多執行緒 async runtime（如 Tokio）。&lt;/p&gt;
+&lt;p&gt;如果你的情境不需要 &lt;code&gt;Send&lt;/code&gt;（例如單執行緒 runtime），可以這樣關掉：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[async_trait(?Send)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; MyTrait {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;生命週期複雜度&#34;&gt;生命週期複雜度&lt;/h3&gt;
+&lt;p&gt;macro 會自動處理大部分生命週期，但在一些邊緣情況（例如 &lt;code&gt;&amp;amp;self&lt;/code&gt; 裡有複雜的借用關係）還是可能需要手動標注，錯誤訊息也可能比較難讀。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;rust-175-的原生支援&#34;&gt;Rust 1.75 的原生支援&lt;/h2&gt;
+&lt;p&gt;Rust 1.75（2023 年 12 月）穩定了 &lt;strong&gt;Return Position Impl Trait in Trait（RPITIT）&lt;/strong&gt;，讓 &lt;code&gt;async fn&lt;/code&gt; 可以直接用在 trait 裡：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; MyTrait {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;do_something&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; String; &lt;span style=&#34;color:#75715e&#34;&gt;// ✅ Rust 1.75+ 可以！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;不需要任何外部 crate，不需要 &lt;code&gt;Box&lt;/code&gt;，沒有 heap 分配。&lt;/p&gt;
+&lt;h3 id=&#34;但-dyn-trait-仍有限制&#34;&gt;但 dyn Trait 仍有限制&lt;/h3&gt;
+&lt;p&gt;原生支援的版本有一個重要限制：&lt;strong&gt;動態派發（&lt;code&gt;dyn MyTrait&lt;/code&gt;）尚未完全支援&lt;/strong&gt;。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;call&lt;/span&gt;(obj: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;dyn&lt;/span&gt; MyTrait) {  &lt;span style=&#34;color:#75715e&#34;&gt;// ⚠️ 可能有限制
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    obj.do_something();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;如果你需要 &lt;code&gt;dyn Trait&lt;/code&gt;，目前仍建議使用 &lt;code&gt;async_trait&lt;/code&gt; crate，或者搭配 &lt;code&gt;dynosaur&lt;/code&gt; 等新興 crate 來橋接。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;async_trait-與-pin-的關係&#34;&gt;async_trait 與 Pin 的關係&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;async_trait&lt;/code&gt; 展開後的回傳型別是 &lt;code&gt;Pin&amp;lt;Box&amp;lt;dyn Future&amp;gt;&amp;gt;&lt;/code&gt;，這裡的 &lt;code&gt;Pin&lt;/code&gt; 是必要的——因為 &lt;code&gt;dyn Future&lt;/code&gt; 可能是自引用的（async block 裡可能跨 await 持有引用），必須保證它被 poll 的過程中不會被移動。&lt;/p&gt;
+&lt;p&gt;這也是為什麼 &lt;code&gt;async_trait&lt;/code&gt; 的文件裡，你會看到它與 &lt;code&gt;Pin&lt;/code&gt;、&lt;code&gt;Box&lt;/code&gt; 密不可分。如果你對 &lt;code&gt;Pin&lt;/code&gt; 還不熟悉，可以先閱讀&lt;a href=&#34;./rust-pin-blog.md&#34;&gt;《深入理解 Rust 的 Pin》&lt;/a&gt;。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;應該用哪個&#34;&gt;應該用哪個？&lt;/h2&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;情境&lt;/th&gt;
+          &lt;th&gt;建議&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Rust 1.75+，不需要 &lt;code&gt;dyn Trait&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;原生 &lt;code&gt;async fn in trait&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;需要 &lt;code&gt;dyn Trait&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;async_trait&lt;/code&gt; crate&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;效能極度敏感，避免 heap 分配&lt;/td&gt;
+          &lt;td&gt;考慮手動實作或 &lt;code&gt;impl Trait&lt;/code&gt; 參數&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;舊版 Rust（&amp;lt; 1.75）&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;async_trait&lt;/code&gt; crate&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;總結&#34;&gt;總結&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Rust trait 原本不支援 &lt;code&gt;async fn&lt;/code&gt;，根本原因是每個實作的 Future 型別不同，無法做到 object-safe。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;async_trait&lt;/code&gt; crate 透過把回傳值包進 &lt;code&gt;Pin&amp;lt;Box&amp;lt;dyn Future&amp;gt;&amp;gt;&lt;/code&gt; 解決這個問題，代價是每次呼叫需要 heap 分配。&lt;/li&gt;
+&lt;li&gt;Rust 1.75 穩定了原生的 &lt;code&gt;async fn in trait&lt;/code&gt;，但動態派發（&lt;code&gt;dyn Trait&lt;/code&gt;）的支援仍不完整，&lt;code&gt;async_trait&lt;/code&gt; 在這個場景仍有其價值。&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

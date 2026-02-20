@@ -1,0 +1,639 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>像專業人士一樣撰寫 Git Commit Message</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2015/06-12-git-commit-message/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2015/06-12-git-commit-message/"/>
+  <meta property="og:title" content="像專業人士一樣撰寫 Git Commit Message"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2015-06-12 00:00:00 &#43;0000 UTC"/>
+  
+  <meta property="og:article:tag" content="git"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2015/01-16-opengrok-on-mac-osx/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Using OpenGrok on Mac OS X
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2015/06-12-about-code-review/">
+            About Code Review
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">像專業人士一樣撰寫 Git Commit Message</h2>
+      <div class="post-meta">
+        <span class="post-date">June 12, 2015</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/git"><span class="label label-primary">git</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        <h3 id="為什麼好的-commit-message-這麼重要">為什麼好的 Commit Message 這麼重要？</h3>
+<p>每次看到亂七八糟的 git commit message，我都會覺得渾身不對勁。所謂的「亂七八糟」，我指的是這幾種情況：</p>
+<ul>
+<li>格式毫無章法，東一筆西一筆</li>
+<li>寫得太含糊，讓人看了也不知道改了什麼</li>
+<li>組織混亂，難以理解</li>
+</ul>
+<p>好的 commit message 應該要簡潔、有條理、格式一致。寫好它當然要花點心力，但有幾個理由值得我們這樣做：</p>
+<ul>
+<li>就像程式碼一樣，commit message 寫一次但會被讀很多次。花時間寫好它是值得的。</li>
+<li>如果容許爛 commit message 存在，等於在傳達一個訊息：你不在乎程式碼的可維護性。這對建立良好的工程文化很不利。</li>
+</ul>
+<p>Chris Beams 寫的 <a href="http://chris.beams.io/posts/git-commit/">How to Write a Git Commit Message</a> 是我讀過關於這個主題最好的文章。Chris 很清楚地解釋了為什麼好的 commit message 很重要，以及該怎麼寫。你可以從這個範例看看好的 commit message 長什麼樣子：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">Summarize changes in around 50 characters or less
+
+More detailed explanatory text, if necessary. Wrap it to about 72
+characters or so. In some contexts, the first line is treated as the
+subject of the commit and the rest of the text as the body. The
+blank line separating the summary from the body is critical (unless
+you omit the body entirely); various tools like `log`, `shortlog`
+and `rebase` can get confused if you run the two together.
+
+Explain the problem that this commit is solving. Focus on why you
+are making this change as opposed to how (the code explains that).
+Are there side effects or other unintuitive consequenses of this
+change? Here&#39;s the place to explain them.
+
+Further paragraphs come after blank lines.
+
+ - Bullet points are okay, too
+
+ - Typically a hyphen or asterisk is used for the bullet, preceded
+   by a single space, with blank lines in between, but conventions
+   vary here
+
+If you use an issue tracker, put references to them at the bottom,
+like this:
+
+Resolves: #123
+See also: #456, #789</code></pre>
+
+<p>這個範本是基於著名的 <a href="http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html">Tim Pope&rsquo;s Note About Git Commit Messages</a>。</p>
+<h3 id="大家都怎麼寫-commit-message">大家都怎麼寫 Commit Message？</h3>
+<p>我不打算重複別人已經說過的東西。我想做的是蒐集一些真實世界的範例，看看可以從中學到什麼。</p>
+<h4 id="linux"><a href="https://www.kernel.org/doc/Documentation/SubmittingPatches">Linux</a></h4>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit"></code></pre>
+
+<h4 id="subsurface"><a href="https://github.com/torvalds/subsurface/blob/master/README#L272">Subsurface</a></h4>
+<p><a href="https://github.com/torvalds/subsurface">Subsurface</a> 是 Linus Torvalds 開發的專案，他當然也是 Git 的創造者。以下是 Subsurface 開發者使用的格式：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">Header line: explain the commit in one line (use the imperative)
+
+Body of commit message is a few lines of text, explaining things
+in more detail, possibly giving some background about the issue
+being fixed, etc etc.
+
+The body of the commit message can be several paragraphs, and
+please do proper word-wrap and keep columns shorter than about
+74 characters or so. That way &#34;git log&#34; will show things
+nicely even when it&#39;s indented.
+
+Make sure you explain your solution and why you&#39;re doing what you&#39;re
+doing, as opposed to describing what you&#39;re doing. Reviewers and your
+future self can read the patch, but might not understand why a
+particular solution was implemented.
+
+Reported-by: whoever-reported-it
+Signed-off-by: Your Name &lt;youremail@yourhost.com&gt;</code></pre>
+
+<p>如果改動本身很簡單，好的 commit message 可以非常簡潔：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">Set proper mode for file open dialog
+
+Fixes #913</code></pre>
+
+<p>如果有需要，也可以寫得很詳細：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">Planner: Count the minimum stop time towards o2time
+
+When doing backgas breaks, count the minimum stop time towards o2time.
+Previously, the initial minimum stop wasn&#39;t counted, so the time of the first
+segment on oxygen was min_switch_duration + 12 minutes.
+
+E.g. with 1 minute minimum switch duration.
+
+Previously:
+depth   duration        runtime gas
+40m     1min    1min    air
+40m     34min   35min
+21m     2min    37min
+21m     1min    38min   EAN50
+18m     1min    39min
+15m     3min    42min
+12m     4min    46min
+9m      5min    51min
+6m      13min   64min   oxygen      &lt;--13 minutes on O2
+6m      6min    70min   air
+6m      2min    72min   oxygen
+0m      1min    73min
+
+Now:
+depth       duration        runtime gas
+40m 1min    1min    air
+40m 34min   35min
+21m 2min    37min
+21m 1min    38min   EAN50
+18m 1min    39min
+15m 3min    42min
+12m 4min    46min
+9m  5min    51min
+6m  12min   63min   oxygen
+6m  6min    69min   air
+6m  2min    71min   oxygen
+0m  1min    72min
+
+Signed-off-by: Rick Walsh &lt;rickmwalsh@gmail.com&gt;
+Signed-off-by: Dirk Hohndel &lt;dirk@hohndel.org&gt;</code></pre>
+
+<h4 id="go"><a href="https://golang.org/doc/contribute.html">Go</a></h4>
+<p>貢獻指南中給出了以下範例：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">math: improved Sin, Cos and Tan precision for very large arguments
+
+The existing implementation has poor numerical properties for
+large arguments, so use the McGillicutty algorithm to improve
+accuracy above 1e10.
+
+The algorithm is described at http://wikipedia.org/wiki/McGillicutty_Algorithm
+
+Fixes #159</code></pre>
+
+<p>我其實很喜歡 Go 開發者使用的簡潔風格：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">fmt: don&#39;t unread eof scanning %x
+
+When scanning a hex byte at EOF, the code was ungetting the eof,
+which backed up the input and caused double-scanning of a byte.
+
+Delete the call to UnreadRune.
+
+This line appeared in 1.5 for some reason; it was not in 1.4 and
+should be removed again for 1.5
+
+Fixes #12090.
+
+Change-Id: Iad1ce8e7db8ec26615c5271310f4b0228cca7d78
+Reviewed-on: https://go-review.googlesource.com/13461
+Reviewed-by: Andrew Gerrand &lt;adg@golang.org&gt;</code></pre>
+
+<p>這是另一個寫得很好的 <a href="https://github.com/golang/go/commit/3ae17043f7f29f0d745aa35b340f8cab80219068">commit message</a>：</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">runtime: make sure heapBitsBulkBarrier cannot be preempted
+
+Changes the torture test in #12068 from failing about 1/10 times
+to not failing in almost 2,000 runs.
+
+This was only happening in -race mode because functions are
+bigger in -race mode, so a few of the helpers for heapBitsBulkBarrier
+were not being inlined, and they were not marked nosplit,
+so (only in -race mode) the write barrier was being preempted by GC,
+causing missed pointer updates.
+
+Filed issue #12069 for diagnosis of any other similar errors.
+
+Fixes #12068.
+
+Change-Id: Ic174d9b050ba278b18b08ab0d85a73c33bd5b175
+Reviewed-on: https://go-review.googlesource.com/13364
+Reviewed-by: Austin Clements &lt;austin@google.com&gt;</code></pre>
+
+<h4 id="llvm"><a href="http://llvm.org/docs/DeveloperPolicy.html#commit-messages">LLVM</a></h4>
+<p>LLVM 開發者並不強制要求 commit message 的格式，但有提供一些指引。顯然他們沒有遵循 Git commit message 的風格，因為 LLVM 的主要版本庫還在用 Subversion。不過你還是可以在那裡找到很多寫得很好的 commit message。</p>
+
+  <pre tabindex="0"><code class="language-gitcommit" data-lang="gitcommit">x86: Emit LAHF/SAHF instead of PUSHF/POPF
+NaCl&#39;s sandbox doesn&#39;t allow PUSHF/POPF out of security concerns (priviledged emulators have forgotten to mask system bits in the past, and EFLAGS&#39;s DF bit is a constant source of hilarity). Commit r220529 fixed PR20376 by saving cmpxchg&#39;s flags result using EFLAGS, this commit now generated LAHF/SAHF instead, for all of x86 (not just NaCl) because it leads to an overall performance gain over PUSHF/POPF.
+
+As with the previous patch this code generation is pretty bad because it occurs very later, after register allocation, and in many cases it rematerializes flags which were already available (e.g. already in a register through SETE). Fortunately it&#39;s somewhat rare that this code needs to fire.
+
+I did [[ https://github.com/jfbastien/benchmark-x86-flags | a bit of benchmarking ]], the results on an Intel Haswell E5-2690 CPU at 2.9GHz are:
+
+| Time per call (ms)  | Runtime (ms) | Benchmark                      |
+| 0.000012514         |      6257    | sete.i386                      |
+| 0.000012810         |      6405    | sete.i386-fast                 |
+| 0.000010456         |      5228    | sete.x86-64                    |
+| 0.000010496         |      5248    | sete.x86-64-fast               |
+| 0.000012906         |      6453    | lahf-sahf.i386                 |
+| 0.000013236         |      6618    | lahf-sahf.i386-fast            |
+| 0.000010580         |      5290    | lahf-sahf.x86-64               |
+| 0.000010304         |      5152    | lahf-sahf.x86-64-fast          |
+| 0.000028056         |     14028    | pushf-popf.i386                |
+| 0.000027160         |     13580    | pushf-popf.i386-fast           |
+| 0.000023810         |     11905    | pushf-popf.x86-64              |
+| 0.000026468         |     13234    | pushf-popf.x86-64-fast         |
+
+Clearly `PUSHF`/`POPF` are suboptimal. It doesn&#39;t really seems to be worth teaching LLVM about individual flags, at least not for this purpose.
+
+Reviewers: rnk, jvoung, t.p.northover
+
+Subscribers: llvm-commits
+
+Differential revision: http://reviews.llvm.org/D6629
+
+git-svn-id: https://llvm.org/svn/llvm-project/llvm/trunk@244503 91177308-0d34-0410-b5e6-96231b3b80d8</code></pre>
+
+<h4 id="更多參考資料">更多參考資料</h4>
+<p>以下是一些有提供 commit message 指引的專案列表：</p>
+<ul>
+<li><a href="https://docs.google.com/document/d/1QrDFcIiPjSLDn3EL15IJygNPiHORgU1_OOAqWjiDU5Y/edit#">AngularJS</a>
+<ul>
+<li><a href="https://github.com/sparkbox/how_to/tree/master/style/git">SparkBox</a></li>
+<li><a href="http://karma-runner.github.io/0.8/dev/git-commit-msg.html">KARMA</a></li>
+<li><a href="https://gist.github.com/Linell/bd8100c4e04348c7966d">Linell</a></li>
+</ul>
+</li>
+<li><a href="https://wiki.typo3.org/CommitMessage_Format_(Git)">Typo3</a></li>
+<li><a href="http://netty.io/wiki/writing-a-commit-message.html">Netty</a></li>
+<li><a href="https://www.mediawiki.org/wiki/Gerrit/Commit_message_guidelines">MediaWiki</a></li>
+<li><a href="https://secure.phabricator.com/book/phabflavor/article/writing_reviewable_code/">Phabricator</a></li>
+<li><a href="https://wiki.openstack.org/wiki/GitCommitMessages">OpenStack</a></li>
+<li><a href="https://github.com/erlang/otp/wiki/Writing-good-commit-messages">Erlang</a></li>
+<li><a href="https://github.com/spring-projects/spring-framework/blob/30bce7/CONTRIBUTING.md?utm_campaign=CodeBaku&amp;utm_medium=web&amp;utm_source=CodeBaku_2#format-commit-messages">Spring</a></li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

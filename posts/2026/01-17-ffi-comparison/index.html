@@ -1,0 +1,1140 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Rust FFI 完整指南：從手寫綁定到 AI 輔助的 Safe Wrapper</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-17-ffi-comparison/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-17-ffi-comparison/"/>
+  <meta property="og:title" content="Rust FFI 完整指南：從手寫綁定到 AI 輔助的 Safe Wrapper"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-01-17 00:00:00 &#43;0800 &#43;0800"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            用 Rust 和 WebAssembly 打造即時 Markdown 編輯器
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/01-25-geonix-keyboard-layout/">
+            我的 Geonix rev.2 鍵盤配置
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">Rust FFI 完整指南：從手寫綁定到 AI 輔助的 Safe Wrapper</h2>
+      <div class="post-meta">
+        <span class="post-date">January 17, 2026</span>
+        
+        <a href="/categories/rust"><span class="label label-info">rust</span></a>
+        
+        <a href="/categories/ffi"><span class="label label-info">ffi</span></a>
+        
+        <a href="/categories/ai-assisted"><span class="label label-info">ai-assisted</span></a>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/01-17-ffi-comparison/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>Rust 的 FFI（Foreign Function Interface）讓我們可以呼叫 C 函式庫，但正確實作並不容易。手寫綁定容易出錯，維護成本高；bindgen 自動產生綁定但仍需要 unsafe；safe wrapper 提供安全的 API 但設計繁瑣。</p>
+<p>本文以綁定 FFmpeg 的 libavformat 為例，完整介紹：</p>
+<ol>
+<li><strong>三種 FFI 方式</strong>的優缺點比較</li>
+<li><strong>手寫綁定的常見陷阱</strong>：結構體大小、欄位順序、對齊、生命週期&hellip;</li>
+<li><strong>Bindgen 的工作原理</strong>：如何用 libclang 解析 C 標頭檔</li>
+<li><strong>Safe Wrapper 設計原則</strong>：RAII、類型狀態、錯誤處理、thiserror</li>
+<li><strong>AI Coding Agent 如何加速開發</strong>：讓最佳實踐不再繁瑣</li>
+</ol>
+<p>如果你正在考慮綁定一個 C 函式庫，或是想了解為什麼「先用 unsafe 頂著」是個壞主意，這篇文章應該能幫到你。</p>
+<h2 id="三種-ffi-方式">三種 FFI 方式</h2>
+<h3 id="1-手寫-ffimanual">1. 手寫 FFI（Manual）</h3>
+<p>最傳統的方式：手動撰寫 <code>extern &quot;C&quot;</code> 宣告。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[link(name = </span><span style="color:#e6db74">&#34;avformat&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">extern</span> <span style="color:#e6db74">&#34;C&#34;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">avformat_open_input</span>(
+</span></span><span style="display:flex;"><span>        ps: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext,
+</span></span><span style="display:flex;"><span>        url: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> c_char,
+</span></span><span style="display:flex;"><span>        fmt: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> c_void,
+</span></span><span style="display:flex;"><span>        options: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> c_void,
+</span></span><span style="display:flex;"><span>    ) -&gt; <span style="color:#a6e22e">c_int</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>優點：</strong></p>
+<ul>
+<li>完全掌控型別定義</li>
+<li>無編譯時依賴</li>
+<li>只定義需要的部分</li>
+</ul>
+<p><strong>缺點：</strong></p>
+<ul>
+<li>容易出錯：必須精確對應 C 的結構體佈局</li>
+<li>維護負擔：函式庫更新時需手動同步</li>
+<li>ABI 細節容易遺漏</li>
+</ul>
+<h3 id="2-bindgen-自動生成">2. Bindgen 自動生成</h3>
+<p>使用 <code>bindgen</code> 在編譯時從 C 標頭檔自動產生綁定：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// build.rs
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> bindings <span style="color:#f92672">=</span> bindgen::Builder::default()
+</span></span><span style="display:flex;"><span>    .header_contents(<span style="color:#e6db74">&#34;wrapper.h&#34;</span>, <span style="color:#e6db74">r</span><span style="color:#e6db74">#&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        #include &lt;libavformat/avformat.h&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;#</span>)
+</span></span><span style="display:flex;"><span>    .allowlist_function(<span style="color:#e6db74">&#34;avformat_open_input&#34;</span>)
+</span></span><span style="display:flex;"><span>    .generate()
+</span></span><span style="display:flex;"><span>    .expect(<span style="color:#e6db74">&#34;Failed to generate bindings&#34;</span>);</span></span></code></pre></div>
+
+<p><strong>優點：</strong></p>
+<ul>
+<li>準確：直接從 C 標頭檔產生</li>
+<li>完整：包含所有型別、函式、常數</li>
+<li>可維護：標頭檔更新時自動同步</li>
+</ul>
+<p><strong>缺點：</strong></p>
+<ul>
+<li>編譯時需要 libclang</li>
+<li>產生的程式碼冗長</li>
+<li>可能包含不需要的內容</li>
+</ul>
+<h3 id="3-安全封裝safe-wrapper">3. 安全封裝（Safe Wrapper）</h3>
+<p>在 bindgen 綁定之上，建立符合 Rust 慣例的 API：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FormatContext</span> {
+</span></span><span style="display:flex;"><span>    ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> bindgen::AVFormatContext,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span><span style="color:#f92672">&lt;</span>P: AsRef<span style="color:#f92672">&lt;</span>Path<span style="color:#f92672">&gt;&gt;</span>(path: <span style="color:#a6e22e">P</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Self<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 安全的 Rust API，內部處理所有 unsafe
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Drop <span style="color:#66d9ef">for</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">drop</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">unsafe</span> { bindgen::avformat_close_input(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.ptr); }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>優點：</strong></p>
+<ul>
+<li>使用者不需要寫 <code>unsafe</code></li>
+<li>RAII 自動管理資源</li>
+<li>編譯器協助防止錯誤</li>
+</ul>
+<p><strong>缺點：</strong></p>
+<ul>
+<li>需要額外的抽象層</li>
+<li>可能有輕微的效能開銷</li>
+<li>設計 API 需要深思熟慮</li>
+</ul>
+<h2 id="手寫-ffi-的常見陷阱">手寫 FFI 的常見陷阱</h2>
+<p>手寫 FFI 看似簡單，但有許多隱藏的坑。以下是實際可能發生的錯誤：</p>
+<h3 id="1-結構體大小不匹配">1. 結構體大小不匹配</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 你的定義（40 bytes）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[repr(C)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVPacket</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> pts: <span style="color:#66d9ef">i64</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> dts: <span style="color:#66d9ef">i64</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> data: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> <span style="color:#66d9ef">u8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> size: <span style="color:#66d9ef">i32</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 實際 C 結構體（104 bytes）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 還有很多你沒定義的欄位
+</span></span></span></code></pre></div>
+
+<p><strong>後果：</strong> 當 FFmpeg 寫入結構體時，會覆寫超出你定義範圍的記憶體 → 程式崩潰或資料損壞。</p>
+<h3 id="2-欄位順序錯誤">2. 欄位順序錯誤</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 錯誤的順序
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVRational</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> den: <span style="color:#a6e22e">c_int</span>,  <span style="color:#75715e">// 你把分母放前面
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> num: <span style="color:#a6e22e">c_int</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// C 標頭檔的定義
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVRational</span> {
+</span></span><span style="display:flex;"><span>    int num;  <span style="color:#75715e">// 分子在前！
+</span></span></span><span style="display:flex;"><span>    int den;
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p><strong>後果：</strong> 你的 <code>num</code> 讀到分母，<code>den</code> 讀到分子 → 計算錯誤、除以零。</p>
+<h3 id="3-對齊問題">3. 對齊問題</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[repr(C)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Misaligned</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> flag: <span style="color:#66d9ef">u8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> value: <span style="color:#66d9ef">u64</span>,  <span style="color:#75715e">// 期望 8-byte 對齊
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>後果：</strong> 在某些平台上，C 會在 <code>flag</code> 後加 7 bytes 的 padding。如果 Rust 沒有，<code>value</code> 欄位就會讀到垃圾值。</p>
+<h3 id="4-列舉值不匹配">4. 列舉值不匹配</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 你的猜測
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AVMediaType</span> {
+</span></span><span style="display:flex;"><span>    Video <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    Audio <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 實際 FFmpeg（不同版本）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// FFmpeg 4.x: Video = 0, Audio = 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// FFmpeg 6.x: Unknown = -1, Video = 0, Audio = 1
+</span></span></span></code></pre></div>
+
+<p><strong>後果：</strong> 檢查 <code>if type == Video</code> 可能失敗，因為數值已經偏移。</p>
+<h3 id="5-指標生命週期">5. 指標生命週期</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// C 函式內部儲存了這個指標
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> path <span style="color:#f92672">=</span> CString::new(<span style="color:#e6db74">&#34;/path/to/file&#34;</span>).unwrap();
+</span></span><span style="display:flex;"><span>avformat_open_input(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> ctx, path.as_ptr(), <span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>drop(path);  <span style="color:#75715e">// CString 被釋放！
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// ctx 現在持有一個指向已釋放記憶體的懸空指標
+</span></span></span></code></pre></div>
+
+<p><strong>後果：</strong> Use-after-free → 崩潰或安全漏洞。</p>
+<h3 id="6-呼叫慣例錯誤">6. 呼叫慣例錯誤</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">extern</span> <span style="color:#e6db74">&#34;C&#34;</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">callback</span>(x: <span style="color:#66d9ef">i32</span>) -&gt; <span style="color:#66d9ef">i32</span>  <span style="color:#75715e">// 假設是 cdecl
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 但 FFmpeg 在 Windows 上可能期望 stdcall
+</span></span></span></code></pre></div>
+
+<p><strong>後果：</strong> 堆疊損壞、錯誤的返回值。</p>
+<h3 id="7-版本相依的欄位">7. 版本相依的欄位</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 在 FFmpeg 5.0 上正常運作
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVCodecParameters</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> codec_type: <span style="color:#a6e22e">AVMediaType</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> codec_id: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> bit_rate: <span style="color:#66d9ef">i64</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// FFmpeg 6.0 在 bit_rate 之前新增了一個欄位
+</span></span></span></code></pre></div>
+
+<p><strong>後果：</strong> <code>bit_rate</code> 現在從錯誤的偏移量讀取 → 得到無意義的值。</p>
+<hr>
+<p>這就是為什麼 <strong>bindgen 是更安全的選擇</strong>。</p>
+<h2 id="bindgen-如何避免這些陷阱">Bindgen 如何避免這些陷阱</h2>
+<p>Bindgen 的核心原理是：<strong>在編譯時讀取實際的 C 標頭檔，使用 libclang 解析 AST，然後產生對應的 Rust 程式碼</strong>。</p>
+<h3 id="工作流程">工作流程</h3>
+
+  <div class="mermaid">
+    flowchart TD
+    A["C 標頭檔 (avformat.h)"] --> B["libclang 解析"]
+    B --> C["AST（抽象語法樹）"]
+    C --> D["bindgen 轉換"]
+    D --> E["Rust 綁定 (bindings.rs)"]
+  </div>
+
+<h3 id="為什麼能避免手寫的陷阱">為什麼能避免手寫的陷阱</h3>
+<table>
+  <thead>
+      <tr>
+          <th>陷阱</th>
+          <th>Bindgen 如何解決</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>結構體大小</strong></td>
+          <td>從 AST 讀取精確的 <code>sizeof</code>，產生正確大小的 Rust struct</td>
+      </tr>
+      <tr>
+          <td><strong>欄位順序</strong></td>
+          <td>按照 C 標頭檔中的宣告順序產生欄位</td>
+      </tr>
+      <tr>
+          <td><strong>對齊問題</strong></td>
+          <td>讀取每個欄位的 <code>alignof</code>，自動加入正確的 <code>#[repr(C)]</code> 和 padding</td>
+      </tr>
+      <tr>
+          <td><strong>列舉值</strong></td>
+          <td>直接從標頭檔讀取每個列舉的數值</td>
+      </tr>
+      <tr>
+          <td><strong>版本相依</strong></td>
+          <td>每次編譯時重新產生，自動適應安裝的函式庫版本</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="實際產生的程式碼">實際產生的程式碼</h3>
+<p>當 bindgen 處理 <code>AVRational</code> 時：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// bindgen 產生的程式碼（自動）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[repr(C)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Copy, Clone)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVRational</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> num: ::std::os::raw::c_int,  <span style="color:#75715e">// 順序正確
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> den: ::std::os::raw::c_int,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>對於複雜的結構體如 <code>AVFormatContext</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// bindgen 產生數百行，包含所有欄位
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[repr(C)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AVFormatContext</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> av_class: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> AVClass,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> iformat: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> AVInputFormat,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> oformat: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> AVOutputFormat,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> priv_data: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> ::std::os::raw::c_void,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> pb: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVIOContext,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ctx_flags: ::std::os::raw::c_int,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nb_streams: ::std::os::raw::c_uint,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> streams: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVStream,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... 還有幾十個欄位 ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="bindgen-的限制">Bindgen 的限制</h3>
+<p>Bindgen 不是萬能的，它<strong>無法解決</strong>：</p>
+<p><strong>1. 跨版本相容性</strong></p>
+
+  <pre tabindex="0"><code>編譯時：FFmpeg 6.0 安裝 → bindings.rs 對應 FFmpeg 6.0
+執行時：FFmpeg 7.0 安裝 → ABI 不相容 → 未定義行為</code></pre>
+
+<p><strong>解決方案：</strong> 重新編譯，或使用版本檢查。</p>
+<p><strong>2. 指標生命週期</strong></p>
+<p>Bindgen 只產生型別定義，不會幫你管理生命週期：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// bindgen 產生的函式簽名
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">avformat_open_input</span>(
+</span></span><span style="display:flex;"><span>    ps: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext,
+</span></span><span style="display:flex;"><span>    url: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> ::std::os::raw::c_char,  <span style="color:#75715e">// 誰負責這個指標的生命週期？
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>) -&gt; ::std::os::raw::c_int;</span></span></code></pre></div>
+
+<p><strong>解決方案：</strong> 在 safe wrapper 層處理。</p>
+<p><strong>3. 語意正確性</strong></p>
+<p>Bindgen 確保 ABI 正確，但不保證你正確使用 API：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 這段程式碼 ABI 正確，但語意錯誤
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> ctx <span style="color:#f92672">=</span> avformat_open_input(<span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 忘記呼叫 avformat_find_stream_info()
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> streams <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>ctx).nb_streams;  <span style="color:#75715e">// 可能是 0 或垃圾值
+</span></span></span></code></pre></div>
+
+<p><strong>解決方案：</strong> 閱讀文件，或使用 safe wrapper 強制正確的呼叫順序。</p>
+<h3 id="結論三層防護">結論：三層防護</h3>
+<p>理想的 FFI 架構是三層：</p>
+
+  <div class="mermaid">
+    block-beta
+    columns 1
+    block:layer1
+        A["Safe Wrapper（語意正確性）← 人類設計"]
+    end
+    block:layer2
+        B["Bindgen 綁定（ABI 正確性）← 工具產生"]
+    end
+    block:layer3
+        C["C 函式庫（實際實作）← 外部依賴"]
+    end
+  </div>
+
+<ul>
+<li><strong>Bindgen</strong> 確保 Rust 和 C 之間的 ABI 匹配</li>
+<li><strong>Safe Wrapper</strong> 確保 API 被正確使用</li>
+<li><strong>人類</strong> 負責設計 wrapper 的 API 和處理邊界情況</li>
+</ul>
+<p>手寫 FFI 適合學習底層原理，但在生產環境中，bindgen + safe wrapper 的組合才是正確的選擇。</p>
+<h2 id="safe-wrapper-的設計原則">Safe Wrapper 的設計原則</h2>
+<p>Safe wrapper 是 FFI 的最後一道防線，設計得好可以讓使用者完全不需要接觸 <code>unsafe</code>。以下是幾個關鍵原則：</p>
+<h3 id="1-raii資源獲取即初始化">1. RAII：資源獲取即初始化</h3>
+<p><strong>原則：</strong> 用 Rust 的所有權系統管理 C 資源的生命週期。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FormatContext</span> {
+</span></span><span style="display:flex;"><span>    ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext,  <span style="color:#75715e">// C 資源
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span>(path: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Self<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> ptr <span style="color:#f92672">=</span> std::ptr::null_mut();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> ret <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { avformat_open_input(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> ptr, <span style="color:#f92672">..</span>.) };
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> ret <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> Err(AvError::from_code(ret));
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        Ok(FormatContext { ptr })  <span style="color:#75715e">// 獲取資源
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Drop <span style="color:#66d9ef">for</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">drop</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">unsafe</span> { avformat_close_input(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.ptr); }  <span style="color:#75715e">// 自動釋放
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 使用者不可能忘記釋放資源，編譯器保證。</p>
+<h3 id="2-類型狀態模式編譯時強制正確順序">2. 類型狀態模式：編譯時強制正確順序</h3>
+<p><strong>原則：</strong> 用不同的類型表示不同的狀態，讓編譯器阻止錯誤的呼叫順序。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 未初始化的 context
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">UninitializedContext</span> { ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 已讀取 stream info 的 context
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ReadyContext</span> { ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> UninitializedContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">find_stream_info</span>(self) -&gt; Result<span style="color:#f92672">&lt;</span>ReadyContext<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> ret <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { avformat_find_stream_info(self.ptr, <span style="color:#f92672">..</span>.) };
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> ret <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> Err(<span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        Ok(ReadyContext { ptr: <span style="color:#a6e22e">self</span>.ptr })
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> ReadyContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 只有 ReadyContext 才能讀取 packets
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_packet</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span>Packet<span style="color:#f92672">&gt;</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 不可能在 <code>find_stream_info()</code> 之前呼叫 <code>read_packet()</code>，編譯器會報錯。</p>
+<h3 id="3-借用而非擁有避免不必要的複製">3. 借用而非擁有：避免不必要的複製</h3>
+<p><strong>原則：</strong> 對於 C 結構體內的資料，返回借用而非複製。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Packet {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 返回借用，避免複製整個 packet 資料
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">data</span>(<span style="color:#f92672">&amp;</span>self) -&gt; Option<span style="color:#f92672">&lt;&amp;</span>[<span style="color:#66d9ef">u8</span>]<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">unsafe</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> ptr <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>self.ptr).data;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> size <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>self.ptr).size;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> ptr.is_null() <span style="color:#f92672">||</span> size <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>                None
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                Some(std::slice::from_raw_parts(ptr, size <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>))
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 零複製存取，效能與直接使用 C API 相同。</p>
+<h3 id="4-錯誤類型化用-rust-的-result-取代錯誤碼">4. 錯誤類型化：用 Rust 的 Result 取代錯誤碼</h3>
+<p><strong>原則：</strong> 把 C 的錯誤碼轉換成有意義的 Rust 錯誤類型。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, thiserror::Error)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AvError</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;End of file&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    Eof,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;Failed to open input: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    OpenInput(String),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;FFmpeg error ({code}): {message}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    Ffmpeg { code: <span style="color:#66d9ef">i32</span>, message: String },
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> AvError {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">from_code</span>(code: <span style="color:#66d9ef">i32</span>) -&gt; <span style="color:#a6e22e">Self</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> code <span style="color:#f92672">==</span> <span style="color:#66d9ef">AVERROR_EOF</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> AvError::Eof;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> message <span style="color:#f92672">=</span> get_error_string(code);
+</span></span><span style="display:flex;"><span>        AvError::Ffmpeg { code, message }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 使用者可以用 <code>match</code> 處理特定錯誤，IDE 有自動完成。</p>
+<h4 id="為什麼用-thiserror">為什麼用 thiserror？</h4>
+<p><code>thiserror</code> 是定義錯誤類型的最佳選擇，原因如下：</p>
+<p><strong>1. 自動實作 <code>std::error::Error</code></strong></p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 手寫需要這些
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> std::fmt::Display <span style="color:#66d9ef">for</span> AvError { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> std::error::Error <span style="color:#66d9ef">for</span> AvError { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// thiserror 一行搞定
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(thiserror::Error)]</span></span></span></code></pre></div>
+
+<p><strong>2. 錯誤訊息內嵌在類型定義中</strong></p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, thiserror::Error)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AvError</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;Failed to open &#39;{path}&#39;: {reason}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    OpenInput { path: String, reason: String },
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;Codec not found: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    CodecNotFound(String),
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>程式碼和文件在同一處，不會不同步。</p>
+<p><strong>3. 支援錯誤鏈（Error Source）</strong></p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, thiserror::Error)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AvError</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;IO error&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    Io(<span style="color:#75715e">#[from]</span> std::io::Error),  <span style="color:#75715e">// 自動實作 From&lt;std::io::Error&gt;
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;Invalid path: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    InvalidPath(<span style="color:#75715e">#[source]</span> std::ffi::NulError),  <span style="color:#75715e">// 保留原始錯誤
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>使用者可以用 <code>.source()</code> 追溯錯誤來源。</p>
+<p><strong>4. 與 anyhow 完美搭配</strong></p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 函式庫用 thiserror 定義具體錯誤
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(thiserror::Error)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AvError</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 應用程式用 anyhow 統一處理
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> ctx <span style="color:#f92672">=</span> FormatContext::open(<span style="color:#e6db74">&#34;video.mp4&#34;</span>)<span style="color:#f92672">?</span>;  <span style="color:#75715e">// AvError 自動轉換
+</span></span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>5. 零執行時開銷</strong></p>
+<p><code>thiserror</code> 是純粹的 proc-macro，所有程式碼在編譯時產生，執行時沒有任何額外成本。</p>
+<p><strong>比較：不同錯誤處理方式</strong></p>
+<table>
+  <thead>
+      <tr>
+          <th>方式</th>
+          <th>優點</th>
+          <th>缺點</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>返回 <code>i32</code> 錯誤碼</td>
+          <td>與 C API 一致</td>
+          <td>無類型安全、難以理解</td>
+      </tr>
+      <tr>
+          <td>手寫 <code>Error</code> trait</td>
+          <td>完全控制</td>
+          <td>樣板程式碼多</td>
+      </tr>
+      <tr>
+          <td><code>thiserror</code></td>
+          <td>簡潔、類型安全</td>
+          <td>需要依賴（但很輕量）</td>
+      </tr>
+      <tr>
+          <td><code>anyhow::Error</code></td>
+          <td>最簡單</td>
+          <td>丟失具體類型，不適合函式庫</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>結論：</strong> 函式庫應該用 <code>thiserror</code> 定義具體錯誤類型，讓使用者可以精確處理每種錯誤情況。</p>
+<h3 id="5-隱藏指標不暴露原始指標給使用者">5. 隱藏指標：不暴露原始指標給使用者</h3>
+<p><strong>原則：</strong> 所有原始指標都應該是 <code>struct</code> 的私有欄位。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FormatContext</span> {
+</span></span><span style="display:flex;"><span>    ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext,  <span style="color:#75715e">// 私有！
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 提供安全的存取方法
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">nb_streams</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">usize</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">unsafe</span> { (<span style="color:#f92672">*</span>self.ptr).nb_streams <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span> }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 如果真的需要原始指標（進階使用），標記為 unsafe
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">as_ptr</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext {
+</span></span><span style="display:flex;"><span>        self.ptr
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 一般使用者完全不需要寫 <code>unsafe</code>。</p>
+<h3 id="6-迭代器模式讓集合存取符合-rust-慣例">6. 迭代器模式：讓集合存取符合 Rust 慣例</h3>
+<p><strong>原則：</strong> 用迭代器取代 C 風格的索引存取。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">streams</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">impl</span> Iterator<span style="color:#f92672">&lt;</span>Item <span style="color:#f92672">=</span> StreamInfo<span style="color:#f92672">&gt;</span> <span style="color:#f92672">+</span> &#39;_ {
+</span></span><span style="display:flex;"><span>        (<span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>self.nb_streams()).map(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>i<span style="color:#f92672">|</span> self.stream_info(i).unwrap())
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 使用方式
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> stream <span style="color:#66d9ef">in</span> ctx.streams() {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;Stream </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">: </span><span style="color:#e6db74">{:?}</span><span style="color:#e6db74">&#34;</span>, stream.index, stream.media_type);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>效果：</strong> 符合 Rust 慣例，可以用 <code>filter</code>、<code>map</code> 等方法鏈。</p>
+<h3 id="7-文件化不變量清楚說明-safety-條件">7. 文件化不變量：清楚說明 Safety 條件</h3>
+<p><strong>原則：</strong> 即使是 safe 函式，也要說明前提條件和可能的 panic。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Read the next packet from the container.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">///
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// # Returns
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// - `Ok(true)` if a packet was read
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// - `Ok(false)` if end of file reached
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// - `Err(...)` if an error occurred
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">///
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// # Panics
+</span></span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Never panics. All errors are returned as `Err`.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_packet</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, packet: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Packet) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">bool</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="設計檢查清單">設計檢查清單</h3>
+<p>設計 safe wrapper 時，問自己這些問題：</p>
+<table>
+  <thead>
+      <tr>
+          <th>問題</th>
+          <th>如果答案是「否」</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>使用者需要寫 <code>unsafe</code> 嗎？</td>
+          <td>提供更高層的 API</td>
+      </tr>
+      <tr>
+          <td>使用者可能忘記釋放資源嗎？</td>
+          <td>實作 <code>Drop</code></td>
+      </tr>
+      <tr>
+          <td>使用者可能呼叫順序錯誤嗎？</td>
+          <td>使用類型狀態模式</td>
+      </tr>
+      <tr>
+          <td>使用者可能傳入無效參數嗎？</td>
+          <td>在建構時驗證</td>
+      </tr>
+      <tr>
+          <td>錯誤訊息有意義嗎？</td>
+          <td>定義專屬的錯誤類型</td>
+      </tr>
+      <tr>
+          <td>API 符合 Rust 慣例嗎？</td>
+          <td>參考標準庫的設計</td>
+      </tr>
+  </tbody>
+</table>
+<p>好的 safe wrapper 讓使用者感覺像在用純 Rust 函式庫，完全不知道底下是 C。</p>
+<h2 id="ai-coding-agent-與-ffi-開發">AI Coding Agent 與 FFI 開發</h2>
+<p>Bindgen + Safe Wrapper 的組合是最佳實踐，但過去有個問題：<strong>太繁瑣了</strong>。</p>
+<p>設定 <code>build.rs</code>、處理 pkg-config、設計 wrapper API、實作 Drop、寫文件、寫測試&hellip; 這些工作加起來可能比實際的業務邏輯還多。這也是為什麼很多人選擇「先用 unsafe 頂著，以後再說」。</p>
+<p>AI coding agent 改變了這個權衡。</p>
+<h3 id="ai-擅長的-ffi-任務">AI 擅長的 FFI 任務</h3>
+<p><strong>1. Build Script 設定</strong></p>
+<p>告訴 AI：「用 bindgen 綁定 libavformat，只需要這幾個函式&hellip;」</p>
+<p>AI 會產生完整的 <code>build.rs</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// AI 產生，包含 pkg-config 偵測、bindgen 設定、錯誤處理
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> lib <span style="color:#f92672">=</span> pkg_config::probe_library(<span style="color:#e6db74">&#34;libavformat&#34;</span>)
+</span></span><span style="display:flex;"><span>        .expect(<span style="color:#e6db74">&#34;libavformat not found&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bindings <span style="color:#f92672">=</span> bindgen::Builder::default()
+</span></span><span style="display:flex;"><span>        .header_contents(<span style="color:#e6db74">&#34;wrapper.h&#34;</span>, <span style="color:#e6db74">r</span><span style="color:#e6db74">#&#34;#include &lt;libavformat/avformat.h&gt;&#34;#</span>)
+</span></span><span style="display:flex;"><span>        .allowlist_function(<span style="color:#e6db74">&#34;avformat_open_input&#34;</span>)
+</span></span><span style="display:flex;"><span>        .allowlist_function(<span style="color:#e6db74">&#34;avformat_find_stream_info&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ... 完整設定
+</span></span></span><span style="display:flex;"><span>        .generate()
+</span></span><span style="display:flex;"><span>        .expect(<span style="color:#e6db74">&#34;Failed to generate bindings&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 輸出到正確位置
+</span></span></span><span style="display:flex;"><span>    bindings.write_to_file(out_path.join(<span style="color:#e6db74">&#34;bindings.rs&#34;</span>)).unwrap();
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>手寫這個需要查文件、試錯、處理邊界情況。AI 幾秒鐘搞定。</p>
+<p><strong>2. Safe Wrapper 骨架</strong></p>
+<p>告訴 AI：「為 AVFormatContext 建立 safe wrapper，實作 RAII」</p>
+<p>AI 會產生符合所有設計原則的程式碼：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FormatContext</span> {
+</span></span><span style="display:flex;"><span>    ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> AVFormatContext,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span><span style="color:#f92672">&lt;</span>P: AsRef<span style="color:#f92672">&lt;</span>Path<span style="color:#f92672">&gt;&gt;</span>(path: <span style="color:#a6e22e">P</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Self<span style="color:#f92672">&gt;</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">nb_streams</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">usize</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">streams</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">impl</span> Iterator<span style="color:#f92672">&lt;</span>Item <span style="color:#f92672">=</span> StreamInfo<span style="color:#f92672">&gt;</span> <span style="color:#f92672">+</span> &#39;_ { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Drop <span style="color:#66d9ef">for</span> FormatContext {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">drop</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>包含：</p>
+<ul>
+<li>正確的生命週期標註</li>
+<li><code>Result</code> 錯誤處理</li>
+<li>迭代器 API</li>
+<li><code>Drop</code> 實作</li>
+</ul>
+<p><strong>3. 錯誤類型定義</strong></p>
+<p>告訴 AI：「用 thiserror 定義錯誤類型，涵蓋 FFmpeg 的錯誤碼」</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, thiserror::Error)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">AvError</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;End of file&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    Eof,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;Failed to open input: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    OpenInput(String),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;FFmpeg error ({code}): {message}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    Ffmpeg { code: <span style="color:#66d9ef">i32</span>, message: String },
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>4. 文件和測試</strong></p>
+<p>AI 自動產生：</p>
+<ul>
+<li><code>/// # Safety</code> 段落</li>
+<li>參數和返回值說明</li>
+<li>基本的單元測試</li>
+<li>使用範例</li>
+</ul>
+<p>這些在手動開發時往往被省略，但對使用者很重要。</p>
+<h3 id="人類的角色">人類的角色</h3>
+<p>AI 不是萬能的。人類仍然負責：</p>
+<table>
+  <thead>
+      <tr>
+          <th>任務</th>
+          <th>為什麼需要人類</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>決定要綁定哪些函式</strong></td>
+          <td>需要理解業務需求</td>
+      </tr>
+      <tr>
+          <td><strong>審查 API 設計</strong></td>
+          <td>確保符合 Rust 慣例和使用者期望</td>
+      </tr>
+      <tr>
+          <td><strong>驗證 ABI 正確性</strong></td>
+          <td>編譯成功不代表執行時正確</td>
+      </tr>
+      <tr>
+          <td><strong>處理邊界情況</strong></td>
+          <td>AI 可能遺漏特殊情況</td>
+      </tr>
+      <tr>
+          <td><strong>效能調校</strong></td>
+          <td>需要實際測量和分析</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="實際工作流程">實際工作流程</h3>
+
+  <div class="mermaid">
+    flowchart TD
+    A["1. 人類：「綁定 libavformat 的 open/read/close」"] --> B["2. AI：產生 Cargo.toml、build.rs、bindgen 設定"]
+    B --> C["3. 人類：cargo build，確認編譯成功"]
+    C --> D["4. AI：產生 safe wrapper（FormatContext, Packet...）"]
+    D --> E["5. 人類：審查 API，要求修改（「加上迭代器」）"]
+    E --> F["6. AI：修改 + 補充文件和測試"]
+    F --> G["7. 人類：用真實檔案測試，確認功能正確"]
+  </div>
+
+<p>整個過程可能只需要 30 分鐘，而不是以前的一整天。</p>
+<h3 id="為什麼-ffi-特別適合-ai-輔助">為什麼 FFI 特別適合 AI 輔助</h3>
+<ol>
+<li><strong>模式明確</strong>：bindgen 設定、RAII wrapper、錯誤處理都有標準模式</li>
+<li><strong>正確性可驗證</strong>：能編譯、能執行、測試通過</li>
+<li><strong>重複性高</strong>：每個函式的 wrapper 結構類似</li>
+<li><strong>文件密集</strong>：需要大量的 Safety 說明和使用範例</li>
+</ol>
+<p>AI 處理這些機械性工作，人類專注於設計決策和驗證。</p>
+<h2 id="結論">結論</h2>
+<p>FFI 開發的最佳實踐是 <strong>bindgen + safe wrapper</strong>：</p>
+<ul>
+<li><strong>Bindgen</strong> 確保 ABI 正確性（結構體大小、欄位順序、對齊）</li>
+<li><strong>Safe Wrapper</strong> 確保語意正確性（資源管理、呼叫順序、錯誤處理）</li>
+</ul>
+<p>過去這個組合太繁瑣，很多人選擇捷徑。現在有了 AI coding agent，完整實作的成本大幅降低。</p>
+<p><strong>不要再「先用 unsafe 頂著」了。讓 AI 幫你產生正確的 bindgen + safe wrapper，你只需要審查和測試。</strong></p>
+<p>這就是 AI 時代的 FFI 開發：人類做設計決策，AI 做繁瑣實作，最終得到安全、符合慣例的 Rust 綁定。</p>
+<hr>
+<p>專案原始碼：<a href="https://github.com/p47t/rust-52-projects/tree/main/libavformat-ffi">rust-52-projects/libavformat-ffi</a></p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

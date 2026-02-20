@@ -1,0 +1,288 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/shader/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-09 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/</link>
+      <pubDate>Mon, 09 Feb 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/</guid>
+      <description>&lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;這個專案把 Conway&amp;rsquo;s Game of Life 搬到 GPU 上面跑——用 Rust 的 &lt;a href=&#34;https://wgpu.rs/&#34;&gt;wgpu&lt;/a&gt; 寫 WebGPU compute shader，編譯成 WASM 在瀏覽器裡執行。128x128 的網格、上萬個細胞的模擬，全部在 GPU 上平行計算。&lt;/p&gt;
+&lt;p&gt;專案原始碼：&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/wgpu-game-of-life&#34;&gt;wgpu-game-of-life&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;先玩再說&#34;&gt;先玩再說&lt;/h2&gt;
+&lt;iframe src=&#34;https://blog.simplypatrick.com/demos/wgpu-game-of-life/&#34; style=&#34;width: 100%; height: 730px; border: 1px solid #333; border-radius: 8px; background: #0e0e18;&#34; loading=&#34;lazy&#34;&gt;&lt;/iframe&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;操作方式&lt;/strong&gt;：Play/Pause 開始模擬，點擊畫布可以畫細胞，Speed 調整速度。需要 WebGPU 支援的瀏覽器（Chrome 113+、Edge 113+、Firefox 141+）。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;顏色代表細胞年齡：綠色是新生的，黃色是年輕的，橘色是成熟的，白色是古老的 still life 結構。&lt;/p&gt;
+&lt;h2 id=&#34;為什麼做這個&#34;&gt;為什麼做這個？&lt;/h2&gt;
+&lt;p&gt;在完成 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/&#34;&gt;WASM Markdown 編輯器&lt;/a&gt;之後，我想更深入探索 WASM 的可能性。Markdown 編輯器純粹是 CPU 計算，但現代瀏覽器已經支援 WebGPU——可以直接存取 GPU 的算力。&lt;/p&gt;
+&lt;p&gt;Game of Life 是個完美的入門專案：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;天然適合平行計算&lt;/strong&gt;：每個細胞的下一代只取決於鄰居，可以完全並行&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;需要 compute shader + render pipeline&lt;/strong&gt;：同時學兩種 GPU 程式設計模式&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;視覺回饋即時&lt;/strong&gt;：寫完馬上看到結果&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;規模剛好&lt;/strong&gt;：不會太大，但足以理解 GPU 程式設計的核心概念&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;技術架構&#34;&gt;技術架構&lt;/h2&gt;
+&lt;h3 id=&#34;整體流程&#34;&gt;整體流程&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code class=&#34;language-goat&#34; data-lang=&#34;goat&#34;&gt;[Storage Buffer A] ──read──▶ [Compute Shader] ──write──▶ [Storage Buffer B]
+                                                              │
+                              [Render Pipeline] ◀──read───────┘
+                                    │
+                              [Canvas Output]&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;核心是 &lt;strong&gt;ping-pong 雙緩衝&lt;/strong&gt;：兩個 storage buffer 交替讀寫。每一步模擬時，compute shader 從一個 buffer 讀取當前狀態，計算下一代寫入另一個 buffer，然後交換。Render pipeline 負責把結果畫到畫面上。&lt;/p&gt;
+&lt;h3 id=&#34;專案結構&#34;&gt;專案結構&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;wgpu-game-of-life/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs           # WASM 進入點，匯出 API
+│   ├── gpu.rs           # wgpu 初始化、pipeline 建立、模擬邏輯
+│   ├── compute.wgsl     # Compute shader（Game of Life 規則）
+│   └── render.wgsl      # Vertex + Fragment shader（網格視覺化）
+├── index.html
+└── www/
+    ├── index.js         # 控制邏輯、動畫迴圈、滑鼠互動
+    └── styles.css&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;rust-依賴項&#34;&gt;Rust 依賴項&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;dependencies&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;wgpu&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;24&amp;#34;&lt;/span&gt;                        &lt;span style=&#34;color:#75715e&#34;&gt;# WebGPU API&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;wasm-bindgen&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.2&amp;#34;&lt;/span&gt;               &lt;span style=&#34;color:#75715e&#34;&gt;# JS 互操作&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;wasm-bindgen-futures&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.4&amp;#34;&lt;/span&gt;       &lt;span style=&#34;color:#75715e&#34;&gt;# async 支援（wgpu 初始化是 async 的）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;web-sys&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.3&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;features&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Document&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Window&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Element&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;HtmlCanvasElement&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;console&amp;#34;&lt;/span&gt;] }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;console_error_panic_hook&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.1&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;js-sys&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.3&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;bytemuck&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;1&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;features&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;derive&amp;#34;&lt;/span&gt;] }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;跟 Markdown 編輯器比，多了 &lt;code&gt;wgpu&lt;/code&gt;（核心）、&lt;code&gt;wasm-bindgen-futures&lt;/code&gt;（因為 GPU 初始化是非同步的）和 &lt;code&gt;bytemuck&lt;/code&gt;（安全地把 Rust 資料轉成 GPU buffer 需要的位元組）。&lt;/p&gt;
+&lt;h2 id=&#34;compute-shadergame-of-life-規則&#34;&gt;Compute Shader：Game of Life 規則&lt;/h2&gt;
+&lt;p&gt;這是整個專案最核心的部分——用 WGSL 寫的 compute shader：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-wgsl&#34; data-lang=&#34;wgsl&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;uniform&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; grid: vec2u;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;storage, read&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; cells_in: array&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;u32&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;storage, read_write&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; cells_out: array&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;u32&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@compute&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;@workgroup_size&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; main(&lt;span style=&#34;color:#a6e22e&#34;&gt;@builtin&lt;/span&gt;(global_invocation_id) id: vec3u) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (id.x &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; grid.x &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; id.y &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; grid.y) { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 數 8 個鄰居（環形邊界）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; neighbors: u32 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; dy: i32 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; dy &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; dy&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; dx: i32 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; dx &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; dx&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (dx &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; dy &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) { &lt;span style=&#34;color:#66d9ef&#34;&gt;continue&lt;/span&gt;; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; nx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; u32((i32(id.x) &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; dx &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; i32(grid.x)) &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; i32(grid.x));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; u32((i32(id.y) &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; dy &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; i32(grid.y)) &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; i32(grid.y));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            neighbors &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; select(&lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1u&lt;/span&gt;, cells_in[cell_index(nx, ny)] &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; cell_index(id.x, id.y);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; age &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; cells_in[idx];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Conway&amp;#39;s rules + 年齡追蹤
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (neighbors &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;3u&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; age &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cells_out[idx] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1u&lt;/span&gt;;                    &lt;span style=&#34;color:#75715e&#34;&gt;// 誕生
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (age &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; (neighbors &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2u&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; neighbors &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;3u&lt;/span&gt;)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cells_out[idx] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; min(age &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1u&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;255u&lt;/span&gt;);   &lt;span style=&#34;color:#75715e&#34;&gt;// 存活，年齡 +1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cells_out[idx] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;;                    &lt;span style=&#34;color:#75715e&#34;&gt;// 死亡
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;幾個重點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;@workgroup_size(8, 8)&lt;/code&gt;&lt;/strong&gt;：每個工作群組處理 8x8 = 64 個細胞，GPU 會自動分配到各個核心&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cells_in&lt;/code&gt; 是唯讀，&lt;code&gt;cells_out&lt;/code&gt; 是可寫&lt;/strong&gt;：避免讀寫衝突，這就是為什麼需要兩個 buffer&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;環形邊界（toroidal wrapping）&lt;/strong&gt;：左邊超出會接到右邊，上面超出接到下面&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;年齡追蹤&lt;/strong&gt;：不只是 0/1，而是記錄細胞存活了幾代（上限 255）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;128x128 的網格需要 dispatch &lt;code&gt;ceil(128/8) × ceil(128/8) = 16 × 16 = 256&lt;/code&gt; 個工作群組，每個群組 64 個執行緒，總共 16,384 個 GPU 執行緒平行計算。&lt;/p&gt;
+&lt;h2 id=&#34;render-shader年齡上色&#34;&gt;Render Shader：年齡上色&lt;/h2&gt;
+&lt;p&gt;Fragment shader 根據年齡把細胞染成不同顏色：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-wgsl&#34; data-lang=&#34;wgsl&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; age_color(age: u32) -&amp;gt; vec4f {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (age &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0u&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; vec4f(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.06&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.06&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.12&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// 死亡：深色背景
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; clamp(f32(age &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1u&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;50.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 顏色漸層：亮綠 → 黃綠 → 橘 → 暖白
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; c0 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; vec3f(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.15&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.90&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.30&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// 新生
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; c1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; vec3f(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.80&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.90&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.15&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// 年輕
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; c2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; vec3f(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.95&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.60&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.10&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// 成熟
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; c3 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; vec3f(&lt;span style=&#34;color:#ae81ff&#34;&gt;1.00&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.85&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.70&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// 古老
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 三段線性插值
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (t &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.33&lt;/span&gt;) { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; mix(c0, c1, t &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.33&lt;/span&gt;); }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (t &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.66&lt;/span&gt;) { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; mix(c1, c2, (t &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.33&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.33&lt;/span&gt;); }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; mix(c2, c3, (t &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.66&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.34&lt;/span&gt;); }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;渲染方式是畫一個全螢幕四邊形（6 個頂點、2 個三角形），fragment shader 根據 UV 座標查詢對應的細胞年齡。這比為每個細胞生成幾何體（instanced rendering）更簡單，而且效能足夠。&lt;/p&gt;
+&lt;h2 id=&#34;rust-端wgpu-初始化&#34;&gt;Rust 端：wgpu 初始化&lt;/h2&gt;
+&lt;p&gt;wgpu 在 WASM 環境下的初始化跟 native 基本一樣，只是 surface 從 canvas 建立：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 從 HTML canvas 建立 surface
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; instance &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; wgpu::Instance::new(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;wgpu::InstanceDescriptor {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    backends: &lt;span style=&#34;color:#a6e22e&#34;&gt;wgpu&lt;/span&gt;::Backends::&lt;span style=&#34;color:#66d9ef&#34;&gt;BROWSER_WEBGPU&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; wgpu::Backends::&lt;span style=&#34;color:#66d9ef&#34;&gt;GL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;Default::default()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;});
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; surface &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; instance
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .expect(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;failed to create surface&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 請求 adapter 和 device（非同步）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; adapter &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; instance.request_adapter(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;wgpu::RequestAdapterOptions {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    compatible_surface: Some(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;surface),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;Default::default()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;.expect(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;no adapter&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (device, queue) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; adapter.request_device(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;wgpu::DeviceDescriptor {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        required_limits: &lt;span style=&#34;color:#a6e22e&#34;&gt;wgpu&lt;/span&gt;::Limits::downlevel_webgl2_defaults()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .using_resolution(adapter.limits()),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;Default::default()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;.expect(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;no device&amp;#34;&lt;/span&gt;);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;Backends::BROWSER_WEBGPU | Backends::GL&lt;/code&gt; 讓它在支援 WebGPU 的瀏覽器用 WebGPU，不支援的用 WebGL2 作為 fallback。&lt;/p&gt;
+&lt;h3 id=&#34;ping-pong-雙緩衝&#34;&gt;Ping-Pong 雙緩衝&lt;/h3&gt;
+&lt;p&gt;最有趣的設計是 bind group 的建立——為了實現 ping-pong，我們建兩組 bind group：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; compute_bind_groups &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Step 0: 讀 A，寫 B
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    create_bind_group(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;cell_buffers[&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;], &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;cell_buffers[&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;]),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Step 1: 讀 B，寫 A
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    create_bind_group(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;cell_buffers[&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;], &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;cell_buffers[&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;]),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;];&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;每一步模擬只要切換 &lt;code&gt;step_index&lt;/code&gt;，就自動交換讀寫方向。&lt;/p&gt;
+&lt;h2 id=&#34;wasm-api-設計&#34;&gt;WASM API 設計&lt;/h2&gt;
+&lt;p&gt;Rust 端透過 &lt;code&gt;thread_local!&lt;/code&gt; 儲存全域狀態，匯出簡單的函式給 JavaScript：&lt;/p&gt;
+&lt;p&gt;為什麼需要 &lt;code&gt;thread_local!&lt;/code&gt;？因為 &lt;code&gt;#[wasm_bindgen]&lt;/code&gt; 匯出的必須是自由函式，JavaScript 呼叫 &lt;code&gt;step()&lt;/code&gt;、&lt;code&gt;render()&lt;/code&gt; 時不會帶著物件——所以 &lt;code&gt;Simulation&lt;/code&gt; 必須存在模組層級的 &lt;code&gt;static&lt;/code&gt; 裡。但一般的 &lt;code&gt;static&lt;/code&gt; 要求內容必須實作 &lt;code&gt;Sync&lt;/code&gt;，而 &lt;code&gt;RefCell&lt;/code&gt; 不是 &lt;code&gt;Sync&lt;/code&gt;。&lt;code&gt;Simulation&lt;/code&gt; 裡面持有的 wgpu 資源（&lt;code&gt;Device&lt;/code&gt;、&lt;code&gt;Queue&lt;/code&gt;、&lt;code&gt;Surface&lt;/code&gt; 等）也不是 &lt;code&gt;Send&lt;/code&gt;/&lt;code&gt;Sync&lt;/code&gt; 的。&lt;code&gt;thread_local!&lt;/code&gt; 讓每個執行緒擁有自己的副本，繞過了 &lt;code&gt;Sync&lt;/code&gt; 的限制——在 WASM 環境下本來就只有一個執行緒，所以它實際上就是一個不需要 &lt;code&gt;Sync&lt;/code&gt; 的全域可變變數。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;thread_local!&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;SIMULATION&lt;/span&gt;: &lt;span style=&#34;color:#a6e22e&#34;&gt;RefCell&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Simulation&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; RefCell::new(None);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;start&lt;/span&gt;(canvas_id: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;, grid_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;, grid_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    console_error_panic_hook::set_once();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sim &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Simulation::new(canvas_id, grid_width, grid_height).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;SIMULATION&lt;/span&gt;.with(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;s&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;s.borrow_mut() &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(sim));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;step&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    with_sim(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;sim&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; sim.step());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;toggle_cell&lt;/span&gt;(x: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;, y: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    with_sim(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;sim&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; sim.toggle_cell(x, y));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;start()&lt;/code&gt; 是 &lt;code&gt;async&lt;/code&gt; 的，因為 wgpu 初始化（&lt;code&gt;request_adapter&lt;/code&gt;、&lt;code&gt;request_device&lt;/code&gt;）都是非同步操作。其他函式都是同步的。&lt;/p&gt;
+&lt;h3 id=&#34;cpu-端的細胞鏡像&#34;&gt;CPU 端的細胞鏡像&lt;/h3&gt;
+&lt;p&gt;一個實作上的巧妙之處：我們在 CPU 端維護一份細胞狀態的副本。&lt;/p&gt;
+&lt;p&gt;為什麼？因為當使用者點擊畫布要切換某個細胞時，從 GPU 讀回資料（readback）是很昂貴的操作。所以我們在 CPU 端維護一份鏡像，toggle 時修改 CPU 資料再上傳到 GPU：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;toggle_cell&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, x: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;, y: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (y &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; self.grid_width &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; x) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.cells[idx] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; self.cells[idx] &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; { &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.queue.write_buffer(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self.cell_buffers[buf_idx], &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        bytemuck::cast_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self.cells));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.render();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;每次 &lt;code&gt;step()&lt;/code&gt; 時也同步執行 CPU 端的模擬，確保鏡像保持一致。&lt;/p&gt;
+&lt;h2 id=&#34;建置與執行&#34;&gt;建置與執行&lt;/h2&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cd wgpu-game-of-life
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;wasm-pack build --target web
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;python -m http.server &lt;span style=&#34;color:#ae81ff&#34;&gt;8080&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 開啟 http://localhost:8080&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;建置輸出：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;WASM 檔案&lt;/strong&gt;：117 KB&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;JS 膠水程式碼&lt;/strong&gt;：57 KB&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;總計&lt;/strong&gt;：~174 KB&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;比 Markdown 編輯器的 235 KB 還小，主要因為 wgpu 的 WASM backend 大部分邏輯在瀏覽器原生的 WebGPU API 裡。&lt;/p&gt;
+&lt;h2 id=&#34;學到的東西&#34;&gt;學到的東西&lt;/h2&gt;
+&lt;h3 id=&#34;webgpu--wgpu-特定&#34;&gt;WebGPU / wgpu 特定&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Compute shader 比想像中簡單&lt;/strong&gt;：WGSL 語法接近 Rust，workgroup/dispatch 的概念很直覺&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bind group 是關鍵抽象&lt;/strong&gt;：它定義了 shader 能存取哪些資源，切換 bind group 就能改變資料流向&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;wgpu 的跨平台設計很優秀&lt;/strong&gt;：同一份 Rust 程式碼，換個 backend 就能在 native 和 WASM 上跑&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;GPU readback 很貴&lt;/strong&gt;：不要隨便從 GPU 讀資料回來，用 CPU 鏡像是常見的解法&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;跟-markdown-編輯器的比較&#34;&gt;跟 Markdown 編輯器的比較&lt;/h3&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;&lt;/th&gt;
+          &lt;th&gt;Markdown 編輯器&lt;/th&gt;
+          &lt;th&gt;Game of Life&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;GPU 使用&lt;/td&gt;
+          &lt;td&gt;無&lt;/td&gt;
+          &lt;td&gt;Compute + Render&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;非同步初始化&lt;/td&gt;
+          &lt;td&gt;否&lt;/td&gt;
+          &lt;td&gt;是（wgpu 需要 async）&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;主要瓶頸&lt;/td&gt;
+          &lt;td&gt;CPU 解析&lt;/td&gt;
+          &lt;td&gt;GPU shader 編譯&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;互動模式&lt;/td&gt;
+          &lt;td&gt;文字輸入&lt;/td&gt;
+          &lt;td&gt;滑鼠繪圖 + 動畫迴圈&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;套件大小&lt;/td&gt;
+          &lt;td&gt;235 KB&lt;/td&gt;
+          &lt;td&gt;174 KB&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;這是我第一次寫 GPU shader 程式——用 Rust 配 wgpu 的體驗非常好。wgpu 把 WebGPU 的複雜性封裝得很乾淨，而 WGSL shader 語言的設計也很現代。&lt;/p&gt;
+&lt;p&gt;如果你也想學 WebGPU，Game of Life 真的是個很好的起點：概念簡單、視覺效果漂亮、而且剛好涵蓋 compute pipeline 和 render pipeline 兩個核心概念。&lt;/p&gt;
+&lt;h2 id=&#34;參考資源&#34;&gt;參考資源&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://wgpu.rs/&#34;&gt;wgpu 官方網站&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://sotrh.github.io/learn-wgpu/&#34;&gt;Learn Wgpu 教學&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://webgpufundamentals.org/&#34;&gt;WebGPU Fundamentals&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://foo.net/projects/wgpu-life/&#34;&gt;Conway&amp;rsquo;s Game of Life using wgpu&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/scttfrdmn/webgpu-compute-exploration&#34;&gt;WebGPU Compute Exploration&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

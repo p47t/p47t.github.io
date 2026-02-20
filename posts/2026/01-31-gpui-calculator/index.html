@@ -1,0 +1,771 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>從 GPUI 計算機學習 Rust 程式設計</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/"/>
+  <meta property="og:title" content="從 GPUI 計算機學習 Rust 程式設計"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-01-31 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="gpui"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="parser"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/01-25-geonix-keyboard-layout/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            我的 Geonix rev.2 鍵盤配置
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-01-gpui-vs-iced/">
+            Rust GUI 框架比較：GPUI vs Iced
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">從 GPUI 計算機學習 Rust 程式設計</h2>
+      <div class="post-meta">
+        <span class="post-date">January 31, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/gpui"><span class="label label-primary">gpui</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/parser"><span class="label label-primary">parser</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/01-31-gpui-calculator/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>最近用 <a href="https://www.gpui.rs/">GPUI</a> 框架實作了一個圖形化計算機，過程中學到不少 Rust 的實用技巧。這篇文章整理了從這個專案中可以學到的 Rust 程式設計概念。</p>
+<h3 id="專案概述">專案概述</h3>
+<p>這個計算機支援基本四則運算、指數運算 (<code>^</code>)、取餘數 (<code>%</code>)、變數賦值，以及內建常數 <code>pi</code> 和 <code>e</code>。UI 使用 Zed 編輯器團隊開發的 GPUI 框架，這是一個 GPU 加速的 Rust UI 框架。</p>
+
+
+  
+    <img src="/posts/2026/01-31-gpui-calculator/gpui-calculator.png" alt="gpui-calculator.png" width="342" height="512" class="img-responsive post-image">
+  
+
+<h3 id="1-使用-enum-定義-token">1. 使用 Enum 定義 Token</h3>
+<p>Rust 的 enum 非常適合用來定義詞法分析器 (lexer) 的 token 類型：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, PartialEq)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Token</span> {
+</span></span><span style="display:flex;"><span>    Name(String),    <span style="color:#75715e">// 變數名稱
+</span></span></span><span style="display:flex;"><span>    Number(<span style="color:#66d9ef">f64</span>),     <span style="color:#75715e">// 數字
+</span></span></span><span style="display:flex;"><span>    Plus,            <span style="color:#75715e">// +
+</span></span></span><span style="display:flex;"><span>    Minus,           <span style="color:#75715e">// -
+</span></span></span><span style="display:flex;"><span>    Mul,             <span style="color:#75715e">// *
+</span></span></span><span style="display:flex;"><span>    Div,             <span style="color:#75715e">// /
+</span></span></span><span style="display:flex;"><span>    Mod,             <span style="color:#75715e">// %
+</span></span></span><span style="display:flex;"><span>    Pow,             <span style="color:#75715e">// ^
+</span></span></span><span style="display:flex;"><span>    Print,           <span style="color:#75715e">// ;
+</span></span></span><span style="display:flex;"><span>    Assign,          <span style="color:#75715e">// =
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">LP</span>,              <span style="color:#75715e">// (
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">RP</span>,              <span style="color:#75715e">// )
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這種設計的好處：</p>
+<ul>
+<li><strong>類型安全</strong>：編譯器確保你處理所有可能的 token 類型</li>
+<li><strong>資料攜帶</strong>：<code>Name(String)</code> 和 <code>Number(f64)</code> 可以攜帶額外資料</li>
+<li><strong>模式匹配</strong>：配合 <code>match</code> 表達式，程式碼清晰易讀</li>
+</ul>
+<h3 id="2-實作-iterator-trait">2. 實作 Iterator Trait</h3>
+<p>將 lexer 實作為 Iterator，讓程式碼更符合 Rust 慣例：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">TokenStream</span> {
+</span></span><span style="display:flex;"><span>    input: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">char</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    offset: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Iterator <span style="color:#66d9ef">for</span> TokenStream {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Item</span> <span style="color:#f92672">=</span> Token;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">next</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Option<span style="color:#f92672">&lt;</span>Self::Item<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> self.offset <span style="color:#f92672">&gt;=</span> self.input.len() {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> None;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> ch <span style="color:#f92672">=</span> self.input[self.offset];
+</span></span><span style="display:flex;"><span>            self.offset <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> ch {
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#39;+&#39;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Some(Token::Plus),
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#39;-&#39;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Some(Token::Minus),
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#39;*&#39;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Some(Token::Mul),
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// ... 其他 token
+</span></span></span><span style="display:flex;"><span>                x <span style="color:#66d9ef">if</span> x.is_whitespace() <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">continue</span>,
+</span></span><span style="display:flex;"><span>                _ <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> None,
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>實作 <code>Iterator</code> trait 的好處：</p>
+<ul>
+<li>可以使用 <code>.collect()</code> 收集所有 token</li>
+<li>可以搭配其他 iterator 方法如 <code>.map()</code>、<code>.filter()</code> 等</li>
+<li>延遲求值 (lazy evaluation)，不會一次解析完整個輸入</li>
+</ul>
+<h3 id="3-遞迴下降解析器">3. 遞迴下降解析器</h3>
+<p>計算機的核心是一個遞迴下降解析器 (recursive descent parser)，這是編譯器課程中的經典技術：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Calculator {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 加減法 (最低優先級)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">expr</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, token: Option<span style="color:#f92672">&lt;</span>Token<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> left <span style="color:#f92672">=</span> self.term(token)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> self.current_token {
+</span></span><span style="display:flex;"><span>                Some(Token::Plus) <span style="color:#f92672">=&gt;</span> left <span style="color:#f92672">+=</span> self.term(None)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>                Some(Token::Minus) <span style="color:#f92672">=&gt;</span> left <span style="color:#f92672">-=</span> self.term(None)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>                _ <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Ok(left),
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 乘除法、取餘數 (中等優先級)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">term</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, token: Option<span style="color:#f92672">&lt;</span>Token<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> left <span style="color:#f92672">=</span> self.power(token)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> self.current_token {
+</span></span><span style="display:flex;"><span>                Some(Token::Mul) <span style="color:#f92672">=&gt;</span> left <span style="color:#f92672">*=</span> self.power(None)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>                Some(Token::Div) <span style="color:#f92672">=&gt;</span> left <span style="color:#f92672">/=</span> self.power(None)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>                Some(Token::Mod) <span style="color:#f92672">=&gt;</span> left <span style="color:#f92672">%=</span> self.power(None)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>                _ <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Ok(left),
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 指數運算 (高優先級，右結合)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">power</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, token: Option<span style="color:#f92672">&lt;</span>Token<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> base <span style="color:#f92672">=</span> self.prim(token)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(Token::Pow) <span style="color:#f92672">=</span> self.current_token {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> exp <span style="color:#f92672">=</span> self.power(None)<span style="color:#f92672">?</span>;  <span style="color:#75715e">// 遞迴實現右結合
+</span></span></span><span style="display:flex;"><span>            Ok(base.powf(exp))
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>            Ok(base)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 基本元素 (最高優先級)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">prim</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, token: Option<span style="color:#f92672">&lt;</span>Token<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 處理數字、變數、括號、一元負號
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個設計的關鍵：</p>
+<ul>
+<li><strong>運算子優先級</strong>：透過函數呼叫順序自然實現（<code>expr</code> → <code>term</code> → <code>power</code> → <code>prim</code>）</li>
+<li><strong>結合性</strong>：左結合用迴圈，右結合用遞迴</li>
+<li><strong>錯誤處理</strong>：使用 <code>Result&lt;f64, String&gt;</code> 和 <code>?</code> 運算子傳遞錯誤</li>
+</ul>
+<h3 id="4-gpui-的-render-trait">4. GPUI 的 Render Trait</h3>
+<p>GPUI 使用 trait 來定義 UI 元件的渲染邏輯：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Render <span style="color:#66d9ef">for</span> CalculatorApp {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">render</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, _window: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Window, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span>Self<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">impl</span> IntoElement {
+</span></span><span style="display:flex;"><span>        div()
+</span></span><span style="display:flex;"><span>            .flex()
+</span></span><span style="display:flex;"><span>            .flex_col()
+</span></span><span style="display:flex;"><span>            .size_full()
+</span></span><span style="display:flex;"><span>            .bg(rgb(<span style="color:#ae81ff">0x1e1e1e</span>))
+</span></span><span style="display:flex;"><span>            .p_4()
+</span></span><span style="display:flex;"><span>            .gap_3()
+</span></span><span style="display:flex;"><span>            .child(self.render_display())
+</span></span><span style="display:flex;"><span>            .child(self.render_keypad(cx))
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>GPUI 的特色：</p>
+<ul>
+<li><strong>宣告式 UI</strong>：類似 SwiftUI 或 Flutter 的風格</li>
+<li><strong>Tailwind 風格的樣式</strong>：<code>.flex()</code>、<code>.p_4()</code>、<code>.gap_3()</code> 等方法</li>
+<li><strong>GPU 加速</strong>：比 Electron 少 60-80% 記憶體使用量</li>
+</ul>
+<h3 id="5-事件處理與閉包">5. 事件處理與閉包</h3>
+<p>按鈕點擊事件使用閉包 (closure) 和 <code>cx.listener()</code> 來處理：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>div()
+</span></span><span style="display:flex;"><span>    .id(SharedString::from(<span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;btn_</span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, label)))
+</span></span><span style="display:flex;"><span>    .on_click(cx.listener(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>this, _event, _window, cx<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> label_owned.as_str() {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;C&#34;</span> <span style="color:#f92672">=&gt;</span> this.clear(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;⌫&#34;</span> <span style="color:#f92672">=&gt;</span> this.backspace(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;=&#34;</span> <span style="color:#f92672">=&gt;</span> this.evaluate(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;±&#34;</span> <span style="color:#f92672">=&gt;</span> this.toggle_sign(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;π&#34;</span> <span style="color:#f92672">=&gt;</span> this.append(<span style="color:#e6db74">&#34;pi&#34;</span>),
+</span></span><span style="display:flex;"><span>            other <span style="color:#f92672">=&gt;</span> this.append(other),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        cx.notify();  <span style="color:#75715e">// 通知 UI 更新
+</span></span></span><span style="display:flex;"><span>    }))</span></span></code></pre></div>
+
+<p>這裡展示了 Rust 閉包的幾個重點：</p>
+<ul>
+<li><code>move</code> 關鍵字將變數所有權移入閉包</li>
+<li>閉包可以捕獲外部變數（<code>label_owned</code>）</li>
+<li><code>cx.notify()</code> 觸發 UI 重新渲染</li>
+</ul>
+<h3 id="6-模組化設計">6. 模組化設計</h3>
+<p>專案採用清晰的模組結構：</p>
+
+  <pre tabindex="0"><code>src/
+├── main.rs           # 進入點 + UI 元件
+└── calculator/
+    ├── mod.rs        # 模組宣告
+    ├── token.rs      # Token 定義
+    ├── lexer.rs      # 詞法分析器
+    └── parser.rs     # 語法分析器 + 測試</code></pre>
+
+<p>這種結構的好處：</p>
+<ul>
+<li><strong>關注點分離</strong>：UI 和計算邏輯分開</li>
+<li><strong>可測試性</strong>：parser 可以獨立測試</li>
+<li><strong>可重用性</strong>：calculator 模組可以用於其他專案</li>
+</ul>
+<h3 id="7-單元測試">7. 單元測試</h3>
+<p>Rust 內建強大的測試框架，測試直接寫在同一個檔案：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[cfg(test)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">mod</span> tests {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">use</span> <span style="color:#66d9ef">super</span>::<span style="color:#f92672">*</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">test_exponentiation</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> calc <span style="color:#f92672">=</span> Calculator::new();
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(calc.evaluate(<span style="color:#e6db74">&#34;2^3&#34;</span>).unwrap(), <span style="color:#ae81ff">8.0</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(calc.evaluate(<span style="color:#e6db74">&#34;2^3^2&#34;</span>).unwrap(), <span style="color:#ae81ff">512.0</span>);  <span style="color:#75715e">// 右結合
+</span></span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(calc.evaluate(<span style="color:#e6db74">&#34;2 + 3^2&#34;</span>).unwrap(), <span style="color:#ae81ff">11.0</span>);  <span style="color:#75715e">// 優先級
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">test_modulo</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> calc <span style="color:#f92672">=</span> Calculator::new();
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(calc.evaluate(<span style="color:#e6db74">&#34;10 % 3&#34;</span>).unwrap(), <span style="color:#ae81ff">1.0</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(calc.evaluate(<span style="color:#e6db74">&#34;17 % 5&#34;</span>).unwrap(), <span style="color:#ae81ff">2.0</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>Rust 測試的特點：</p>
+<ul>
+<li><code>#[cfg(test)]</code> 確保測試碼不會編譯進正式版本</li>
+<li><code>#[test]</code> 標記測試函數</li>
+<li>執行 <code>cargo test</code> 即可運行所有測試</li>
+</ul>
+<h3 id="8-錯誤處理">8. 錯誤處理</h3>
+<p>使用 <code>Result</code> 類型和 <code>?</code> 運算子進行錯誤處理：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">evaluate</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, input: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    self.tokens <span style="color:#f92672">=</span> TokenStream::new(input).collect();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.tokens.is_empty() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Err(<span style="color:#e6db74">&#34;empty expression&#34;</span>.to_owned());
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> first_token <span style="color:#f92672">=</span> self.next_token();
+</span></span><span style="display:flex;"><span>    self.expr(first_token)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 使用 ? 運算子傳遞錯誤
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">expr</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, token: Option<span style="color:#f92672">&lt;</span>Token<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> left <span style="color:#f92672">=</span> self.term(token)<span style="color:#f92672">?</span>;  <span style="color:#75715e">// 如果 term 失敗，錯誤會被傳遞
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這種模式的好處：</p>
+<ul>
+<li>明確標示可能失敗的操作</li>
+<li>錯誤類型清楚（這裡用 <code>String</code>，正式專案建議用自定義錯誤類型）</li>
+<li><code>?</code> 運算子讓錯誤處理程式碼簡潔</li>
+</ul>
+<h3 id="總結">總結</h3>
+<p>這個計算機專案雖然簡單，但涵蓋了多個重要的 Rust 概念：</p>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>應用場景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Enum + Pattern Matching</td>
+          <td>Token 定義與解析</td>
+      </tr>
+      <tr>
+          <td>Iterator Trait</td>
+          <td>詞法分析器</td>
+      </tr>
+      <tr>
+          <td>Recursive Descent</td>
+          <td>語法分析器</td>
+      </tr>
+      <tr>
+          <td>Trait (Render)</td>
+          <td>UI 元件定義</td>
+      </tr>
+      <tr>
+          <td>Closure</td>
+          <td>事件處理</td>
+      </tr>
+      <tr>
+          <td>Module System</td>
+          <td>程式碼組織</td>
+      </tr>
+      <tr>
+          <td>Unit Testing</td>
+          <td>驗證解析邏輯</td>
+      </tr>
+      <tr>
+          <td>Result + ?</td>
+          <td>錯誤處理</td>
+      </tr>
+  </tbody>
+</table>
+<p>如果你想深入學習 Rust，動手實作一個計算機是很好的練習。從簡單的四則運算開始，逐步加入變數、函數、甚至自定義語法，你會學到很多編譯器和語言設計的知識。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/gpui-calculator">gpui-calculator 原始碼</a> - 本文範例的完整程式碼</li>
+<li><a href="https://www.gpui.rs/">GPUI 官方網站</a></li>
+<li><a href="https://github.com/longbridge/gpui-component">gpui-component</a> - GPUI 的 UI 元件庫</li>
+<li><a href="https://www.stroustrup.com/4th.html">The C++ Programming Language, 4th edition</a> - 計算機範例的原始出處</li>
+<li><a href="https://craftinginterpreters.com/">Crafting Interpreters</a> - 編譯器入門好書</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Game of Life</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Game of Life</h1>
+            <p class="subtitle">WebGPU compute shaders + Rust WASM</p>
+        </header>
+
+        <div class="toolbar">
+            <button id="playBtn" title="Play / Pause (Space)">Play</button>
+            <button id="stepBtn" title="Single step (S)">Step</button>
+            <button id="randomBtn" title="Randomize grid (R)">Random</button>
+            <button id="clearBtn" title="Clear grid (C)">Clear</button>
+            <div class="speed-control">
+                <label for="speedSlider">Speed</label>
+                <input type="range" id="speedSlider" min="1" max="60" value="10">
+                <span id="speedValue">10</span>
+            </div>
+            <div class="stats">
+                <span id="genCounter">Gen: 0</span>
+                <span id="popCounter">Pop: 0</span>
+            </div>
+        </div>
+
+        <div class="canvas-wrapper">
+            <canvas id="canvas" width="512" height="512"></canvas>
+        </div>
+
+        <footer>
+            <p>Built with Rust, wgpu, and WebAssembly &mdash; click to draw, drag to paint</p>
+        </footer>
+    </div>
+
+    <script type="module">
+import init, {
+    start,
+    step,
+    render,
+    reset_random,
+    clear,
+    toggle_cell,
+    set_cell,
+    get_generation,
+    get_population,
+    get_grid_width,
+    get_grid_height,
+    resize,
+} from './wgpu_game_of_life.js';
+
+const GRID_WIDTH = 128;
+const GRID_HEIGHT = 128;
+
+const canvas = document.getElementById('canvas');
+const playBtn = document.getElementById('playBtn');
+const stepBtn = document.getElementById('stepBtn');
+const randomBtn = document.getElementById('randomBtn');
+const clearBtn = document.getElementById('clearBtn');
+const speedSlider = document.getElementById('speedSlider');
+const speedValue = document.getElementById('speedValue');
+const genCounter = document.getElementById('genCounter');
+const popCounter = document.getElementById('popCounter');
+
+let playing = false;
+let stepsPerSecond = 10;
+let frameAccumulator = 0;
+let lastFrameTime = 0;
+let animFrameId = null;
+let drawing = false;
+let drawValue = true;
+
+async function run() {
+    try {
+        await init();
+        await start('canvas', GRID_WIDTH, GRID_HEIGHT);
+        updateStats();
+        setupEvents();
+    } catch (err) {
+        console.error('Failed to initialize:', err);
+        document.querySelector('.canvas-wrapper').innerHTML =
+            `<div style="padding: 2rem; color: #ff6060; text-align: center;">
+                <p><strong>Failed to initialize WebGPU</strong></p>
+                <p style="margin-top: 0.5rem; font-size: 0.85rem;">${err.message || err}</p>
+                <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #8888a0;">
+                    Requires a WebGPU-capable browser (Chrome 113+, Edge 113+, Firefox 141+)
+                </p>
+            </div>`;
+    }
+}
+
+function setupEvents() {
+    playBtn.addEventListener('click', togglePlay);
+    stepBtn.addEventListener('click', doStep);
+    randomBtn.addEventListener('click', doRandom);
+    clearBtn.addEventListener('click', doClear);
+    speedSlider.addEventListener('input', () => {
+        stepsPerSecond = parseInt(speedSlider.value, 10);
+        speedValue.textContent = stepsPerSecond;
+    });
+    canvas.addEventListener('mousedown', onCanvasMouseDown);
+    canvas.addEventListener('mousemove', onCanvasMouseMove);
+    window.addEventListener('mouseup', () => { drawing = false; });
+    canvas.addEventListener('touchstart', onCanvasTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onCanvasTouchMove, { passive: false });
+    canvas.addEventListener('touchend', () => { drawing = false; });
+    document.addEventListener('keydown', onKeyDown);
+}
+
+function togglePlay() {
+    playing = !playing;
+    playBtn.textContent = playing ? 'Pause' : 'Play';
+    playBtn.classList.toggle('playing', playing);
+    if (playing) {
+        lastFrameTime = performance.now();
+        frameAccumulator = 0;
+        animFrameId = requestAnimationFrame(gameLoop);
+    } else if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+    }
+}
+
+function gameLoop(now) {
+    if (!playing) return;
+    const dt = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
+    frameAccumulator += dt * stepsPerSecond;
+    const maxSteps = Math.min(Math.floor(frameAccumulator), 10);
+    for (let i = 0; i < maxSteps; i++) { step(); }
+    frameAccumulator -= maxSteps;
+    if (maxSteps > 0) updateStats();
+    animFrameId = requestAnimationFrame(gameLoop);
+}
+
+function doStep() { if (!playing) { step(); updateStats(); } }
+function doRandom() { if (playing) togglePlay(); reset_random(); updateStats(); }
+function doClear() { if (playing) togglePlay(); clear(); updateStats(); }
+function updateStats() {
+    genCounter.textContent = `Gen: ${get_generation()}`;
+    popCounter.textContent = `Pop: ${get_population()}`;
+}
+
+function canvasToGrid(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const gx = Math.floor((clientX - rect.left) / rect.width * GRID_WIDTH);
+    const gy = Math.floor((clientY - rect.top) / rect.height * GRID_HEIGHT);
+    return [Math.max(0, Math.min(gx, GRID_WIDTH - 1)), Math.max(0, Math.min(gy, GRID_HEIGHT - 1))];
+}
+
+function onCanvasMouseDown(e) {
+    e.preventDefault(); drawing = true;
+    const [gx, gy] = canvasToGrid(e.clientX, e.clientY);
+    toggle_cell(gx, gy); drawValue = true; updateStats();
+}
+function onCanvasMouseMove(e) {
+    if (!drawing) return; e.preventDefault();
+    const [gx, gy] = canvasToGrid(e.clientX, e.clientY);
+    set_cell(gx, gy, drawValue); updateStats();
+}
+function onCanvasTouchStart(e) {
+    e.preventDefault(); if (e.touches.length === 1) {
+        drawing = true; const t = e.touches[0];
+        const [gx, gy] = canvasToGrid(t.clientX, t.clientY);
+        toggle_cell(gx, gy); drawValue = true; updateStats();
+    }
+}
+function onCanvasTouchMove(e) {
+    e.preventDefault(); if (!drawing || e.touches.length !== 1) return;
+    const t = e.touches[0]; const [gx, gy] = canvasToGrid(t.clientX, t.clientY);
+    set_cell(gx, gy, drawValue); updateStats();
+}
+function onKeyDown(e) {
+    if (e.target.tagName === 'INPUT') return;
+    switch (e.key.toLowerCase()) {
+        case ' ': e.preventDefault(); togglePlay(); break;
+        case 's': doStep(); break;
+        case 'r': doRandom(); break;
+        case 'c': doClear(); break;
+    }
+}
+
+run();
+    </script>
+</body>
+</html>

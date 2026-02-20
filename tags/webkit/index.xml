@@ -1,0 +1,130 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/webkit/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2012-04-29 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Smart Pointers in WebKit</title>
+      <link>https://blog.simplypatrick.com/posts/2012/04-29-smart-pointers-in-webkit/</link>
+      <pubDate>Sun, 29 Apr 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/04-29-smart-pointers-in-webkit/</guid>
+      <description>&lt;p&gt;上一篇講了 RefCounted，也講一下我看 RefPtr, PassRefPtr, OwnPtr, 及 PassOwnPtr 的心得：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;RefPtr 定義了一個轉換至 &lt;a href=&#34;http://stackoverflow.com/questions/670734/c-pointer-to-class-data-member&#34;&gt;pointer to data member&lt;/a&gt; 的 conversion operator:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// This conversion operator allows implicit conversion to bool but not to other integer types.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; (RefPtr&lt;span style=&#34;color:#f92672&#34;&gt;::*&lt;/span&gt;UnspecifiedBoolType);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;UnspecifiedBoolType&lt;/span&gt;() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; m_ptr &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;RefPtr&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;m_ptr : &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;; }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這個轉換運算子回傳的值可以被 compiler 自動轉換成 bool (非空時為 true)，但不能被轉換成數值來被使用，主要是用來避免一些可能的誤用狀況，有興趣的人可以參考 &lt;a href=&#34;http://www.artima.com/cppsource/safebool.html&#34;&gt;&amp;ldquo;The Safe Bool Idiom&amp;rdquo;&lt;/a&gt; 這篇文章。&lt;/p&gt;
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;OwnPtr 運用了 type traits 的技巧來達到 OwnPtr&lt;T&gt; 及 OwnPtr&amp;lt;T*&amp;gt; 都是宣告一個內含 T* 的 smart pointer：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; RemovePointer&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;Type ValueType;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; ValueType&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; PtrType;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Reference Counting in WebKit</title>
+      <link>https://blog.simplypatrick.com/posts/2012/04-28-reference-counting-in-webkit/</link>
+      <pubDate>Sat, 28 Apr 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/04-28-reference-counting-in-webkit/</guid>
+      <description>&lt;p&gt;WebKit 裡物件的生命週期很多都是由引用計數 (reference count) 控制的，今天有空看了一下，發現幾個巧妙之處：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;RefCounted 是個 template class，並且繼承自 RefCountedBase:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;RefCounted&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt; RefCountedBase {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    WTF_MAKE_NONCOPYABLE(RefCounted); WTF_MAKE_FAST_ALLOCATED;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; deref()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (derefBase())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;delete&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;*&amp;gt;&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;protected&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    RefCounted() { }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;~&lt;/span&gt;RefCounted()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;繼承 RefCountedBase 的技巧 (template hoisting) 是為了避免 template 實例化產生的 code bloating；而 destructor 裡的 delete static_cast&amp;lt;T*&amp;gt;(this); 則是為了避免不必要的 virtual table 產生，觀察 ~RefCountBase() 是個 non-virtual function 可以印證：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;~&lt;/span&gt;RefCountedBase()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ASSERT(m_deletionHasBegun);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ASSERT(&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;m_adoptionIsRequired);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;RefCountedBase 的設計相當輕量化， release 版本裡實際只會佔用一個 integer 的空間，而 debug 版裡則多了幾個輔助除錯的欄位:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#ifndef NDEBUG
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; m_deletionHasBegun;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; m_adoptionIsRequired;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ThreadRestrictionVerifier m_verifier;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#endif&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;m_deletionHasBegun 是用來確保當物件當參考計數已經小於 1 之後是不能再做 ref/deref 的動作的；m_adoptionIsRequired 是用來確保 adoptRef() 一定要被呼叫到，也就是 new 出來的物件一定要先用 PassRefPtr 來管理；而 m_verifier 則是用來確認物件不會同時被兩個以上的 thread 引用。&lt;/p&gt;
+&lt;ol start=&#34;3&#34;&gt;
+&lt;li&gt;Reference counting 一般的做法都是把計數初始值設定成 0，而 WebKit 為了避免每次創建都需要做的 0 -&amp;gt; 1 以及銷毀時要做的 1 -&amp;gt; 0 的記憶體存取，則是把計數值初始值設定成 1 的，然後強迫要用 PassRefPtr 來管理新產生的物件。&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;protected&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    RefCountedBase() &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; m_refCount(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;4&#34;&gt;
+&lt;li&gt;為了效能，引用計數的增加及減少是預設不保證 thread-safe。&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ref&lt;/span&gt;()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#ifndef NDEBUG
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Start thread verification as soon as the ref count gets to 2. This
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// heuristic reflects the fact that items are often created on one thread
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// and then given to another thread to be used.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// FIXME: Make this restriction tigher. Especially as we move to more
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// common methods for sharing items across threads like CrossThreadCopier.h
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// We should be able to add a &amp;#34;detachFromThread&amp;#34; method to make this explicit.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (m_refCount &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        m_verifier.setShared(true);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#endif
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// If this assert fires, it either indicates a thread safety issue or
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// that the verification needs to change. See ThreadRestrictionVerifier for
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// the different modes.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ASSERT(m_verifier.isSafeToUse());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ASSERT(&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;m_deletionHasBegun);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ASSERT(&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;m_adoptionIsRequired);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;m_refCount;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;所以 RefCounted 的機制要能運作正常，正確地使用 RefPtr 及 PassRefPtr 是很重要的，也就是如果你需要對 WebKit 做一定程度的修改的話，&lt;a href=&#34;http://www.webkit.org/coding/RefPtr.html&#34;&gt;&amp;ldquo;RefPtr and PassRefPtr Basics&amp;rdquo;&lt;/a&gt; 這篇文章是必備的知識。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>好久沒碰的 Buildbot 改的還不錯</title>
+      <link>https://blog.simplypatrick.com/posts/2011/05-30-buildbot/</link>
+      <pubDate>Mon, 30 May 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/05-30-buildbot/</guid>
+      <description>&lt;p&gt;蠻久沒有碰 Buildbot 了，今天看到 Chromium project 在用，新增的這個 Console 界面還不錯，對於 Chromium 這種需要支援許多平台並且要執行許多測試項目的 project 是蠻適合的，整個狀況可以一目了然：&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;https://lh3.googleusercontent.com/-JV_-WuVP598/TsF_N7MqItI/AAAAAAAAEaA/Cu4Tqq7dmSI/s800/e89ea2e5b995e5bfabe785a7-2011-05-30-e4b88ae58d881-32-42.png&#34;&gt;&lt;img src=&#34;https://lh3.googleusercontent.com/-JV_-WuVP598/TsF_N7MqItI/AAAAAAAAEaA/Cu4Tqq7dmSI/s800/e89ea2e5b995e5bfabe785a7-2011-05-30-e4b88ae58d881-32-42.png&#34; alt=&#34;&#34; title=&#34;Buildbot - Chromium&#34;&gt;&lt;/a&gt; 有問題的部份也很明顯可以直接點進去看，比起之前要去拉長長的 waterfall 圖方便許多：&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;https://lh4.googleusercontent.com/-PTP2rVjFbwo/TsF_M4pLC9I/AAAAAAAAEaA/EAYlP4SPRrI/s800/e89ea2e5b995e5bfabe785a7-2011-05-30-e4b88ae58d881-44-40.png&#34;&gt;&lt;img src=&#34;https://lh4.googleusercontent.com/-PTP2rVjFbwo/TsF_M4pLC9I/AAAAAAAAEaA/EAYlP4SPRrI/s800/e89ea2e5b995e5bfabe785a7-2011-05-30-e4b88ae58d881-44-40.png&#34; alt=&#34;&#34; title=&#34;Buildbot - Chromium Console&#34;&gt;&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

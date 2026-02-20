@@ -1,0 +1,323 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/proc-macro/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-13 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>Rust Proc Macro：builder-derive 實戰</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/</link>
+      <pubDate>Fri, 13 Feb 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/</guid>
+      <description>&lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;最近在看 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/main/builder-derive&#34;&gt;&lt;code&gt;builder-derive&lt;/code&gt;&lt;/a&gt; 這個小專案時，會再次被 Rust 的 procedural macro 驚艷到：&lt;/p&gt;
+&lt;p&gt;你在程式碼裡只寫一行 &lt;code&gt;#[derive(Builder)]&lt;/code&gt;，編譯器就幫你生出一整套 Builder API。&lt;/p&gt;
+&lt;p&gt;但它到底怎麼做到的？&lt;/p&gt;
+&lt;p&gt;這篇就用 &lt;code&gt;builder-derive&lt;/code&gt; 的實作，從 &lt;code&gt;TokenStream&lt;/code&gt; 一路追到實際生成的程式碼，拆解 Rust proc macro 的完整流程。&lt;/p&gt;
+&lt;h2 id=&#34;先看使用端我們到底得到了什麼&#34;&gt;先看使用端：我們到底得到了什麼&lt;/h2&gt;
+&lt;p&gt;先看最終使用方式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; builder_derive::Builder;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Builder, Debug)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;User&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    username: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    email: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    age: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    tags: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; user &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; User::builder()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .username(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;alice&amp;#34;&lt;/span&gt;.to_string())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .email(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;alice@example.com&amp;#34;&lt;/span&gt;.to_string())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .age(&lt;span style=&#34;color:#ae81ff&#34;&gt;30&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    .build()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這裡我們沒有手寫 &lt;code&gt;UserBuilder&lt;/code&gt;，也沒有手寫 setter、&lt;code&gt;build()&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;#[derive(Builder)]&lt;/code&gt; 在編譯期把這些東西全部產生出來。&lt;/p&gt;
+&lt;h2 id=&#34;proc-macro-的核心心法編譯期程式碼產生器&#34;&gt;Proc Macro 的核心心法：編譯期程式碼產生器&lt;/h2&gt;
+&lt;p&gt;很多人第一次接觸 macro 會覺得它像「文字替換」。
+Rust 的 procedural macro 比這個更嚴謹：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;編譯器把你標註 &lt;code&gt;derive&lt;/code&gt; 的語法轉成 &lt;code&gt;TokenStream&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;macro crate 用 &lt;code&gt;syn&lt;/code&gt; 把 token parse 成 AST（語法樹）&lt;/li&gt;
+&lt;li&gt;你在 AST 上做檢查與分析&lt;/li&gt;
+&lt;li&gt;用 &lt;code&gt;quote&lt;/code&gt; 產生新的 Rust tokens 丟回編譯器&lt;/li&gt;
+&lt;li&gt;編譯器把這段新程式碼當成真的程式去編譯&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 的模組切分很清楚：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;src/lib.rs&lt;/code&gt;：入口&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;src/parse.rs&lt;/code&gt;：輸入合法性檢查&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;src/field.rs&lt;/code&gt;：欄位型別分析&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;src/generate.rs&lt;/code&gt;：程式碼生成&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;第-1-步入口函式librs&#34;&gt;第 1 步：入口函式（lib.rs）&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 的入口非常典型：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[proc_macro_derive(Builder)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;derive_builder&lt;/span&gt;(input: &lt;span style=&#34;color:#a6e22e&#34;&gt;TokenStream&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TokenStream&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; input &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_macro_input!&lt;/span&gt;(input &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; DeriveInput);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; generate::impl_builder(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;input) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(tokens) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; tokens.into(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Err(e) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; e.to_compile_error().into(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這段有三個重點：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;#[proc_macro_derive(Builder)]&lt;/code&gt; 把這個函式註冊成 derive macro。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;parse_macro_input!&lt;/code&gt; 把原始 token 解析成 &lt;code&gt;syn::DeriveInput&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;發生錯誤時用 &lt;code&gt;to_compile_error()&lt;/code&gt; 轉成編譯錯誤，而不是 panic。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;也就是說，macro 的錯誤訊息其實是你主動設計出來的 UX。&lt;/p&gt;
+&lt;h2 id=&#34;第-2-步先擋掉不支援的型別parsers&#34;&gt;第 2 步：先擋掉不支援的型別（parse.rs）&lt;/h2&gt;
+&lt;p&gt;在 &lt;code&gt;parse.rs&lt;/code&gt; 裡，專案先做輸入驗證：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;只接受「具名欄位 struct」&lt;/li&gt;
+&lt;li&gt;拒絕 enum / union / tuple struct / unit struct&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這個設計超務實。因為 Builder 的生成邏輯依賴欄位名稱，沒有欄位名就沒辦法安全產生 setter。&lt;/p&gt;
+&lt;p&gt;像這段 compile-fail 測試會得到清楚錯誤：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Builder)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;enum&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;MyEnum&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Variant1,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Variant2,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;錯誤訊息是：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Builder can only be derived for structs, not enums&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 這裡做得很對：把「不可能支援」的 case 儘早在編譯期擋下來，使用者不用等到 runtime 才踩雷。&lt;/p&gt;
+&lt;h2 id=&#34;第-3-步欄位分析fieldrs&#34;&gt;第 3 步：欄位分析（field.rs）&lt;/h2&gt;
+&lt;p&gt;接著是整個 macro 的關鍵資料結構 &lt;code&gt;FieldInfo&lt;/code&gt;，每個欄位會被分析出：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;欄位名稱 &lt;code&gt;name&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;原始型別 &lt;code&gt;ty&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;是否 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt; 的內層型別 &lt;code&gt;T&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;是否 &lt;code&gt;Vec&amp;lt;T&amp;gt;&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;怎麼判斷-optiont&#34;&gt;怎麼判斷 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;？&lt;/h3&gt;
+&lt;p&gt;它用 &lt;code&gt;syn::Type&lt;/code&gt; pattern matching：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;先確認是 &lt;code&gt;Type::Path&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;抓路徑最後一段（例如 &lt;code&gt;Option&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;看識別字是不是 &lt;code&gt;Option&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;若是，從 angle-bracket 參數拿出 &lt;code&gt;T&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;這是 proc macro 最常見也最實用的技巧：
+&lt;strong&gt;不要自己 parse 字串；直接操作 AST。&lt;/strong&gt;&lt;/p&gt;
+&lt;h3 id=&#34;syn-到底在做什麼&#34;&gt;&lt;code&gt;syn&lt;/code&gt; 到底在做什麼？&lt;/h3&gt;
+&lt;p&gt;可以把 &lt;code&gt;syn&lt;/code&gt; 想成「Rust 語法的解析器 + AST 資料模型」。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;builder-derive&lt;/code&gt; 裡，&lt;code&gt;syn&lt;/code&gt; 主要做三件事：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;把 &lt;code&gt;TokenStream&lt;/code&gt; 轉成 &lt;code&gt;DeriveInput&lt;/code&gt;（看到 struct 名稱、可見性、欄位）&lt;/li&gt;
+&lt;li&gt;用 enum pattern matching 檢查資料型別（&lt;code&gt;Data::Struct&lt;/code&gt; / &lt;code&gt;Fields::Named&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;深入欄位型別結構（&lt;code&gt;Type::Path&lt;/code&gt; -&amp;gt; &lt;code&gt;PathSegment&lt;/code&gt; -&amp;gt; &lt;code&gt;PathArguments&lt;/code&gt;）判斷 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;、&lt;code&gt;Vec&amp;lt;T&amp;gt;&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;為什麼這很重要？因為 procedural macro 要的是「語法結構」，不是字串比對。&lt;/p&gt;
+&lt;p&gt;舉例來說，&lt;code&gt;Option&amp;lt;String&amp;gt;&lt;/code&gt;、&lt;code&gt;std::option::Option&amp;lt;String&amp;gt;&lt;/code&gt; 在字串上看起來不同，但在 AST 層都能被一致處理。這就是 &lt;code&gt;syn&lt;/code&gt; 在 macro 裡的核心價值。&lt;/p&gt;
+&lt;p&gt;另外像 &lt;code&gt;syn::Error::new_spanned(...)&lt;/code&gt; 也很關鍵：它可以把錯誤綁在原始程式碼 span 上，讓編譯錯誤直接指到真正寫錯的那一行。&lt;/p&gt;
+&lt;h3 id=&#34;這個專案一個值得注意的設計&#34;&gt;這個專案一個值得注意的設計&lt;/h3&gt;
+&lt;p&gt;對 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt; 欄位，setter 參數型別是 &lt;code&gt;T&lt;/code&gt;，不是 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;也就是你寫：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;.age(&lt;span style=&#34;color:#ae81ff&#34;&gt;30&lt;/span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;而不是：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;.age(Some(&lt;span style=&#34;color:#ae81ff&#34;&gt;30&lt;/span&gt;))&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這讓 API 更順手。不過 tradeoff 是：目前 API 不能顯式設定 &lt;code&gt;None&lt;/code&gt;，只能「不呼叫 setter」來得到 &lt;code&gt;None&lt;/code&gt;。&lt;/p&gt;
+&lt;h2 id=&#34;第-4-步用-quote-生成程式碼generaters&#34;&gt;第 4 步：用 quote 生成程式碼（generate.rs）&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;generate.rs&lt;/code&gt; 裡把生成工作拆成四塊，這個切法很值得學：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;generate_builder_struct&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;generate_builder_constructor&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;generate_setter_methods&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;generate_build_method&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;quote-怎麼把-ast-變回-rust-程式&#34;&gt;&lt;code&gt;quote!&lt;/code&gt; 怎麼把 AST 變回 Rust 程式？&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;quote&lt;/code&gt; 的角色是「把分析結果重新組裝成 token」。&lt;/p&gt;
+&lt;p&gt;在這個專案裡，最常用的語法有兩個：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;#var&lt;/code&gt;：把變數插進模板&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;#(...)*&lt;/code&gt;：把 iterator 產生的多段程式碼展開&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;例如：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; builder_fields &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; field_infos.iter().map(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;field&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; name &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;field.name;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; builder_ty &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; field.builder_field_type();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;quote!&lt;/span&gt; { #name: #builder_ty }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;});
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;quote!&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; #builder_name {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        #(#builder_fields,)&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這段可以讀成：「每個欄位先變成一小段 token，最後用 repetition 一次展開成完整 struct 欄位列表。」&lt;/p&gt;
+&lt;p&gt;也因為這種寫法，macro 可以維持很強的可組合性：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;每個生成函式只負責一種片段&lt;/li&gt;
+&lt;li&gt;最後在 &lt;code&gt;impl_builder&lt;/code&gt; 把片段拼回完整輸出&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;對大型 macro 專案來說，這比單一巨大 &lt;code&gt;quote!&lt;/code&gt; 區塊更容易維護。&lt;/p&gt;
+&lt;h3 id=&#34;41-生成-builder-struct&#34;&gt;4.1 生成 Builder struct&lt;/h3&gt;
+&lt;p&gt;每個 builder 欄位都用 &lt;code&gt;Option&amp;lt;...&amp;gt;&lt;/code&gt; 包起來，目的是追蹤「這個欄位有沒有被設定」。&lt;/p&gt;
+&lt;h3 id=&#34;42-生成-builder&#34;&gt;4.2 生成 &lt;code&gt;builder()&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;在原始 struct 上加：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; User {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;builder&lt;/span&gt;() -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;UserBuilder&lt;/span&gt; { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;所有欄位初始化成 &lt;code&gt;None&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;43-生成-setter可-chain&#34;&gt;4.3 生成 setter（可 chain）&lt;/h3&gt;
+&lt;p&gt;每個 setter 都是這個形狀：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;field&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, value: &lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.field &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(value);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;self&lt;/code&gt; by value + 回傳 &lt;code&gt;Self&lt;/code&gt;，就是 fluent API 的來源。&lt;/p&gt;
+&lt;h3 id=&#34;44-生成-build而且不同欄位策略不同&#34;&gt;4.4 生成 &lt;code&gt;build()&lt;/code&gt;，而且不同欄位策略不同&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 在這裡把欄位分三類處理：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;：直接 passthrough（沒設就 &lt;code&gt;None&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Vec&amp;lt;T&amp;gt;&lt;/code&gt;：沒設就 &lt;code&gt;unwrap_or_default()&lt;/code&gt;，變空陣列&lt;/li&gt;
+&lt;li&gt;其他欄位：必填，沒設就回 &lt;code&gt;Err(&amp;quot;field is required&amp;quot;)&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;這個策略很實用，因為 &lt;code&gt;Vec&amp;lt;T&amp;gt;&lt;/code&gt; 在很多 config 型別裡確實適合預設空集合。&lt;/p&gt;
+&lt;h2 id=&#34;展開後大概長怎樣&#34;&gt;展開後大概長怎樣？&lt;/h2&gt;
+&lt;p&gt;以這個輸入：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Builder)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Config&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    host: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    port: &lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    timeout: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    features: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;macro 會產生近似這樣的程式碼（簡化版）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ConfigBuilder&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    host: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    port: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    timeout: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    features: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Config {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;builder&lt;/span&gt;() -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ConfigBuilder&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        ConfigBuilder {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            host: None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            port: None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            timeout: None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            features: None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; ConfigBuilder {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;host&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, value: String) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.host &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(value);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;port&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, value: &lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.port &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(value);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;timeout&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, value: &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.timeout &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(value);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;features&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, value: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.features &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(value);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;build&lt;/span&gt;(self) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Config, String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(Config {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            host: &lt;span style=&#34;color:#a6e22e&#34;&gt;self&lt;/span&gt;.host.ok_or_else(&lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;host is required&amp;#34;&lt;/span&gt;.to_string())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            port: &lt;span style=&#34;color:#a6e22e&#34;&gt;self&lt;/span&gt;.port.ok_or_else(&lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;port is required&amp;#34;&lt;/span&gt;.to_string())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            timeout: &lt;span style=&#34;color:#a6e22e&#34;&gt;self&lt;/span&gt;.timeout,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            features: &lt;span style=&#34;color:#a6e22e&#34;&gt;self&lt;/span&gt;.features.unwrap_or_default(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        })
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;重點是：這些都發生在編譯期，你 runtime 不需要額外 macro 成本。&lt;/p&gt;
+&lt;h2 id=&#34;錯誤處理compile-time-跟-runtime-分工&#34;&gt;錯誤處理：compile-time 跟 runtime 分工&lt;/h2&gt;
+&lt;p&gt;這個專案的錯誤策略很清楚：&lt;/p&gt;
+&lt;h3 id=&#34;compile-timemacro-階段&#34;&gt;Compile-time（macro 階段）&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;型別不支援就直接編譯失敗&lt;/li&gt;
+&lt;li&gt;錯誤訊息會標到對應程式碼位置（透過 &lt;code&gt;syn::Error::new_spanned&lt;/code&gt;）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;runtimebuild-階段&#34;&gt;Runtime（build 階段）&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;缺必要欄位時，&lt;code&gt;build()&lt;/code&gt; 回 &lt;code&gt;Result::Err(String)&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這種分工很合理：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;能在語法層判斷的，就盡量提早失敗&lt;/li&gt;
+&lt;li&gt;必須等使用者呼叫流程才能判斷的，就用 &lt;code&gt;Result&lt;/code&gt; 回報&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;為什麼這個範例很適合學-proc-macro&#34;&gt;為什麼這個範例很適合學 proc macro&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 的好處是它「剛好夠真實，但不會太重」：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;有完整 pipeline（parse -&amp;gt; analyze -&amp;gt; generate）&lt;/li&gt;
+&lt;li&gt;有 compile-fail test（&lt;code&gt;trybuild&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;有 integration tests 驗證行為&lt;/li&gt;
+&lt;li&gt;邏輯分層乾淨，不會全部擠在一個檔案&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;如果正要開始學 proc macro，建議順序是：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;先看 &lt;code&gt;src/lib.rs&lt;/code&gt; 入口&lt;/li&gt;
+&lt;li&gt;再看 &lt;code&gt;parse.rs&lt;/code&gt; 怎麼做輸入保護&lt;/li&gt;
+&lt;li&gt;再看 &lt;code&gt;field.rs&lt;/code&gt; 怎麼做型別判斷&lt;/li&gt;
+&lt;li&gt;最後看 &lt;code&gt;generate.rs&lt;/code&gt; 的 &lt;code&gt;quote!&lt;/code&gt; 拼裝&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;這樣你比較不會一開始就被 &lt;code&gt;quote!&lt;/code&gt; 的 token interpolation 淹沒。&lt;/p&gt;
+&lt;h2 id=&#34;目前限制與下一步&#34;&gt;目前限制與下一步&lt;/h2&gt;
+&lt;p&gt;以目前實作來看，還有幾個可以進化的方向：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;支援 generics（例如 &lt;code&gt;struct Foo&amp;lt;T&amp;gt;&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;支援 &lt;code&gt;#[builder(...)]&lt;/code&gt; 欄位屬性（default、setter(into)、skip）&lt;/li&gt;
+&lt;li&gt;更結構化的錯誤型別（取代 &lt;code&gt;String&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;允許 optional setter 傳 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;（可顯式設 &lt;code&gt;None&lt;/code&gt;）&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;但以「教學用、理解 proc macro 原理」來說，現在這個版本其實已經很漂亮了。&lt;/p&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;Rust 的 procedural macro 真正厲害的地方，不是語法炫技，而是把重複樣板在「編譯期」變成可驗證、可維護的程式碼生成流程。&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;builder-derive&lt;/code&gt; 這個專案剛好把這件事示範得很清楚：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;用 &lt;code&gt;syn&lt;/code&gt; 看懂你的 Rust 程式&lt;/li&gt;
+&lt;li&gt;用 &lt;code&gt;quote&lt;/code&gt; 生成你本來不想手寫的 boilerplate&lt;/li&gt;
+&lt;li&gt;用型別檢查和測試把 macro 行為收斂到可預期&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;下次看到 &lt;code&gt;#[derive(...)]&lt;/code&gt;，你可以把它想成：
+&lt;strong&gt;「這不是魔法，是一個在編譯器裡跑的小型 code generator。」&lt;/strong&gt;&lt;/p&gt;
+&lt;hr&gt;
+&lt;p&gt;專案連結：&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/main/builder-derive&#34;&gt;&lt;code&gt;rust-52-projects/builder-derive&lt;/code&gt;&lt;/a&gt;&lt;/p&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

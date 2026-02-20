@@ -1,0 +1,688 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>理解 Rust 的 Pin：從問題到解法</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-pin/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-pin/"/>
+  <meta property="og:title" content="理解 Rust 的 Pin：從問題到解法"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-19 02:16:20 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="async"/>
+  
+  <meta property="og:article:tag" content="futures"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/tils/2026/2026-02-10-rust-wasm-async-runtime/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            WASM 裡的 Rust Async 沒有 Runtime
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-rust-async-trait/">
+            Rust 的 async_trait：為什麼 async fn 不能直接用在 trait 裡？
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">理解 Rust 的 Pin：從問題到解法</h2>
+      <div class="post-meta">
+        <span class="post-date">February 19, 2026</span>
+        <a href="/tils"><span class="label label-info">TIL</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/async"><span class="label label-primary">async</span></a>
+        
+        <a href="/tags/futures"><span class="label label-primary">futures</span></a>
+        
+        
+
+      </div>      
+      <div class="post-content">
+        <blockquote>
+<p>涵蓋 <code>Pin</code>、<code>Unpin</code>、<code>pin!</code> macro、<code>tokio::pin!</code>，以及它們背後的設計邏輯。</p>
+</blockquote>
+<h2 id="問題的根源自引用結構">問題的根源：自引用結構</h2>
+<p>要理解 <code>Pin</code>，得先知道它解決的是什麼問題。</p>
+<p>在 Rust 中，「移動（move）」一個值，本質上是把它的記憶體內容複製到新位置，然後讓舊的失效。大多數情況下這完全沒問題，但有一種情況會爆炸——<strong>自引用結構（self-referential struct）</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SelfRef</span> {
+</span></span><span style="display:flex;"><span>    data: String,
+</span></span><span style="display:flex;"><span>    ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> String,  <span style="color:#75715e">// 指向自己的 data！
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>如果這個結構被移動了，<code>data</code> 跑到新地址，但 <code>ptr</code> 還指著舊地址，就成了<strong>懸空指標（dangling pointer）</strong>，記憶體安全直接玩完。</p>
+<p>這聽起來像是很少見的邊緣案例，但其實非常普遍——<strong><code>async/await</code> 產生的 <code>Future</code> 幾乎都是自引用結構</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">example</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> data <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">3</span>];
+</span></span><span style="display:flex;"><span>    some_await().<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{:?}</span><span style="color:#e6db74">&#34;</span>, data); <span style="color:#75715e">// Future 需要跨 await 持有對 data 的引用
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>編譯器為這個 <code>async fn</code> 生成的狀態機，會同時持有 <code>data</code> 和指向它的引用，這就是自引用。</p>
+<h3 id="狀態機長什麼樣子">狀態機長什麼樣子？</h3>
+<p>編譯器大致會生成這樣的狀態機（簡化的偽代碼）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 每個 await 點對應一個狀態
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">ExampleFuture</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 狀態 0：尚未開始執行（第一次 poll 之前）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 此時沒有任何自引用，只是普通的初始值
+</span></span></span><span style="display:flex;"><span>    Start,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 狀態 1：在 some_await().await 暫停，等待 inner future 完成
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ⚠️ 自引用在這裡出現！
+</span></span></span><span style="display:flex;"><span>    AwaitingInner {
+</span></span><span style="display:flex;"><span>        data: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span>,               <span style="color:#75715e">// 擁有 data
+</span></span></span><span style="display:flex;"><span>        reference: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span>,   <span style="color:#75715e">// 指向上面那個 data！← 自引用
+</span></span></span><span style="display:flex;"><span>        inner_fut: <span style="color:#a6e22e">SomeAwaitFuture</span>,   <span style="color:#75715e">// 正在等待的 inner future
+</span></span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 狀態 2：完成
+</span></span></span><span style="display:flex;"><span>    Done,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>問題在於：如果 <code>AwaitingInner</code> 這個 variant 被 <strong>move</strong> 到新的記憶體位置，<code>data</code> 跑到新地址，但 <code>reference</code> 還指著舊地址——<strong>懸空指標，記憶體安全崩潰</strong>。</p>
+
+  <div class="mermaid">
+    graph LR
+    subgraph before["移動前（位址 0x100）"]
+        d1["data: [1,2,3]"]
+        r1["ref: 0x100"]
+        r1 -- "✅ 正確指向" --> d1
+    end
+
+    subgraph after["移動後（位址 0x200）"]
+        d2["data: [1,2,3]"]
+        r2["ref: 0x100"]
+    end
+
+    before -- "move" --> after
+    r2 -. "⚠️ 懸空指標！" .-> d1
+  </div>
+
+<p>這就是為什麼 <code>async</code> Future 一旦開始被 poll（進入 <code>AwaitingInner</code> 狀態），就<strong>絕對不能再被移動</strong>。<code>Pin</code> 的存在，就是用型別系統來強制保證這件事。</p>
+<hr>
+<h2 id="pin-的核心思想">Pin 的核心思想</h2>
+<p><code>Pin&lt;P&gt;</code> 是一個包裝器，它對指標 <code>P</code>（如 <code>&amp;mut T</code> 或 <code>Box&lt;T&gt;</code>）做出保證：</p>
+<blockquote>
+<p><strong>「被指向的值 <code>T</code>，在它被 drop 之前，不會再被移動。」</strong></p>
+</blockquote>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::pin::Pin;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 普通的 Box，裡面的值可以被 move 出來
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> b: Box<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> Box::new(<span style="color:#e6db74">&#34;hello&#34;</span>.into());
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> s: String <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>b; <span style="color:#75715e">// ✅ 可以 move
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Pin 住的 Box，裡面的值無法被安全地 move 出來
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> p: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;&gt;</span> <span style="color:#f92672">=</span> Box::pin(<span style="color:#e6db74">&#34;hello&#34;</span>.into());
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// let s: String = *p; // ❌ 無法取得 &amp;mut T 來 move
+</span></span></span></code></pre></div>
+
+<p><code>Pin</code> 本身不是什麼魔法鎖，而是透過<strong>型別系統</strong>來防止你取得能夠 move 該值的 <code>&amp;mut T</code>。</p>
+<hr>
+<h2 id="unpin大多數型別其實不在乎">Unpin：大多數型別其實不在乎</h2>
+<p>Rust 有個 auto trait 叫 <code>Unpin</code>：</p>
+<ul>
+<li>實作了 <code>Unpin</code> 的型別，即使被 Pin 住也可以安全地移動，因為它們不是自引用結構。</li>
+<li>幾乎所有普通型別（<code>i32</code>、<code>String</code>、<code>Vec</code>、&hellip;）都自動實作 <code>Unpin</code>。</li>
+<li><strong><code>async</code> 產生的 Future 不實作 <code>Unpin</code></strong>，因為它們可能是自引用的。</li>
+</ul>
+
+  <pre tabindex="0"><code>普通型別（String、Vec...）→ 自動 impl Unpin  → Pin 對它形同虛設
+async fn 的 Future        → 不 impl Unpin   → Pin 真正發揮作用</code></pre>
+
+<hr>
+<h2 id="pin-的兩個重要方法">Pin 的兩個重要方法</h2>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 如果 T: Unpin，可以安全拿到 &amp;mut T
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>P: <span style="color:#a6e22e">DerefMut</span><span style="color:#f92672">&lt;</span>Target: Unpin<span style="color:#f92672">&gt;&gt;</span> Pin<span style="color:#f92672">&lt;</span>P<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">get_mut</span>(self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> T
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 不管 T 是否 Unpin，都能繼續操作 Pin 住的值
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>P: <span style="color:#a6e22e">DerefMut</span><span style="color:#f92672">&gt;</span> Pin<span style="color:#f92672">&lt;</span>P<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">as_mut</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> T<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="手動實作-future-時的-pin">手動實作 Future 時的 Pin</h2>
+<p>Pin 最直接的使用場景之一是手動實作 <code>Future</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Future <span style="color:#66d9ef">for</span> MyFuture {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// self 必須是 Pin&lt;&amp;mut Self&gt;
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">todo!</span>()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="pin-macro把值-pin-在-stack-上">pin! macro：把值 pin 在 Stack 上</h2>
+<p><code>Box::pin()</code> 把值放在 heap 上，有分配成本。很多情況下我們希望把 Future pin 在 <strong>stack</strong> 上，這時就需要 <code>pin!</code> macro。</p>
+<p>手動在 stack 上 pin 既麻煩又需要 <code>unsafe</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> future <span style="color:#f92672">=</span> some_async_fn();
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 你必須保證之後不會 move future
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> pinned <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { Pin::new_unchecked(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> future) };</span></span></code></pre></div>
+
+<p><code>pin!</code> macro 讓這件事變得安全且方便。</p>
+<h3 id="tokiopin"><code>tokio::pin!</code></h3>
+<p><code>tokio::pin!</code> 接受變數名稱，直接在當前 scope 做 shadowing：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// tokio::pin! 大致展開成這樣：
+</span></span></span><span style="display:flex;"><span>macro_rules<span style="color:#f92672">!</span> pin {
+</span></span><span style="display:flex;"><span>    (<span style="color:#75715e">$x</span>:<span style="color:#a6e22e">ident</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> <span style="color:#75715e">$x</span> <span style="color:#f92672">=</span> <span style="color:#75715e">$x</span>;                                       <span style="color:#75715e">// (1) move 到新綁定
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> <span style="color:#75715e">$x</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { Pin::new_unchecked(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> <span style="color:#75715e">$x</span>) };  <span style="color:#75715e">// (2) shadow 成 Pin&lt;&amp;mut T&gt;
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>使用方式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> tokio::pin;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> future <span style="color:#f92672">=</span> some_async_fn();
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">pin!</span>(future); <span style="color:#75715e">// future 的型別現在是 Pin&lt;&amp;mut impl Future&gt;
+</span></span></span><span style="display:flex;"><span>future.<span style="color:#66d9ef">await</span>;</span></span></code></pre></div>
+
+<p>步驟 (1) 把值 move 到新綁定，步驟 (2) 把名字蓋掉，改成 <code>Pin&lt;&amp;mut T&gt;</code>。此後你只看得到 Pin 版本，原本可以 move 的那個綁定已不可見，借用規則自然防止你移動它。</p>
+<h3 id="stdpinpinrust-168"><code>std::pin::pin!</code>（Rust 1.68+）</h3>
+<p>標準庫的版本接受任意表達式，靠的是另一個機制——<strong>Temporary Lifetime Extension（暫存值生命週期延伸）</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::pin::pin;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> fut <span style="color:#f92672">=</span> <span style="color:#a6e22e">pin!</span>(some_async_fn());</span></span></code></pre></div>
+
+<p>展開後：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> fut <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> _pinned <span style="color:#f92672">=</span> some_async_fn();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">unsafe</span> { Pin::new_unchecked(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> _pinned) }
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>Rust 編譯器發現回傳值裡含有對 block 內部暫存值的引用，於是自動把 <code>_pinned</code> 的生命週期延伸到與 <code>fut</code> 相同的 scope，確保不會出現懸空指標。這是編譯器特殊規則，不是 unsafe hack。</p>
+<h3 id="兩者對比">兩者對比</h3>
+<table>
+  <thead>
+      <tr>
+          <th></th>
+          <th><code>tokio::pin!</code></th>
+          <th><code>std::pin::pin!</code></th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>接受</td>
+          <td>變數名 <code>ident</code></td>
+          <td>任意表達式 <code>expr</code></td>
+      </tr>
+      <tr>
+          <td>機制</td>
+          <td>變數 shadowing</td>
+          <td>Temporary lifetime extension</td>
+      </tr>
+      <tr>
+          <td>語法</td>
+          <td><code>pin!(fut);</code></td>
+          <td><code>let fut = pin!(expr);</code></td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="move-進-pin-不就跟-pin-的目的矛盾">「move 進 <code>pin!</code> 不就跟 Pin 的目的矛盾？」</h2>
+<p>這是個很常見的疑惑。答案是：<strong>move 發生在 pin 之前，Pin 的承諾是從 pin 的那一刻之後才開始的。</strong></p>
+<p>Pin 的合約不是「這個值永遠不能移動」，而是：</p>
+<blockquote>
+<p><strong>「一旦被 pin 住之後，就不能再移動。」</strong></p>
+</blockquote>
+<p><code>async fn</code> 產生的 Future，在<strong>第一次被 poll 之前</strong>，內部根本還沒有任何自引用，只是一個普通的初始狀態機。自引用是在 poll 的過程中才逐漸形成的：</p>
+
+  <pre tabindex="0"><code>[建立 Future] → move 進 _pinned → [Pin 住] → [第一次 poll] → 自引用開始形成
+                    ✅ 安全                       ✅ 此後不再 move</code></pre>
+
+<p>所以 <code>pin!</code> 在 pin 之前 move 值是完全合法的，並不矛盾。</p>
+<hr>
+<h2 id="最重要的使用場景select">最重要的使用場景：select!</h2>
+<p>這是你最常需要 <code>pin!</code> 的地方。<code>tokio::select!</code> 需要能夠<strong>跨多次 poll 同一個 Future</strong>，每次都必須是同一個 pinned Future，不能 move 它：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> tokio::{pin, time};
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::time::Duration;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[tokio::main]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> long_operation <span style="color:#f92672">=</span> do_something_slow();
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">pin!</span>(long_operation);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> interval <span style="color:#f92672">=</span> time::interval(Duration::from_secs(<span style="color:#ae81ff">1</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>        tokio::<span style="color:#a6e22e">select!</span> {
+</span></span><span style="display:flex;"><span>            result <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> long_operation <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;完成：</span><span style="color:#e6db74">{:?}</span><span style="color:#e6db74">&#34;</span>, result);
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=</span> interval.tick() <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;還在等待中...&#34;</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>如果沒有 <code>pin!</code>，每次進入 loop 都會 move <code>long_operation</code>，之前的 poll 狀態就丟失了。</p>
+<hr>
+<h2 id="什麼時候用哪個">什麼時候用哪個？</h2>
+<table>
+  <thead>
+      <tr>
+          <th>情境</th>
+          <th>建議</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>現代專案，不依賴 Tokio</td>
+          <td><code>std::pin::pin!</code>（Rust 1.68+）</td>
+      </tr>
+      <tr>
+          <td>Tokio 專案</td>
+          <td><code>tokio::pin!</code> 或 <code>std::pin::pin!</code> 皆可</td>
+      </tr>
+      <tr>
+          <td>需要跨執行緒傳遞</td>
+          <td><code>Box::pin()</code>（heap 分配，Box 本身可 move）</td>
+      </tr>
+      <tr>
+          <td>效能敏感，避免 heap 分配</td>
+          <td><code>pin!</code>（stack）</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="總結">總結</h2>
+<ul>
+<li><strong>Pin</strong> 是 Rust 用型別系統做出的「這個值不能再被移動」的承諾，專為自引用結構（尤其是 async Future）而設計。</li>
+<li><strong>Unpin</strong> 讓普通型別不受 Pin 影響，只有真正需要固定位置的型別（如 async Future）才會受到約束。</li>
+<li><strong><code>tokio::pin!</code></strong> 靠 shadowing，<strong><code>std::pin::pin!</code></strong> 靠 temporary lifetime extension，兩者都能安全地把值 pin 在 stack 上。</li>
+<li>Pin 的承諾從「pin 的那一刻」開始，pin 之前的 move 完全合法。</li>
+</ul>
+
+      </div>
+      <hr>
+      
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,385 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/build/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2018-10-31 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Revisiting GN</title>
+      <link>https://blog.simplypatrick.com/posts/2017/12-24-revisit-gn/</link>
+      <pubDate>Wed, 31 Oct 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2017/12-24-revisit-gn/</guid>
+      <description>&lt;h3 id=&#34;安裝&#34;&gt;安裝&lt;/h3&gt;
+&lt;p&gt;GN 本來只是 Chromium 自己在用 (&lt;a href=&#34;https://blog.simplypatrick.com/posts/2016/01-23-gn/&#34;&gt;很久之前介紹過&lt;/a&gt;)，隨著另一個大專案 Fuchsia 也開始採用了，Google 終於決定要給它個名份，所以它有自己的網址了: &lt;a href=&#34;https://gn.googlesource.com&#34;&gt;https://gn.googlesource.com&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;Google 也直接提供 binary 讓你下載使用了，雖然自己編譯安裝也是很簡單。&lt;/p&gt;
+&lt;p&gt;從源碼編譯的步驟:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;git clone https://gn.googlesource.com/gn
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cd gn
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;python build/gen.py
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ninja -C out
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 編譯完成後，binary 會在 out/gn&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;怎麼用&#34;&gt;怎麼用?&lt;/h3&gt;
+&lt;p&gt;Brett Wilson 的 &lt;a href=&#34;https://docs.google.com/presentation/d/15Zwb53JcncHfEwHpnG_PoIbbzQ3GQi_cpujYwbpcbZo/edit?usp=sharing&#34;&gt;Using GN build&lt;/a&gt; 是我看過最好的入門介紹。&lt;/p&gt;
+&lt;h4 id=&#34;基本流程&#34;&gt;基本流程&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;建立專案根目錄的 &lt;code&gt;.gn&lt;/code&gt; 檔案，指定 buildconfig:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# .gn&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;buildconfig &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//build/BUILDCONFIG.gn&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;建立 &lt;code&gt;BUILD.gn&lt;/code&gt; 定義 targets:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# BUILD.gn&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;executable(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;my_app&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;main.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;app.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;app.h&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//base&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//third_party/foo&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;3&#34;&gt;
+&lt;li&gt;生成 ninja 建置檔:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn gen out/Default&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;4&#34;&gt;
+&lt;li&gt;執行建置:&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ninja -C out/Default&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;優點&#34;&gt;優點&lt;/h3&gt;
+&lt;h4 id=&#34;簡單易用的-dependency-tree-管理能力&#34;&gt;簡單易用的 dependency tree 管理能力&lt;/h4&gt;
+&lt;p&gt;GN 會根據 &lt;code&gt;BUILD.gn&lt;/code&gt; 建立所謂的 dependency tree，確保建置的正確性與效率:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 範例：建立 library 與其依賴關係&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;static_library(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;my_lib&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib.cc&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib.h&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  public_deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//base&amp;#34;&lt;/span&gt; ]  &lt;span style=&#34;color:#75715e&#34;&gt;# 會傳遞給依賴此 library 的 target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//internal/util&amp;#34;&lt;/span&gt; ]  &lt;span style=&#34;color:#75715e&#34;&gt;# 只有自己會用到&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;executable(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;my_app&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;main.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;:my_lib&amp;#34;&lt;/span&gt; ]  &lt;span style=&#34;color:#75715e&#34;&gt;# 會自動繼承 my_lib 的 public_deps&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;gn check&lt;/code&gt; 可以檢查 code (經由 #include 形成的)的相依關係是否符合 build structure:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 檢查所有 targets&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn check out/Default
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 只檢查特定 target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn check out/Default //my/target:name&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;如果你在 code 中 include 了某個 header，但沒有在 BUILD.gn 中宣告對應的 dependency，&lt;code&gt;gn check&lt;/code&gt; 就會報錯。&lt;/p&gt;
+&lt;h4 id=&#34;豐富的文檔&#34;&gt;豐富的文檔&lt;/h4&gt;
+&lt;p&gt;GN 內建完整的文檔系統，可以直接在命令列查詢:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 查看所有可用命令&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 查看特定命令的說明&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help gen
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help check
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 查看特定函數或變數的說明&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help executable
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help sources
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn help deps&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;所有的 BUILD.gn 語法、內建函數、變數都可以透過 &lt;code&gt;gn help&lt;/code&gt; 查到，非常方便。&lt;/p&gt;
+&lt;h4 id=&#34;內建分析及除錯功能&#34;&gt;內建分析及除錯功能&lt;/h4&gt;
+&lt;p&gt;GN 提供強大的分析工具，幫助你理解和除錯複雜的建置結構:&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;gn desc&lt;/code&gt; - 查看 target 的詳細資訊:&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 顯示 target 的所有屬性&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn desc out/Default //my/target:name
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 只顯示特定屬性&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn desc out/Default //my/target:name sources
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn desc out/Default //my/target:name deps --tree&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;gn path&lt;/code&gt; - 找出兩個 targets 之間的依賴路徑:&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 為什麼 target_a 會依賴到 target_b?&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn path out/Default //target_a //target_b&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;gn refs&lt;/code&gt; - 查看誰依賴了這個 target:&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 列出所有依賴 //base 的 targets&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn refs out/Default //base
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 以樹狀結構顯示&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn refs out/Default //base --tree&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;gn analyze&lt;/code&gt; - 分析哪些 targets 需要重新建置:&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 當某些檔案改變時，哪些 targets 會受影響&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn analyze out/Default input.json output.json&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;可客製化的彈性&#34;&gt;可客製化的彈性&lt;/h4&gt;
+&lt;p&gt;GN 的 &lt;code&gt;template&lt;/code&gt; 功能讓你可以建立可重複使用的建置模式:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 定義一個 template&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;template(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;my_custom_library&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  static_library(target_name) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    forward_variables_from(invoker, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;*&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;# 自動加入一些共通設定&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    configs &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//build:common_config&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;!&lt;/span&gt;defined(invoker&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;sources)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; []
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sources &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//build/version.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 使用 template&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;my_custom_library(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//base&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這樣可以將專案中重複的建置邏輯抽象化，讓 BUILD.gn 檔案更簡潔易讀。&lt;/p&gt;
+&lt;h3 id=&#34;可能的坑&#34;&gt;可能的坑&lt;/h3&gt;
+&lt;h4 id=&#34;1-includes-vs-include_dirs&#34;&gt;1. &lt;code&gt;includes&lt;/code&gt; vs &lt;code&gt;include_dirs&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;如果你從其他建置系統(如 CMake 或 Make)轉過來，可能會習慣性地寫 &lt;code&gt;includes&lt;/code&gt;，但在 GN 中正確的變數名稱是 &lt;code&gt;include_dirs&lt;/code&gt;:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# ❌ 錯誤&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;static_library(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  includes &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;include&amp;#34;&lt;/span&gt; ]  &lt;span style=&#34;color:#75715e&#34;&gt;# 這不會生效！&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# ✅ 正確&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;static_library(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;foo.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  include_dirs &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;include&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;2-public_deps-vs-deps&#34;&gt;2. &lt;code&gt;public_deps&lt;/code&gt; vs &lt;code&gt;deps&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;混淆這兩者會導致建置時找不到 header 或 linking 錯誤:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;deps&lt;/code&gt;: 只有當前 target 自己會用到的依賴&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;public_deps&lt;/code&gt;: 會傳遞給依賴此 target 的其他 targets&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 如果你的 header 檔會 include 另一個 library 的 header&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 就要用 public_deps，否則使用你 library 的人會找不到 header&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;static_library(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;my_lib&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  sources &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib.h&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib.cc&amp;#34;&lt;/span&gt; ]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  public_deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [ &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//base&amp;#34;&lt;/span&gt; ]  &lt;span style=&#34;color:#75715e&#34;&gt;# lib.h 有 #include &amp;#34;base/base.h&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;3-路徑表示法&#34;&gt;3. 路徑表示法&lt;/h4&gt;
+&lt;p&gt;GN 使用特殊的路徑表示法，需要注意:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;//&lt;/code&gt; 代表專案根目錄(有 &lt;code&gt;.gn&lt;/code&gt; 檔案的地方)&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;:&lt;/code&gt; 用來指定同一個 BUILD.gn 內的 target&lt;/li&gt;
+&lt;li&gt;相對路徑要用 &lt;code&gt;./&lt;/code&gt; 或直接寫檔名&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;deps &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//base&amp;#34;&lt;/span&gt;,           &lt;span style=&#34;color:#75715e&#34;&gt;# 根目錄下的 base 目錄&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;//third_party/foo&amp;#34;&lt;/span&gt;,  &lt;span style=&#34;color:#75715e&#34;&gt;# 根目錄下的 third_party/foo&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;:my_lib&amp;#34;&lt;/span&gt;,          &lt;span style=&#34;color:#75715e&#34;&gt;# 同一個 BUILD.gn 內的 my_lib target&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;4-gn-format-自動格式化&#34;&gt;4. &lt;code&gt;gn format&lt;/code&gt; 自動格式化&lt;/h4&gt;
+&lt;p&gt;養成使用 &lt;code&gt;gn format&lt;/code&gt; 的習慣，可以避免很多格式上的問題:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 格式化單一檔案&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn format BUILD.gn
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 格式化整個目錄&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gn format --all&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>GN (Generate Ninja) 使用入門</title>
+      <link>https://blog.simplypatrick.com/posts/2016/01-23-gn/</link>
+      <pubDate>Sat, 23 Jan 2016 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2016/01-23-gn/</guid>
+      <description>&lt;p&gt;2018/06/30 補充: Brett Wilson 的 &lt;a href=&#34;https://docs.google.com/presentation/d/15Zwb53JcncHfEwHpnG_PoIbbzQ3GQi_cpujYwbpcbZo/edit?usp=sharing&#34;&gt;Using GN build&lt;/a&gt; 是我目前看過對 GN 最棒的介紹，強力推薦!&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;https://blog.simplypatrick.com/2012/08/18/ninja-a-small-build-system&#34;&gt;好久之前介紹過 Ninja&lt;/a&gt;, 當時有提到 Ninja 通常是搭配 meta-build system (例如 CMake 或是 GYP) 來使用，這次要介紹的 &lt;a href=&#34;https://chromium.googlesource.com/chromium/src/tools/gn/&#34;&gt;GN&lt;/a&gt; 則是 Chromium project 用來取代 GYP 的新工具。&lt;/p&gt;
+&lt;p&gt;由於 GN 是用 C++ 撰寫，比起用 Python 寫的 GYP 快了將近 20 倍，GN 新的 DSL 的語法也被認為是比較好讀及維護的。&lt;/p&gt;
+&lt;h3 id=&#34;安裝-gn&#34;&gt;安裝 GN&lt;/h3&gt;
+&lt;p&gt;由於 gn 目前還依賴 Chromium 裡的一些函式庫，目前比較方便的方式還是從 source 編譯，Linux/Mac 上可以依照下列步驟：&lt;/p&gt;
+&lt;script src=&#34;//gist.github.com/mohamed/4fa7eb75807463d4dfa3.js&#34;&gt;&lt;/script&gt;
+&lt;h3 id=&#34;基本範例&#34;&gt;基本範例&lt;/h3&gt;
+&lt;h4 id=&#34;建立-gn&#34;&gt;建立 .gn&lt;/h4&gt;
+&lt;p&gt;在 source project 的根目錄新增一個 &lt;code&gt;.gn&lt;/code&gt; 檔，內容如下：&lt;/p&gt;
+&lt;script src=&#34;//gist-it.appspot.com/https://github.com/yinghau76/GN-demo/blob/master/.gn&#34;&gt;&lt;/script&gt;
+&lt;p&gt;&lt;code&gt;.gn&lt;/code&gt; 檔所在的目錄會被 GN 工具認定是 project 的 &lt;strong&gt;source root&lt;/strong&gt;，&lt;code&gt;.gn&lt;/code&gt; 的內容最基本就是用 &lt;code&gt;buildconfig&lt;/code&gt; 來指定 build config 檔的位置，其中 &lt;code&gt;//&lt;/code&gt; 開頭的字串就是用來指定相對於 source root 的路徑。&lt;/p&gt;
+&lt;h4 id=&#34;建立-buildbuildconfiggn&#34;&gt;建立 build/BUILDCONFIG.gn&lt;/h4&gt;
+&lt;p&gt;根據前面的設定，我們需要在 &lt;code&gt;build/&lt;/code&gt; 下再新增加一個 &lt;code&gt;BUILDCONFIG.gn&lt;/code&gt;，內容如下:&lt;/p&gt;
+&lt;script src=&#34;//gist-it.appspot.com/https://github.com/yinghau76/GN-demo/blob/master/build/BUILDCONFIG.gn&#34;&gt;&lt;/script&gt;
+&lt;p&gt;第一行指定要使用的 toolchain，參數給的是一個 label，&lt;code&gt;//build/toolchains:gcc&lt;/code&gt; 指的是 &lt;code&gt;build/toolchains/BUILD.gn&lt;/code&gt; 裡面定義的 &lt;code&gt;gcc&lt;/code&gt; toolchain。第三行則是設定編譯 C++ 時會用到的命令列參數。&lt;/p&gt;
+&lt;h4 id=&#34;建立-buildtoolchainsbuildgn&#34;&gt;建立 build/toolchains/BUILD.gn&lt;/h4&gt;
+&lt;p&gt;因爲 GN 沒有內建的 toolchain 規則，&lt;code&gt;toolchain&lt;/code&gt; 裡的各種 &lt;code&gt;tool&lt;/code&gt; 例如 &lt;code&gt;cc&lt;/code&gt;, &lt;code&gt;cxx&lt;/code&gt;, &lt;code&gt;link&lt;/code&gt; 等必須自己指定：&lt;/p&gt;
+&lt;script src=&#34;//gist-it.appspot.com/https://github.com/yinghau76/GN-demo/blob/master/build/toolchains/BUILD.gn&#34;&gt;&lt;/script&gt;
+&lt;p&gt;可以注意一下之前提到的 &lt;code&gt;cflags_cc&lt;/code&gt; 是怎麼被 tool &lt;code&gt;cxx&lt;/code&gt; 使用的。&lt;/p&gt;
+&lt;p&gt;詳細的 toolchain 設定方式可以參考 &lt;a href=&#34;https://chromium.googlesource.com/chromium/src/build/toolchain/+/master&#34;&gt;Chromium 的做法&lt;/a&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;建立-buildgn&#34;&gt;建立 BUILD.gn&lt;/h4&gt;
+&lt;p&gt;最後在 source root 新增一個 &lt;code&gt;BUILD.gn&lt;/code&gt;，內容如下:&lt;/p&gt;
+&lt;script src=&#34;//gist-it.appspot.com/https://github.com/yinghau76/GN-demo/blob/master/BUILD.gn&#34;&gt;&lt;/script&gt;
+&lt;p&gt;設定 &lt;code&gt;hello&lt;/code&gt; 執行檔應該由 &lt;code&gt;main.cpp&lt;/code&gt; 編譯。&lt;/p&gt;
+&lt;h4 id=&#34;完整的範例&#34;&gt;完整的範例&lt;/h4&gt;
+&lt;p&gt;請參考 &lt;a href=&#34;https://github.com/p47r1ck7541/GN-demo&#34;&gt;GitHub 上的這個 project&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;建置&#34;&gt;建置&lt;/h3&gt;
+&lt;p&gt;先用 &lt;code&gt;gn gen&lt;/code&gt; 指定在 &lt;code&gt;out/&lt;/code&gt; 目錄裡產生 ninja 檔:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ gn gen out
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Done. Wrote &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt; targets from &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt; files in 1ms&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;再執行 ninja 來 build code:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ ninja -C out
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ninja: Entering directory &lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;out&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;2/2&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; LINK hello&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;以後有修改 gn 設定的話也不用重新執行 gn，ninja 會自動更新設定：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ ninja -C out
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ninja: Entering directory &lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;out&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;1/1&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; Regenerating ninja files
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;2/2&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; LINK hello&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;更了解-gn&#34;&gt;更了解 GN&lt;/h3&gt;
+&lt;p&gt;萬事起頭難，如果你能把最基本的 GN 使用範例搞懂就是成功的第一步了。&lt;/p&gt;
+&lt;p&gt;如果想更深入了解 GN 的用法，以下是相關資訊的連結:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;練習 GN 文檔裡的 &lt;a href=&#34;https://chromium.googlesource.com/chromium/src/+/master/tools/gn/docs/quick_start.md&#34;&gt;Quick Start 範例&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;細讀 &lt;a href=&#34;https://chromium.googlesource.com/chromium/src/+/master/tools/gn/docs/language.md&#34;&gt;GN Language and Operation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;參考 &lt;a href=&#34;https://chromium.googlesource.com/chromium/src/build/+/master&#34;&gt;Chromium 的 build 設定&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>CMake 筆記</title>
+      <link>https://blog.simplypatrick.com/posts/2015/06-19-cmake-notes/</link>
+      <pubDate>Fri, 19 Jun 2015 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2015/06-19-cmake-notes/</guid>
+      <description>&lt;h3 id=&#34;動機&#34;&gt;動機&lt;/h3&gt;
+&lt;p&gt;&lt;del&gt;因爲某種原因，&lt;/del&gt;我最近又開始寫起 C++ 程式，除了要熟悉 C++ 11/14 的新特性外，比較頭疼的是 Makefile 的撰寫。&lt;/p&gt;
+&lt;p&gt;C/C++ 開發者了解基本的 Makefile 寫法是有必要的，但是大多數情況下，我認為使用 autotools 或是 CMake 這類 Makefile generator 是比較合理的選擇，因爲這些工具可以幫你產生出專家等級的 Makefile 並且處理可能的跨平台問題。至於 &lt;a href=&#34;http://stackoverflow.com/questions/4071880/autotools-vs-cmake-vs-scons&#34;&gt;autotools 或是 CMake 的選擇&lt;/a&gt;，對我來說是很明顯的：autotools 是出了名的難用，而 CMake 是相對容易的。&lt;/p&gt;
+&lt;p&gt;本文嘗試整理一些網路上的 CMake 教學資源，並且加上自己的一些心得。&lt;/p&gt;
+&lt;h3 id=&#34;cmake-入門&#34;&gt;CMake 入門&lt;/h3&gt;
+&lt;p&gt;我會建議先看 Eric Noulard 的 &lt;a href=&#34;https://github.com/TheErk/CMake-tutorial&#34;&gt;CMake tutorial presentation&lt;/a&gt;，相當地棒：&lt;/p&gt;
+&lt;iframe src=&#34;https://drive.google.com/file/d/0B4aSYmPhMYqxTnppLTBzS0EzSzA/preview&#34; width=&#34;640&#34; height=&#34;480&#34;&gt;&lt;/iframe&gt;
+&lt;p&gt;然後你會需要實際動手演練一下，有下面幾個選擇：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.cmake.org/examples/&#34;&gt;CMake 官網上的基本範例&lt;/a&gt;：文字說明比較少，但可以讓你先感覺一下 CMake 的運作方式。我自己根據這個範例建了&lt;a href=&#34;https://github.com/yinghau76/CMakeDemo&#34;&gt;這個 GitHub  project&lt;/a&gt; 來練習。&lt;/li&gt;
+&lt;li&gt;維基教科書上的 &lt;a href=&#34;https://zh.wikibooks.org/wiki/CMake_%E5%85%A5%E9%96%80&#34;&gt;CMake 入門&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;John Lamp 的 &lt;a href=&#34;https://www.johnlamp.net/cmake-tutorial.html&#34;&gt;CMake Tutorial&lt;/a&gt; 提供了一個更實際的範例讓你練習，並且詳細解釋了每一行用到的 CMake 指令。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;cmake-基礎知識&#34;&gt;CMake 基礎知識&lt;/h3&gt;
+&lt;p&gt;再來就是要花時間把官網的這篇 &lt;a href=&#34;http://www.cmake.org/cmake/help/v3.3/manual/cmake-buildsystem.7.html&#34;&gt;cmake-buildsystem(7)&lt;/a&gt; 讀一讀，有幾個重點要搞懂：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;如何使用 &lt;code&gt;add_library&lt;/code&gt; 及 &lt;code&gt;add_executable&lt;/code&gt; 來新增 build target
+－ 了解 &lt;code&gt;STATIC&lt;/code&gt;, &lt;code&gt;SHARED&lt;/code&gt;, &lt;code&gt;MODULE&lt;/code&gt;, 以及 &lt;code&gt;OBJECT&lt;/code&gt; library 的差異&lt;/li&gt;
+&lt;li&gt;了解 build specification:
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;INCLUDE_DIRECTORIES&lt;/code&gt;, &lt;code&gt;COMPILE_DEFINITIONS&lt;/code&gt; 以及 &lt;code&gt;COMPILE_OPTIONS&lt;/code&gt; 的意義&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;了解 usage requirement:
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;INTERFACE_INCLUDE_DIRECTORIES&lt;/code&gt;, &lt;code&gt;INTERFACE_COMPILE_DEFINITIONS&lt;/code&gt; 及 &lt;code&gt;INTERFACE_COMPILE_OPTIONS&lt;/code&gt; 的意義&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;如何使用 &lt;code&gt;target_include_directories()&lt;/code&gt;, &lt;code&gt;target_compile_definitions()&lt;/code&gt; 及 &lt;code&gt;target_compile_options()&lt;/code&gt; 來修改 build specification 及 usage requirement
+&lt;ul&gt;
+&lt;li&gt;了解 &lt;code&gt;PRIVATE&lt;/code&gt;, &lt;code&gt;PUBLIC&lt;/code&gt; 及 &lt;code&gt;INTERFACE&lt;/code&gt; mode 的差異&lt;/li&gt;
+&lt;li&gt;跟 directory-scoped 命令的差異: &lt;code&gt;include_directories()&lt;/code&gt;, &lt;code&gt;add_definitions()&lt;/code&gt;, 及 &lt;code&gt;add_compile_options()&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;常用的內建變數
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;CMAKE_CURRENT_SOURCE_DIR&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CMAKE_CURRENT_BINARY_DIR&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;如何使用 &lt;code&gt;set_target_properties&lt;/code&gt; 來修改 target property&lt;/li&gt;
+&lt;li&gt;了解 generator expression 的用法&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;上面提到的這些重要觀念可以參考 &lt;a href=&#34;https://www.slideshare.net/oliora/introduction-to-cmake-in-30-minutes&#34;&gt;Introduction to CMake in 30 Minutes&lt;/a&gt; 的說明。&lt;/p&gt;
+&lt;iframe src=&#34;//www.slideshare.net/slideshow/embed_code/key/xsB8nCp1Qs72tb&#34; width=&#34;595&#34; height=&#34;485&#34; frameborder=&#34;0&#34; marginwidth=&#34;0&#34; marginheight=&#34;0&#34; scrolling=&#34;no&#34; style=&#34;border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;&#34; allowfullscreen&gt; &lt;/iframe&gt; &lt;div style=&#34;margin-bottom:5px&#34;&gt; &lt;strong&gt; &lt;a href=&#34;//www.slideshare.net/oliora/introduction-to-cmake-in-30-minutes&#34; title=&#34;Introduction to CMake in 30 Minutes&#34; target=&#34;_blank&#34;&gt;Introduction to CMake in 30 Minutes&lt;/a&gt; &lt;/strong&gt; from &lt;strong&gt;&lt;a href=&#34;https://www.slideshare.net/oliora&#34; target=&#34;_blank&#34;&gt;Andrey Upadyshev&lt;/a&gt;&lt;/strong&gt; &lt;/div&gt;
+&lt;h3 id=&#34;結論&#34;&gt;結論&lt;/h3&gt;
+&lt;p&gt;CMake 熟悉了它的基本概念及內建命令語法後其實不難懂，我唯一的抱怨就是 &lt;code&gt;CMakeLists.txt&lt;/code&gt; 這個預設檔名的風格有點奇怪。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Ninja - a small build system</title>
+      <link>https://blog.simplypatrick.com/posts/2012/08-18-ninja-a-small-build-system/</link>
+      <pubDate>Sat, 18 Aug 2012 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2012/08-18-ninja-a-small-build-system/</guid>
+      <description>&lt;h3 id=&#34;快才是王道&#34;&gt;快才是王道&lt;/h3&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Ninja is a small build system with a focus on speed. It differs from other build systems in two major respects: it is designed to have its input files generated by a higher-level build system, and it is designed to run builds as fast as possible.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;Ninja &lt;a href=&#34;http://martine.github.com/ninja/&#34;&gt;非常簡約的首頁&lt;/a&gt;這樣地描述著自己。對我而言，它是絕佳的 make 替代品，因為它速度飛快而且語法簡潔易懂。&lt;/p&gt;
+&lt;p&gt;這是一個簡單的 build.ninja 範例:&lt;/p&gt;
+&lt;pre&gt;&lt;code&gt;cxx = g++
+cflags = -g -Iinclude -Iout -I/usr/local/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -fno-exceptions -fno-rtti -fno-common -Woverloaded-virtual -Wcast-qual -L/usr/local/lib  -lpthread -lm -lLLVMX86Disassembler -lLLVMX86AsmParser -lLLVMX86CodeGen -lLLVMX86Desc -lLLVMSelectionDAG -lLLVMAsmPrinter -lLLVMMCParser -lLLVMX86AsmPrinter -lLLVMX86Utils -lLLVMX86Info -lLLVMJIT -lLLVMExecutionEngine -lLLVMCodeGen -lLLVMScalarOpts -lLLVMInstCombine -lLLVMTransformUtils -lLLVMipa -lLLVMAnalysis -lLLVMTarget -lLLVMMC -lLLVMCore -lLLVMSupport
+
+rule flex
+    command = flex -o $out $in
+
+rule bison
+    command = bison -d -o $out $in
+
+rule cxx
+    command = $cxx $cflags -o $out $in
+
+build out/tokens.cpp: flex src/tokens.l
+build out/parser.cpp: bison src/parser.y
+build out/parser: cxx out/parser.cpp out/tokens.cpp src/codegen.cpp src/main.cpp
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;直接執行 ninja 預設會讀取 build.ninja 的設定：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ ninja
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;2/3&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; bison -d -o out/parser.cpp src/parser.y
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;src/parser.y: conflicts: &lt;span style=&#34;color:#ae81ff&#34;&gt;24&lt;/span&gt; shift/reduce
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;3/3&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; g++ -g -Iinclude -Iout -I/usr/local/include -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -fno-exceptions -fno-rt...nsformUtils -lLLVMipa -lLLVMAnalysis -lLLVMTarget -lLLVMMC -lLLVMCore -lLLVMSupport  -o out/parser out/parser.cpp out/tokens.cpp src/codegen.cpp src/main.cpp&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;安裝&#34;&gt;安裝&lt;/h3&gt;
+&lt;p&gt;在 Mac 上安裝用 Homebrew 可以輕鬆搞定：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ brew install ninja&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;如果你的程式不大，source 檔案間的相依性很單純的話，通常直接撰寫 ninja 的 build 檔就行了。但對於中大型的程式，比較好的方式是搭配 high-level build system 例如 &lt;a href=&#34;http://www.cmake.org/&#34;&gt;cmake&lt;/a&gt; 或是 &lt;a href=&#34;http://code.google.com/p/gyp/&#34;&gt;gyp&lt;/a&gt; 來間接產生 build.ninja，有時甚至自己寫個 generator 更方便些，例如 &lt;a href=&#34;https://github.com/textmate/textmate&#34;&gt;TextMate&lt;/a&gt; 就是&lt;a href=&#34;https://github.com/textmate/textmate/blob/master/bin/gen_build&#34;&gt;這樣做的&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;Ninja 的作者 &lt;a href=&#34;http://neugierig.org/&#34;&gt;Evan Martin&lt;/a&gt; 過去是個 Google Chrome 的開發者，應該是受不了 make 的&lt;a href=&#34;http://neugierig.org/software/chromium/notes/2011/02/ninja.html&#34;&gt;龜速&lt;/a&gt;所以就創造了 Ninja 來拯救所有的 programmer 吧。&lt;/p&gt;
+&lt;p&gt;如果你習慣用 TextMate 做文字編輯，也有一個 &lt;a href=&#34;https://github.com/textmate/ninja.tmbundle&#34;&gt;bundle&lt;/a&gt; 可以做 ninja 語法的高亮。&lt;/p&gt;
+&lt;h5 id=&#34;2016-01-24-補充&#34;&gt;2016-01-24 補充&lt;/h5&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://jpospisil.com/2014/03/16/replacing-make-with-ninja.html&#34;&gt;Replacing Make with Ninja&lt;/a&gt; 簡介 Ninja 並比較跟 make 的 performance 差異&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

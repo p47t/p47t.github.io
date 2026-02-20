@@ -1,0 +1,213 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/vibe-coding/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-05 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Vibe Coding 實戰：打造 AlphaGPS</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/</link>
+      <pubDate>Thu, 05 Feb 2026 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;最近「Vibe Coding」這個詞在開發者社群中掀起熱議——與其逐行敲鍵盤，不如用自然語言描述你想要的功能，讓 AI 幫你實現。聽起來很美好，但真的能用來開發生產級別的應用嗎？&lt;/p&gt;
+&lt;p&gt;我決定用 Claude Code 和 Claude 4.5 Opus 來驗證這個想法，從零開始打造一款完整的 iOS 應用程式：&lt;strong&gt;AlphaGPS&lt;/strong&gt;——一個透過藍牙低功耗（BLE）將 iPhone GPS 資料同步到 Sony 相機的工具。&lt;/p&gt;
+&lt;p&gt;值得一提的是：&lt;strong&gt;我從來沒有寫過任何 Swift 程式&lt;/strong&gt;。雖然我有 Objective-C 的 iOS 開發經驗，但 Swift 和現代 iOS 開發框架對我來說是全新的領域——SwiftUI、Combine 框架、async/await 語法、Live Activity，這些我都是第一次接觸。&lt;/p&gt;
+&lt;p&gt;這不是一個簡單的 Hello World 專案。它涉及 BLE 硬體協議、iOS 背景執行限制、複雜的狀態管理，以及 Live Activity 整合。最終成果？約 4,100 行 Swift 程式碼、30 個檔案、90 個 commits，以及一個真正能用的產品。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;為什麼選擇這個專案&#34;&gt;為什麼選擇這個專案？&lt;/h2&gt;
+&lt;p&gt;作為攝影愛好者，我一直希望照片能自動記錄拍攝地點。雖然 Sony 有官方的 Creators App，但它的背景同步體驗並不理想——經常需要手動重新連線，而且會中斷其他藍牙連接。&lt;/p&gt;
+&lt;p&gt;我想要的是：打開相機就自動連線、App 在背景時持續同步、完全不需要人工干預。&lt;/p&gt;
+&lt;p&gt;這個需求恰好涵蓋了許多有趣的技術挑戰，非常適合測試 AI 輔助開發的極限。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;vibe-coding-的實際體驗&#34;&gt;Vibe Coding 的實際體驗&lt;/h2&gt;
+&lt;h3 id=&#34;第一天111從協議規格到基礎架構&#34;&gt;第一天（1/11）：從協議規格到基礎架構&lt;/h3&gt;
+&lt;p&gt;第一個 commit 是 &lt;code&gt;Initial commit with Sony GPS protocol spec&lt;/code&gt;——我先把逆向工程得到的 Sony 藍牙 GPS 協議文件放進去，然後告訴 Claude：「根據這份協議規格，幫我設計一個 iOS App。」&lt;/p&gt;
+&lt;p&gt;接下來的兩個 commits 分別是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;feat(phase1): implement iOS app foundation for Sony camera GPS sync&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;feat(phase2): implement BLE foundation and GPS encoding&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Claude 建議使用 Multi-Manager Singleton 模式搭配 Combine 響應式框架：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「你的 App 需要協調多個系統：藍牙掃描、GPS 定位、相機連線狀態。
+建議使用獨立的 Manager 單例，各自管理 @Published 狀態，
+透過 Combine 讓 UI 自動響應變化。」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這不是 Claude 隨意生成的建議——它是基於 iOS 開發的最佳實踐，考慮到 CoreBluetooth 的 Delegate 模式和 SwiftUI 的響應式特性。&lt;/p&gt;
+&lt;h3 id=&#34;第二到第三天112-113攻克背景執行&#34;&gt;第二到第三天（1/12-1/13）：攻克背景執行&lt;/h3&gt;
+&lt;p&gt;iOS 對背景執行有嚴格限制。大多數 App 在進入背景後很快就會被系統終止。但我需要的是：即使 App 被殺掉，當相機重新開機時也能自動重連。&lt;/p&gt;
+&lt;p&gt;這部分的開發歷程可以從 commit 歷史看出挑戰有多大：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;feat(phase4): implement background lifecycle and persistence&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Implement iOS background BLE state preservation and cleanup code&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Start scanning in background when cameras exist but none connected&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Start scanning when last connected camera disconnects in background&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Abort connecting cameras when app enters background&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Stop scanning when camera connects in background&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這就是 iOS Core Bluetooth State Preservation 登場的時候。我向 Claude 解釋了需求：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「我需要相機關機後再開機時自動重連，
+即使使用者已經完全關閉 App。」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Claude 不只給了程式碼，還解釋了整個機制：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;用 &lt;code&gt;CBCentralManagerOptionRestoreIdentifierKey&lt;/code&gt; 初始化藍牙管理器&lt;/li&gt;
+&lt;li&gt;iOS 會在背景記住連線意圖&lt;/li&gt;
+&lt;li&gt;當藍牙事件發生時，iOS 會喚醒 App 並呼叫 &lt;code&gt;willRestoreState&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;App 需要在這個回調中重建狀態並恢復連線&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;最困難的是處理邊界情況：藍牙 UUID 可能改變、相機可能同時連線多台、恢復可能在位置權限授權之前發生。Claude 幫我逐一考慮這些情況，最終實現了真正的「零操作」體驗。&lt;/p&gt;
+&lt;h3 id=&#34;sony-的-ble-協議&#34;&gt;Sony 的 BLE 協議&lt;/h3&gt;
+&lt;p&gt;Sony 沒有公開他們的藍牙 GPS 同步協議。幸運的是，我在網路上找到了其他開發者的逆向工程成果（特別是 &lt;a href=&#34;https://github.com/nicjansma/camera-gps-link&#34;&gt;camera-gps-link&lt;/a&gt; 專案），他們已經分析出協議的細節。我把整理後的協議規格放在 &lt;code&gt;docs/sony-gps-protocol-spec.md&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;協議的關鍵：寫入 GPS 資料需要一個三步驟的「解鎖」序列：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;寫入解鎖指令到 DD30 characteristic&lt;/li&gt;
+&lt;li&gt;寫入鎖定指令到 DD31 characteristic&lt;/li&gt;
+&lt;li&gt;寫入 GPS 封包到 DD11 characteristic（91 或 95 bytes）&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;跳過任何一步，相機會靜默忽略資料——沒有錯誤回報。&lt;/p&gt;
+&lt;p&gt;當我把這個發現告訴 Claude 時，它立刻理解了非同步寫入的挑戰：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-swift&#34; data-lang=&#34;swift&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Claude 建議的解決方案&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; unlockWriteComplete = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; lockWriteComplete = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 只有在兩個階段都完成後才發送 GPS&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;checkAndWriteLocation&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;guard&lt;/span&gt; unlockWriteComplete, lockWriteComplete &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 發送 GPS 封包...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這種狀態追蹤模式解決了 BLE 寫入回調可能亂序或遺失的問題。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;印象深刻的地方&#34;&gt;印象深刻的地方&lt;/h2&gt;
+&lt;h3 id=&#34;1-理解上下文的能力&#34;&gt;1. 理解上下文的能力&lt;/h3&gt;
+&lt;p&gt;1/13 那天，我花了不少時間實作 Live Activity。Commit 歷史反映了這段旅程：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Implement Live Activity for camera connection status&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix iOS availability checks for Live Activity API&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix Widget Extension bundle configuration&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix ActivityViewContext build error by inlining Live Activity view&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;後來在 1/16，我發現「這個 Live Activity 在斷線時沒有正確結束」。Claude 不只是搜尋關鍵字，它追蹤了整個程式碼流程，發現問題出在狀態轉換的時序：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;didConnect → 狀態設為 .connected → 啟動 Live Activity
+    ↓
+handleConnection → 狀態改為 .connecting（進行服務發現）
+    ↓
+didDisconnect → wasConnected 檢查回傳 false → Live Activity 沒有結束！&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;修復結果就是 &lt;code&gt;fix(ble): always end Live Activity on disconnect&lt;/code&gt; 這個 commit。有這種程度的理解，除錯快了很多。&lt;/p&gt;
+&lt;h3 id=&#34;2-主動考慮邊界情況&#34;&gt;2. 主動考慮邊界情況&lt;/h3&gt;
+&lt;p&gt;在實作電池優化時，Claude 主動提出：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「你需要考慮這些情況：
+- App 在背景但沒有相機連線 → 應該暫停 GPS
+- 相機在背景連線 → 立即恢復 GPS
+- 使用者關閉背景同步設定 → 停止所有更新」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這最終成為 &lt;code&gt;feat(location): stop GPS updates when no cameras connected in background&lt;/code&gt; 這個 commit。這些不是我明確要求的，但對產品品質至關重要。&lt;/p&gt;
+&lt;h3 id=&#34;3-架構一致性&#34;&gt;3. 架構一致性&lt;/h3&gt;
+&lt;p&gt;隨著專案成長到 30 個 Swift 檔案，Claude 始終記得我們建立的模式：Manager 單例、原子性狀態更新、Combine 訂閱管理。它不會突然建議一個風格完全不同的實作。&lt;/p&gt;
+&lt;p&gt;看看這些 refactor commits，Claude 幫我持續改進架構而不破壞一致性：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Refactor to single camera list and state-based architecture&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Consolidate Camera discovering and connecting states&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Refactor autoConnect to separate field from connection state&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Consolidate connected and syncing states into single connected state&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;refactor: simplify connecting state by removing retryCount&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;不完美的地方&#34;&gt;不完美的地方&lt;/h2&gt;
+&lt;p&gt;坦白說，Vibe Coding 不是萬能的。從 90 個 commits 中可以看到很多 fix commits：&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Bug fixes 佔了很大比例&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): clear peripheral when aborting connection&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): cancel connection timeout on disconnect&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): fix critical disconnect handling issues&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): clear stale peripheral on background disconnect&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這些都是在實機測試時發現的問題。Claude 可以寫出結構良好的程式碼，但 BLE 和 iOS 背景執行的邊界情況太多，只有實際測試才能發現。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;需要明確指示&lt;/strong&gt;：Claude 有時會過度工程化。我必須明確說「保持簡單，不要加額外功能」。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;測試依然困難&lt;/strong&gt;：BLE 和 Live Activity 無法在模擬器中測試。我仍然需要在實體裝置上手動測試每個功能。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;領域知識必要&lt;/strong&gt;：雖然 Claude 幫我寫程式碼，但理解 Sony 協議、iOS 背景限制、BLE 特性——這些需要我自己研究。AI 是超強的副駕駛，但你還是需要知道要去哪裡。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;成果總覽&#34;&gt;成果總覽&lt;/h2&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;指標&lt;/th&gt;
+          &lt;th&gt;數值&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;程式碼行數&lt;/td&gt;
+          &lt;td&gt;~4,100 行&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Swift 檔案數量&lt;/td&gt;
+          &lt;td&gt;30&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Git commits&lt;/td&gt;
+          &lt;td&gt;90&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;開發時間&lt;/td&gt;
+          &lt;td&gt;6 天（兼職，1/11 - 1/16）&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;手動寫的程式碼&lt;/td&gt;
+          &lt;td&gt;&amp;lt; 5%&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;功能清單：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;自動掃描和連接 Sony 相機&lt;/li&gt;
+&lt;li&gt;背景 GPS 同步（App 在背景時持續運作）&lt;/li&gt;
+&lt;li&gt;Live Activity 即時顯示同步狀態&lt;/li&gt;
+&lt;li&gt;相機斷線自動重連&lt;/li&gt;
+&lt;li&gt;電池優化的智慧掃描&lt;/li&gt;
+&lt;li&gt;支援 iOS 15.0+，完整功能需 iOS 16.1+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;我學到的事&#34;&gt;我學到的事&lt;/h2&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Vibe Coding 是真的&lt;/strong&gt;：對於有經驗的開發者，AI 可以將生產力提升 5-10 倍。關鍵是你要能驗證和引導它的輸出。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;對話品質決定結果&lt;/strong&gt;：模糊的指示得到模糊的程式碼。具體描述需求、約束和邊界情況，Claude 就能給出專業級的解決方案。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Claude 4.5 Opus 的差異&lt;/strong&gt;：相比之前的模型，Opus 4.5 在理解複雜系統、保持上下文一致性、主動考慮邊界情況方面有明顯提升。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;這不是取代學習&lt;/strong&gt;：AI 讓你更快實現想法，但你還是需要理解底層技術。否則你無法判斷 AI 的建議是否正確。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;寫在最後&#34;&gt;寫在最後&lt;/h2&gt;
+&lt;p&gt;AlphaGPS 現在是我日常使用的工具。每次出門拍照，相機開機就自動連接、照片自動標記位置、全程不需要碰手機。&lt;/p&gt;
+&lt;p&gt;回頭看這個專案，最有意思的不是程式碼本身，而是這種新的開發方式：我專注於「想要什麼」和「為什麼」，Claude 幫我處理「怎麼做」的細節。&lt;/p&gt;
+&lt;p&gt;這就是 Vibe Coding 的精髓——不是讓 AI 取代你，而是讓你把精力放在真正重要的事情上。&lt;/p&gt;
+&lt;p&gt;如果你也想嘗試，我的建議是：找一個你真正想解決的問題，然後跟 Claude 聊聊。你可能會驚訝於它能帶你走多遠。&lt;/p&gt;
+&lt;hr&gt;
+&lt;p&gt;&lt;em&gt;這篇文章本身也是用 Claude 協助撰寫的——用 AI 寫一篇關於 AI 開發的文章，似乎也是剛好而已。&lt;/em&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

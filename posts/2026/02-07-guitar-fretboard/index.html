@@ -1,0 +1,824 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>從吉他指板視覺化學習 Rust 程式設計</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/"/>
+  <meta property="og:title" content="從吉他指板視覺化學習 Rust 程式設計"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-07 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="iced"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="audio"/>
+  
+  <meta property="og:article:tag" content="dsp"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:tag" content="claude-code"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Vibe Coding 實戰：打造 AlphaGPS
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">
+            從間隔重複記憶卡學習 Rust 程式設計
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">從吉他指板視覺化學習 Rust 程式設計</h2>
+      <div class="post-meta">
+        <span class="post-date">February 7, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/iced"><span class="label label-primary">iced</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/audio"><span class="label label-primary">audio</span></a>
+        
+        <a href="/tags/dsp"><span class="label label-primary">dsp</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        <a href="/tags/claude-code"><span class="label label-primary">claude-code</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-07-guitar-fretboard/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>最近用 <a href="https://iced.rs/">iced</a> 框架實作了一個吉他指板視覺化工具，可以顯示 C 大調音階、繪製弦和琴格，並在點擊音符時播放逼真的撥弦音效。這個專案雖然不大，但涵蓋了多個實用的 Rust 程式設計概念。</p>
+<h3 id="專案概述">專案概述</h3>
+<p>這個吉他指板視覺化工具的功能：</p>
+<ul>
+<li>顯示標準調弦（E A D G B E）的 22 格指板</li>
+<li>以不同顏色標示 C 大調音階音符</li>
+<li>使用 Canvas 繪製琴弦、琴格和位置標記</li>
+<li>點擊音符播放 Karplus-Strong 合成的撥弦音效</li>
+<li>半透明音符圓圈，讓底層指板隱約可見</li>
+</ul>
+<h3 id="1-the-elm-architecturetea">1. The Elm Architecture（TEA）</h3>
+<p>iced 框架採用 The Elm Architecture，這是一種函數式 UI 架構。整個應用只需要三個核心元素：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">App</span> {
+</span></span><span style="display:flex;"><span>    _output_stream: Option<span style="color:#f92672">&lt;</span>OutputStream<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    stream_handle: Option<span style="color:#f92672">&lt;</span>rodio::OutputStreamHandle<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Message</span> {
+</span></span><span style="display:flex;"><span>    NoteClicked(<span style="color:#66d9ef">usize</span>, <span style="color:#66d9ef">usize</span>), <span style="color:#75715e">// (string_index, fret)
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> App {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">update</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, message: <span style="color:#a6e22e">Message</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> message {
+</span></span><span style="display:flex;"><span>            Message::NoteClicked(string_idx, fret) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                self.play_note(string_idx, fret);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">view</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Element</span><span style="color:#f92672">&lt;</span>&#39;_, Message<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 建構 UI 樹
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>TEA 的三個核心：</p>
+<ul>
+<li><strong>Model</strong>（<code>App</code> struct）：應用程式的狀態</li>
+<li><strong>Message</strong>（<code>Message</code> enum）：所有可能的使用者互動事件</li>
+<li><strong>Update + View</strong>：<code>update</code> 根據 Message 更新狀態，<code>view</code> 根據狀態產生 UI</li>
+</ul>
+<p>這種架構的好處是<strong>單向資料流</strong>——狀態變更只透過 Message 觸發，UI 是狀態的純函數，讓程式邏輯容易理解和除錯。</p>
+<h3 id="2-實作-trait-來整合外部框架">2. 實作 Trait 來整合外部框架</h3>
+<p>這個專案大量使用了 Rust 的 trait 系統來與兩個外部框架（iced 和 rodio）整合。</p>
+<h4 id="canvas-繪圖實作-canvasprogram">Canvas 繪圖：實作 <code>canvas::Program</code></h4>
+<p>iced 的 Canvas widget 要求實作 <code>canvas::Program</code> trait 來自定義繪圖邏輯：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FretboardCanvas</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> canvas::Program<span style="color:#f92672">&lt;</span>Message<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">for</span> FretboardCanvas {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">State</span> <span style="color:#f92672">=</span> ();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">draw</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>        _state: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Self</span>::State,
+</span></span><span style="display:flex;"><span>        renderer: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Renderer</span>,
+</span></span><span style="display:flex;"><span>        _theme: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Theme</span>,
+</span></span><span style="display:flex;"><span>        bounds: <span style="color:#a6e22e">Rectangle</span>,
+</span></span><span style="display:flex;"><span>        _cursor: <span style="color:#a6e22e">iced</span>::mouse::Cursor,
+</span></span><span style="display:flex;"><span>    ) -&gt; Vec<span style="color:#f92672">&lt;</span>canvas::Geometry<span style="color:#f92672">&lt;</span>Renderer<span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> frame <span style="color:#f92672">=</span> canvas::Frame::new(renderer, bounds.size());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 繪製指板背景（木頭色）
+</span></span></span><span style="display:flex;"><span>        frame.fill_rectangle(
+</span></span><span style="display:flex;"><span>            Point::new(fretboard_x, fretboard_y),
+</span></span><span style="display:flex;"><span>            Size::new(fretboard_width, fretboard_height),
+</span></span><span style="display:flex;"><span>            canvas::Fill::from(iced::Color::from_rgb8(<span style="color:#ae81ff">0x3d</span>, <span style="color:#ae81ff">0x2b</span>, <span style="color:#ae81ff">0x1f</span>)),
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 繪製琴格（銀色垂直線）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> fret <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">1</span><span style="color:#f92672">..</span><span style="color:#66d9ef">NUM_FRETS</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> fretboard_x <span style="color:#f92672">+</span> (fret <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1.0</span>) <span style="color:#f92672">*</span> <span style="color:#66d9ef">FRET_WIDTH</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">2.0</span>;
+</span></span><span style="display:flex;"><span>            frame.fill_rectangle(
+</span></span><span style="display:flex;"><span>                Point::new(x, fretboard_y),
+</span></span><span style="display:flex;"><span>                Size::new(<span style="color:#ae81ff">3.0</span>, fretboard_height),
+</span></span><span style="display:flex;"><span>                canvas::Fill::from(iced::Color::from_rgb8(<span style="color:#ae81ff">0xc0</span>, <span style="color:#ae81ff">0xc0</span>, <span style="color:#ae81ff">0xc0</span>)),
+</span></span><span style="display:flex;"><span>            );
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 繪製弦（粗細和顏色依弦種不同）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> string_thicknesses <span style="color:#f92672">=</span> [<span style="color:#ae81ff">3.0</span>, <span style="color:#ae81ff">2.5</span>, <span style="color:#ae81ff">2.0</span>, <span style="color:#ae81ff">1.5</span>, <span style="color:#ae81ff">1.2</span>, <span style="color:#ae81ff">1.0</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">vec!</span>[frame.into_geometry()]
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡展示了 trait 的強大之處——只要實作 <code>draw</code> 方法，就能在 iced 的 Canvas 上繪製任意圖形。<code>FretboardCanvas</code> 是一個 zero-sized type（ZST），不佔任何記憶體，純粹作為 trait 實作的載體。</p>
+<h4 id="音訊來源實作-iterator--source">音訊來源：實作 <code>Iterator</code> + <code>Source</code></h4>
+<p>rodio 的音訊播放需要實作兩個 trait：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Iterator <span style="color:#66d9ef">for</span> KarplusStrong {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Item</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">next</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Option<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> self.samples_remaining <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> None;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        self.samples_remaining <span style="color:#f92672">-=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> current <span style="color:#f92672">=</span> self.buffer[self.index];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 低通濾波器：與下一個取樣值取平均
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> next_idx <span style="color:#f92672">=</span> (self.index <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">%</span> self.buffer.len();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> filtered <span style="color:#f92672">=</span> (current <span style="color:#f92672">+</span> self.buffer[next_idx]) <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.5</span> <span style="color:#f92672">*</span> self.decay;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        self.buffer[self.index] <span style="color:#f92672">=</span> filtered;
+</span></span><span style="display:flex;"><span>        self.index <span style="color:#f92672">=</span> (self.index <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">%</span> self.buffer.len();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        Some(current)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Source <span style="color:#66d9ef">for</span> KarplusStrong {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">current_frame_len</span>(<span style="color:#f92672">&amp;</span>self) -&gt; Option<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span> { None }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">channels</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">u16</span> { <span style="color:#ae81ff">1</span> }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">sample_rate</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">u32</span> { self.sample_rate }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">total_duration</span>(<span style="color:#f92672">&amp;</span>self) -&gt; Option<span style="color:#f92672">&lt;</span>Duration<span style="color:#f92672">&gt;</span> { None }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵觀念：</p>
+<ul>
+<li><code>Iterator</code> 提供逐一產生取樣值的能力</li>
+<li><code>Source</code> 描述音訊格式（取樣率、聲道數等）</li>
+<li>兩者結合後，rodio 就能播放自訂的音訊來源</li>
+</ul>
+<h3 id="3-karplus-strong-撥弦合成">3. Karplus-Strong 撥弦合成</h3>
+<p>這是本專案最有趣的部分——用物理建模合成法模擬吉他撥弦聲。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">KarplusStrong</span> {
+</span></span><span style="display:flex;"><span>    buffer: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,         <span style="color:#75715e">// 環形延遲緩衝區
+</span></span></span><span style="display:flex;"><span>    index: <span style="color:#66d9ef">usize</span>,             <span style="color:#75715e">// 目前在緩衝區中的位置
+</span></span></span><span style="display:flex;"><span>    sample_rate: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    samples_remaining: <span style="color:#66d9ef">usize</span>, <span style="color:#75715e">// 持續時間控制
+</span></span></span><span style="display:flex;"><span>    decay: <span style="color:#66d9ef">f32</span>,               <span style="color:#75715e">// 衰減因子
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> KarplusStrong {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">new</span>(frequency: <span style="color:#66d9ef">f32</span>, duration_ms: <span style="color:#66d9ef">u64</span>) -&gt; <span style="color:#a6e22e">Self</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> sample_rate <span style="color:#f92672">=</span> <span style="color:#ae81ff">44100</span><span style="color:#66d9ef">u32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> delay_samples <span style="color:#f92672">=</span> (sample_rate <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">/</span> frequency).round() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> total_samples <span style="color:#f92672">=</span> (sample_rate <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">*</span> duration_ms <span style="color:#f92672">/</span> <span style="color:#ae81ff">1000</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 用白噪音填充緩衝區（模擬撥弦的初始能量）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> rng <span style="color:#f92672">=</span> rand::thread_rng();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> buffer: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> (<span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>delay_samples)
+</span></span><span style="display:flex;"><span>            .map(<span style="color:#f92672">|</span>_<span style="color:#f92672">|</span> rng.gen::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>() <span style="color:#f92672">*</span> <span style="color:#ae81ff">2.0</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">1.0</span>)
+</span></span><span style="display:flex;"><span>            .collect();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        Self {
+</span></span><span style="display:flex;"><span>            buffer,
+</span></span><span style="display:flex;"><span>            index: <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>            sample_rate,
+</span></span><span style="display:flex;"><span>            samples_remaining: <span style="color:#a6e22e">total_samples</span>,
+</span></span><span style="display:flex;"><span>            decay: <span style="color:#ae81ff">0.999</span>,
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>演算法的核心概念：</p>
+<ol>
+<li><strong>延遲緩衝區長度決定音高</strong>：<code>delay_samples = sample_rate / frequency</code>，例如 440Hz 的 A 音需要 <code>44100 / 440 = 100</code> 個取樣</li>
+<li><strong>白噪音初始化</strong>：隨機值模擬撥弦時弦的不規則振動</li>
+<li><strong>低通濾波回饋</strong>：每次取出一個值後，與下一個值取平均再放回，模擬弦的能量自然衰減</li>
+<li><strong>decay 參數</strong>：控制聲音持續的長度，0.999 接近電吉他的效果</li>
+</ol>
+<p>這個演算法展示了 Rust 在數值運算上的優勢——沒有 GC 暫停，每個取樣都能在確定的時間內計算完成，非常適合即時音訊處理。</p>
+<h3 id="4-stackui-圖層疊加">4. Stack：UI 圖層疊加</h3>
+<p>指板的視覺效果需要將 Canvas（繪製弦和琴格）與按鈕（互動音符）疊加在一起。iced 的 <code>stack!</code> macro 正好解決這個問題：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">view_fretboard</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Element</span><span style="color:#f92672">&lt;</span>&#39;_, Message<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> fretboard_canvas: <span style="color:#a6e22e">Canvas</span><span style="color:#f92672">&lt;</span>FretboardCanvas, Message, Theme, Renderer<span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        canvas(FretboardCanvas)
+</span></span><span style="display:flex;"><span>            .width(canvas_width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u16</span>)
+</span></span><span style="display:flex;"><span>            .height(canvas_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u16</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Canvas 在底層，按鈕在上層
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">stack!</span>[fretboard_canvas, buttons_layer]
+</span></span><span style="display:flex;"><span>        .width(Length::Fill)
+</span></span><span style="display:flex;"><span>        .height(canvas_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u16</span>)
+</span></span><span style="display:flex;"><span>        .into()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>stack!</code> 的行為類似 CSS 的 <code>position: absolute</code>——後面的元素疊加在前面的元素上方。搭配半透明的按鈕背景，可以讓底層的指板圖案隱約可見：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (bg_color, text_color) <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> is_root {
+</span></span><span style="display:flex;"><span>    (iced::Color::from_rgba8(<span style="color:#ae81ff">0xff</span>, <span style="color:#ae81ff">0x9e</span>, <span style="color:#ae81ff">0x64</span>, <span style="color:#ae81ff">0.85</span>), <span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x1a1b26</span>))
+</span></span><span style="display:flex;"><span>} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> is_c_major {
+</span></span><span style="display:flex;"><span>    (iced::Color::from_rgba8(<span style="color:#ae81ff">0x7d</span>, <span style="color:#ae81ff">0xcf</span>, <span style="color:#ae81ff">0xff</span>, <span style="color:#ae81ff">0.60</span>), <span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x1a1b26</span>))
+</span></span><span style="display:flex;"><span>} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>    (iced::Color::from_rgba8(<span style="color:#ae81ff">0x41</span>, <span style="color:#ae81ff">0x48</span>, <span style="color:#ae81ff">0x68</span>, <span style="color:#ae81ff">0.70</span>), <span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0xa9b1d6</span>))
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<h3 id="5-閉包與按鈕樣式">5. 閉包與按鈕樣式</h3>
+<p>每個音符按鈕都有自定義樣式，根據音符類型（根音、音階內、其他）和互動狀態（一般、hover）顯示不同顏色：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> style <span style="color:#f92672">=</span> <span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>_theme: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Theme</span>, status: <span style="color:#a6e22e">button</span>::Status<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bg <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> status {
+</span></span><span style="display:flex;"><span>        button::Status::Hovered <span style="color:#f92672">|</span> button::Status::Pressed <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> is_root {
+</span></span><span style="display:flex;"><span>                iced::Color::from_rgba8(<span style="color:#ae81ff">0xff</span>, <span style="color:#ae81ff">0xb3</span>, <span style="color:#ae81ff">0x80</span>, <span style="color:#ae81ff">0.95</span>)
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> is_c_major {
+</span></span><span style="display:flex;"><span>                iced::Color::from_rgba8(<span style="color:#ae81ff">0x9d</span>, <span style="color:#ae81ff">0xd6</span>, <span style="color:#ae81ff">0xff</span>, <span style="color:#ae81ff">0.80</span>)
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                iced::Color::from_rgba8(<span style="color:#ae81ff">0x56</span>, <span style="color:#ae81ff">0x5f</span>, <span style="color:#ae81ff">0x89</span>, <span style="color:#ae81ff">0.85</span>)
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> bg_color,
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    button::Style {
+</span></span><span style="display:flex;"><span>        background: Some(bg.into()),
+</span></span><span style="display:flex;"><span>        text_color,
+</span></span><span style="display:flex;"><span>        border: <span style="color:#a6e22e">iced</span>::Border {
+</span></span><span style="display:flex;"><span>            radius: (circle_size <span style="color:#f92672">/</span> <span style="color:#ae81ff">2.0</span>).into(), <span style="color:#75715e">// 圓形按鈕
+</span></span></span><span style="display:flex;"><span>            <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">..</span>button::Style::default()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>這裡的重點：</p>
+<ul>
+<li><strong><code>move</code> 閉包</strong>：將 <code>is_root</code>、<code>is_c_major</code>、<code>bg_color</code> 等變數的所有權移入閉包</li>
+<li><strong><code>border.radius</code> 做圓形</strong>：設定 radius 為直徑的一半，矩形按鈕變成圓形</li>
+<li><strong>多層條件判斷</strong>：根音 &gt; 音階音 &gt; 其他音，優先級清晰</li>
+</ul>
+<h3 id="6-常數與領域知識的編碼">6. 常數與領域知識的編碼</h3>
+<p>將音樂理論編碼為 Rust 常數，讓程式碼自文件化（self-documenting）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">CHROMATIC_NOTES</span>: [<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">str</span>; <span style="color:#ae81ff">12</span>] <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>    [<span style="color:#e6db74">&#34;C&#34;</span>, <span style="color:#e6db74">&#34;C#&#34;</span>, <span style="color:#e6db74">&#34;D&#34;</span>, <span style="color:#e6db74">&#34;D#&#34;</span>, <span style="color:#e6db74">&#34;E&#34;</span>, <span style="color:#e6db74">&#34;F&#34;</span>, <span style="color:#e6db74">&#34;F#&#34;</span>, <span style="color:#e6db74">&#34;G&#34;</span>, <span style="color:#e6db74">&#34;G#&#34;</span>, <span style="color:#e6db74">&#34;A&#34;</span>, <span style="color:#e6db74">&#34;A#&#34;</span>, <span style="color:#e6db74">&#34;B&#34;</span>];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">C_MAJOR_SCALE</span>: [<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">str</span>; <span style="color:#ae81ff">7</span>] <span style="color:#f92672">=</span> [<span style="color:#e6db74">&#34;C&#34;</span>, <span style="color:#e6db74">&#34;D&#34;</span>, <span style="color:#e6db74">&#34;E&#34;</span>, <span style="color:#e6db74">&#34;F&#34;</span>, <span style="color:#e6db74">&#34;G&#34;</span>, <span style="color:#e6db74">&#34;A&#34;</span>, <span style="color:#e6db74">&#34;B&#34;</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 標準調弦的 MIDI 音符編號
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OPEN_STRING_MIDI</span>: [<span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">6</span>] <span style="color:#f92672">=</span> [<span style="color:#ae81ff">40</span>, <span style="color:#ae81ff">45</span>, <span style="color:#ae81ff">50</span>, <span style="color:#ae81ff">55</span>, <span style="color:#ae81ff">59</span>, <span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">midi_to_frequency</span>(midi_note: <span style="color:#66d9ef">u8</span>) -&gt; <span style="color:#66d9ef">f32</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">440.0</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">2.0_</span><span style="color:#66d9ef">f32</span>.powf((midi_note <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">69.0</span>) <span style="color:#f92672">/</span> <span style="color:#ae81ff">12.0</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">get_note_name</span>(string_idx: <span style="color:#66d9ef">usize</span>, fret: <span style="color:#66d9ef">usize</span>) -&gt; String {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> midi_note <span style="color:#f92672">=</span> <span style="color:#66d9ef">OPEN_STRING_MIDI</span>[string_idx] <span style="color:#f92672">+</span> fret <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> note_idx <span style="color:#f92672">=</span> (midi_note <span style="color:#f92672">%</span> <span style="color:#ae81ff">12</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">CHROMATIC_NOTES</span>[note_idx].to_string()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這段程式碼展示了幾個 Rust 的特色：</p>
+<ul>
+<li><strong>固定大小陣列</strong> <code>[&amp;str; 12]</code>：編譯時確定大小，存取時有邊界檢查</li>
+<li><strong>MIDI 音高公式</strong>：<code>440 * 2^((n - 69) / 12)</code> 是標準的十二平均律公式</li>
+<li><strong>取餘數做循環</strong>：<code>midi_note % 12</code> 將任何 MIDI 編號映射回 0-11 的音名索引</li>
+</ul>
+<h3 id="7-所有權與音訊資源管理">7. 所有權與音訊資源管理</h3>
+<p>音訊播放涉及作業系統資源，Rust 的所有權系統自然地處理了生命週期：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">App</span> {
+</span></span><span style="display:flex;"><span>    _output_stream: Option<span style="color:#f92672">&lt;</span>OutputStream<span style="color:#f92672">&gt;</span>,      <span style="color:#75715e">// 必須持有，否則音訊會停止
+</span></span></span><span style="display:flex;"><span>    stream_handle: Option<span style="color:#f92672">&lt;</span>rodio::OutputStreamHandle<span style="color:#f92672">&gt;</span>,  <span style="color:#75715e">// 用來建立 Sink
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Default <span style="color:#66d9ef">for</span> App {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">default</span>() -&gt; <span style="color:#a6e22e">Self</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> (stream, handle) <span style="color:#f92672">=</span> OutputStream::try_default().ok().unzip();
+</span></span><span style="display:flex;"><span>        Self {
+</span></span><span style="display:flex;"><span>            _output_stream: <span style="color:#a6e22e">stream</span>,
+</span></span><span style="display:flex;"><span>            stream_handle: <span style="color:#a6e22e">handle</span>,
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個關鍵細節：</p>
+<ul>
+<li><strong><code>_output_stream</code> 的底線前綴</strong>：表示這個欄位不會被直接使用，但必須保持存活，因為它代表與音訊驅動程式的連接。一旦被 drop，所有音訊都會停止</li>
+<li><strong><code>Option</code> 包裝</strong>：音訊初始化可能失敗（例如沒有音訊裝置），用 <code>Option</code> 優雅處理</li>
+<li><strong><code>ok().unzip()</code></strong>：將 <code>Result&lt;(A, B)&gt;</code> 轉換為 <code>(Option&lt;A&gt;, Option&lt;B&gt;)</code>，一行解決錯誤處理</li>
+</ul>
+<h3 id="總結">總結</h3>
+<p>這個吉他指板專案涵蓋了多個重要的 Rust 概念：</p>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>應用場景</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>TEA 架構</td>
+          <td>iced 應用的 Model-Message-Update-View</td>
+      </tr>
+      <tr>
+          <td>Trait 實作</td>
+          <td><code>canvas::Program</code> 和 <code>Source</code></td>
+      </tr>
+      <tr>
+          <td>Iterator</td>
+          <td>Karplus-Strong 音訊取樣產生</td>
+      </tr>
+      <tr>
+          <td>閉包 + move</td>
+          <td>按鈕樣式與事件處理</td>
+      </tr>
+      <tr>
+          <td>所有權</td>
+          <td>音訊資源的生命週期管理</td>
+      </tr>
+      <tr>
+          <td>常數陣列</td>
+          <td>音樂理論的領域知識編碼</td>
+      </tr>
+      <tr>
+          <td>Stack 佈局</td>
+          <td>Canvas 與互動元件的疊加</td>
+      </tr>
+      <tr>
+          <td>物理建模</td>
+          <td>即時音訊合成</td>
+      </tr>
+  </tbody>
+</table>
+<p>如果你想找一個結合 GUI、音訊和數學的 Rust 練習專案，吉他指板是個很好的選擇。從簡單的視覺化開始，逐步加入音訊合成、Canvas 繪圖、半透明效果，每一步都能學到新的 Rust 技巧。</p>
+
+
+  
+    <img src="/posts/2026/02-07-guitar-fretboard/guitar-fretboard.png" alt="guitar-fretboard.png" width="1402" height="512" class="img-responsive post-image">
+  
+
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/guitar-fretboard">guitar-fretboard 原始碼</a> - 本文範例的完整程式碼</li>
+<li><a href="https://iced.rs/">iced 官方網站</a> - Rust 跨平台 GUI 框架</li>
+<li><a href="https://github.com/RustAudio/rodio">rodio</a> - Rust 音訊播放函式庫</li>
+<li><a href="https://en.wikipedia.org/wiki/Karplus%E2%80%93Strong_string_synthesis">Karplus-Strong 演算法</a> - 物理建模弦樂合成</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

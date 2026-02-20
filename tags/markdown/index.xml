@@ -1,0 +1,396 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/markdown/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-01-06 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</title>
+      <link>https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/</link>
+      <pubDate>Tue, 06 Jan 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/</guid>
+      <description>&lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;這個專案是我「52 個 Rust 專案」學習計畫的一部分。在完成了 16 個專案後，我發現 WebAssembly 是一個重要的學習缺口，於是決定用 Rust 來打造一個即時 Markdown 編輯器。&lt;/p&gt;
+&lt;p&gt;專案原始碼：&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/wasm-markdown-editor&#34;&gt;wasm-markdown-editor&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;為什麼選擇這個專案&#34;&gt;為什麼選擇這個專案？&lt;/h2&gt;
+&lt;p&gt;在分析了之前完成的專案後，我發現幾個學習上的空白：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;已掌握的領域&lt;/strong&gt;：Async/await、網路程式設計（TCP/UDP/HTTP/WebSockets）、解析器、CLI 工具、錯誤處理&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;待加強的領域&lt;/strong&gt;：資料庫 ORM、程序宏、FFI、&lt;strong&gt;WebAssembly&lt;/strong&gt;、進階測試、GUI/圖形&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;選擇 Markdown 編輯器的原因：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;填補關鍵缺口&lt;/strong&gt;：之前沒有任何 WASM 專案&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;善用既有技能&lt;/strong&gt;：運用之前在計算機、shell、EBML 等專案中學到的解析技巧&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;互動性強&lt;/strong&gt;：能立即看到成果，滿足感高&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;實用價值&lt;/strong&gt;：這是真正能用的工具，不只是 demo&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;現代技術棧&lt;/strong&gt;：WASM 在 Rust 生態系中越來越重要&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;技術架構&#34;&gt;技術架構&lt;/h2&gt;
+&lt;h3 id=&#34;rust-依賴項&#34;&gt;Rust 依賴項&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;dependencies&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;wasm-bindgen&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.2&amp;#34;&lt;/span&gt;           &lt;span style=&#34;color:#75715e&#34;&gt;# JavaScript 互操作層&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;pulldown-cmark&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.12&amp;#34;&lt;/span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;# 經過實戰驗證的 Markdown 解析器&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;web-sys&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.3&amp;#34;&lt;/span&gt;                &lt;span style=&#34;color:#75715e&#34;&gt;# Web API 綁定&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;serde&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;1.0&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;features&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;derive&amp;#34;&lt;/span&gt;] }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;serde-wasm-bindgen&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.6&amp;#34;&lt;/span&gt;     &lt;span style=&#34;color:#75715e&#34;&gt;# Rust/JS 之間的資料序列化&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;console_error_panic_hook&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.1&amp;#34;&lt;/span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;# 瀏覽器中更好的錯誤訊息&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;專案結構&#34;&gt;專案結構&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;wasm-markdown-editor/
+├── Cargo.toml              # Rust 專案設定
+├── index.html              # 主進入點
+├── src/
+│   ├── lib.rs             # WASM 進入點
+│   ├── parser.rs          # Markdown 解析 + 統計邏輯
+│   └── utils.rs           # Panic hook 和工具函式
+├── www/
+│   ├── index.js           # JavaScript 應用邏輯
+│   └── styles.css         # 樣式
+└── pkg/                   # 建置輸出
+    ├── wasm_markdown_editor.js
+    └── wasm_markdown_editor_bg.wasm&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;核心實作&#34;&gt;核心實作&lt;/h2&gt;
+&lt;h3 id=&#34;將函式匯出到-javascript&#34;&gt;將函式匯出到 JavaScript&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; wasm_bindgen::prelude::&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// WASM 模組載入時自動執行
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen(start)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;init&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    utils::set_panic_hook();  &lt;span style=&#34;color:#75715e&#34;&gt;// 更好的錯誤訊息
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 簡單的字串轉換
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;markdown_to_html&lt;/span&gt;(markdown: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;) -&amp;gt; String {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    parser::parse_markdown(markdown)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 複雜結構 → JavaScript 物件
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;get_statistics&lt;/span&gt;(text: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;JsValue&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; stats &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; parser::calculate_stats(text);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    serde_wasm_bindgen::to_value(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;stats).unwrap()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;關鍵模式：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;#[wasm_bindgen]&lt;/code&gt; 標記要匯出給 JS 的函式&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;#[wasm_bindgen(start)]&lt;/code&gt; 在模組初始化時自動執行&lt;/li&gt;
+&lt;li&gt;簡單型別（str、數字、布林）自動轉換&lt;/li&gt;
+&lt;li&gt;複雜型別需要 &lt;code&gt;serde-wasm-bindgen&lt;/code&gt; 進行序列化&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;markdown-解析&#34;&gt;Markdown 解析&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; pulldown_cmark::{html, Options, Parser};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_markdown&lt;/span&gt;(markdown: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;) -&amp;gt; String {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; options &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Options::empty();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options.insert(Options::&lt;span style=&#34;color:#66d9ef&#34;&gt;ENABLE_STRIKETHROUGH&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options.insert(Options::&lt;span style=&#34;color:#66d9ef&#34;&gt;ENABLE_TABLES&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options.insert(Options::&lt;span style=&#34;color:#66d9ef&#34;&gt;ENABLE_FOOTNOTES&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options.insert(Options::&lt;span style=&#34;color:#66d9ef&#34;&gt;ENABLE_TASKLISTS&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; parser &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Parser::new_ext(markdown, options);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; html_output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String::new();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    html::push_html(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; html_output, parser);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    html_output
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;啟用的功能：刪除線、表格、註腳、任務清單、標題屬性。&lt;/p&gt;
+&lt;h3 id=&#34;統計資訊計算&#34;&gt;統計資訊計算&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Serialize)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Statistics&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; characters: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; characters_no_spaces: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; words: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; lines: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; paragraphs: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; reading_time_minutes: &lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;calculate_stats&lt;/span&gt;(text: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Statistics&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; words &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; text.split_whitespace().count();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; paragraphs &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; text
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .split(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .filter(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;s&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;s.trim().is_empty())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .count();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 平均閱讀速度：每分鐘 200 字
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; reading_time_minutes &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (words &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;200.0&lt;/span&gt;).ceil();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;javascript-整合&#34;&gt;JavaScript 整合&lt;/h2&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;init&lt;/span&gt;, {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;markdown_to_html&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;get_statistics&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;} &lt;span style=&#34;color:#a6e22e&#34;&gt;from&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;../pkg/wasm_markdown_editor.js&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;function&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 初始化 WASM 模組
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;init&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 現在可以使用 Rust 函式了
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;html&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;markdown_to_html&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;markdown&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;stats&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;get_statistics&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;text&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 效能優化：防抖動
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;debounceTimer&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;null&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;DEBOUNCE_DELAY&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;300&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;function&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;handleInput&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;debounceTimer&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;clearTimeout&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;debounceTimer&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;updateStatistics&lt;/span&gt;();  &lt;span style=&#34;color:#75715e&#34;&gt;// 立即更新（快速）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;debounceTimer&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;setTimeout&lt;/span&gt;(() =&amp;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;updatePreview&lt;/span&gt;();   &lt;span style=&#34;color:#75715e&#34;&gt;// 防抖動（較重）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;saveToStorage&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }, &lt;span style=&#34;color:#a6e22e&#34;&gt;DEBOUNCE_DELAY&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;關鍵重點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;ES6 模組匯入 WASM&lt;/li&gt;
+&lt;li&gt;呼叫 Rust 函式前必須先執行非同步的 &lt;code&gt;init()&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;防抖動避免過度渲染&lt;/li&gt;
+&lt;li&gt;統計立即更新（便宜），預覽防抖動（昂貴）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;wasm-編譯深入解析&#34;&gt;WASM 編譯深入解析&lt;/h2&gt;
+&lt;h3 id=&#34;編譯流程&#34;&gt;編譯流程&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;1. Rust 原始碼 (lib.rs, parser.rs, utils.rs)
+   ↓
+2. rustc --target wasm32-unknown-unknown
+   ↓
+3. 原始 .wasm 二進位檔（WebAssembly 位元組碼）
+   ↓
+4. wasm-bindgen（產生 JS 膠水程式碼）
+   ↓
+5. wasm-opt（Binaryen 優化）
+   ↓
+6. 最終輸出：.wasm + .js + .d.ts&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;記憶體模型&#34;&gt;記憶體模型&lt;/h3&gt;
+&lt;p&gt;WASM 使用&lt;strong&gt;線性記憶體&lt;/strong&gt;（單一連續區塊），JavaScript 和 Rust 透過這塊共享記憶體交換資料：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    sequenceDiagram
+    participant JS as JavaScript
+    participant Mem as WASM 線性記憶體
+    participant Rust as Rust
+
+    JS-&gt;&gt;Mem: 1. 寫入字串
+    JS-&gt;&gt;Rust: 2. 傳遞指標 + 長度
+    Rust-&gt;&gt;Rust: 3. 處理資料
+    Rust-&gt;&gt;Mem: 4. 寫入結果
+    Rust-&gt;&gt;JS: 5. 回傳結果指標
+    JS-&gt;&gt;Mem: 6. 讀取結果
+    JS-&gt;&gt;Mem: 7. 釋放記憶體
+  &lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;字串傳遞流程&lt;/strong&gt;：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;JS 字串寫入 WASM 線性記憶體&lt;/li&gt;
+&lt;li&gt;傳遞指標和長度給 Rust 函式&lt;/li&gt;
+&lt;li&gt;Rust 處理資料&lt;/li&gt;
+&lt;li&gt;Rust 將結果寫入記憶體&lt;/li&gt;
+&lt;li&gt;回傳結果的指標給 JS&lt;/li&gt;
+&lt;li&gt;JS 從記憶體讀取結果字串&lt;/li&gt;
+&lt;li&gt;釋放不再需要的記憶體&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;型別轉換對照表&#34;&gt;型別轉換對照表&lt;/h3&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Rust 型別&lt;/th&gt;
+          &lt;th&gt;WASM 型別&lt;/th&gt;
+          &lt;th&gt;JavaScript 型別&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;&amp;amp;str&lt;/code&gt;, &lt;code&gt;String&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;i32 (ptr) + i32 (len)&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;string&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;i32&lt;/code&gt;, &lt;code&gt;u32&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;i32&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;number&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;f64&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;f64&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;number&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;bool&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;i32 (0 或 1)&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;boolean&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;code&gt;JsValue&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;externref&lt;/td&gt;
+          &lt;td&gt;any&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;可序列化 struct&lt;/td&gt;
+          &lt;td&gt;externref&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;object&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;建置與效能&#34;&gt;建置與效能&lt;/h2&gt;
+&lt;h3 id=&#34;建置指令&#34;&gt;建置指令&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 安裝 wasm-pack（只需一次）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo install wasm-pack
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 建置 WASM 模組&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;wasm-pack build --target web
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 執行 Rust 單元測試&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo test
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 在瀏覽器中執行 WASM 測試&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;wasm-pack test --headless --firefox&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;建置輸出&#34;&gt;建置輸出&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;WASM 套件&lt;/strong&gt;：222 KB（已優化）&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;JS 膠水程式碼&lt;/strong&gt;：13 KB&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;總下載量&lt;/strong&gt;：235 KB&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;建置時間&lt;/strong&gt;：約 8 秒（增量）、約 13 秒（完整）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;cargotoml-關鍵設定&#34;&gt;Cargo.toml 關鍵設定&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;lib&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;crate-type&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cdylib&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rlib&amp;#34;&lt;/span&gt;]  &lt;span style=&#34;color:#75715e&#34;&gt;# WASM 編譯必需&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;profile&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;release&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;opt-level&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;s&amp;#34;&lt;/span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;# 優化檔案大小（而非速度）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lto&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;         &lt;span style=&#34;color:#75715e&#34;&gt;# 連結時優化，產生更小的套件&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;為什麼這些設定很重要：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;cdylib&lt;/code&gt; = C 動態函式庫類型，WASM 必需&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;opt-level = &amp;quot;s&amp;quot;&lt;/code&gt; 產生的二進位檔比 &amp;ldquo;3&amp;rdquo; 小約 30%&lt;/li&gt;
+&lt;li&gt;LTO 消除整個依賴樹中的死碼&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;遇到的問題與解決方案&#34;&gt;遇到的問題與解決方案&lt;/h2&gt;
+&lt;h3 id=&#34;問題404-錯誤&#34;&gt;問題：404 錯誤&lt;/h3&gt;
+&lt;p&gt;從 &lt;code&gt;www/&lt;/code&gt; 目錄提供服務時，瀏覽器無法存取 &lt;code&gt;../pkg/&lt;/code&gt;（在提供的目錄之外）。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;初始嘗試&lt;/strong&gt;：從 &lt;code&gt;www/&lt;/code&gt; 目錄提供服務&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;http://localhost:8080/  → www/index.html
+http://localhost:8080/pkg/...  → 404 錯誤&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;strong&gt;解決方案&lt;/strong&gt;：在專案根目錄建立 &lt;code&gt;index.html&lt;/code&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 從專案根目錄提供服務，而非 www/&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cd wasm-markdown-editor
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;python -m http.server &lt;span style=&#34;color:#ae81ff&#34;&gt;8080&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 存取 http://localhost:8080&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;實作的功能&#34;&gt;實作的功能&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 帶防抖動的即時預覽&lt;/li&gt;
+&lt;li&gt;✅ 即時統計（字數、字元數、閱讀時間）&lt;/li&gt;
+&lt;li&gt;✅ LocalStorage 自動儲存&lt;/li&gt;
+&lt;li&gt;✅ 帶內嵌 CSS 的 HTML 匯出&lt;/li&gt;
+&lt;li&gt;✅ 範例 Markdown 載入器&lt;/li&gt;
+&lt;li&gt;✅ 鍵盤快捷鍵（Ctrl+S、Ctrl+K）&lt;/li&gt;
+&lt;li&gt;✅ 響應式分割視窗佈局&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;學習成果&#34;&gt;學習成果&lt;/h2&gt;
+&lt;h3 id=&#34;wasm-特定技能&#34;&gt;WASM 特定技能&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;✅ 理解 &lt;code&gt;cdylib&lt;/code&gt; crate 類型及其作用&lt;/li&gt;
+&lt;li&gt;✅ 使用 &lt;code&gt;#[wasm_bindgen]&lt;/code&gt; 屬性匯出給 JS&lt;/li&gt;
+&lt;li&gt;✅ 管理 Rust/JavaScript 邊界的記憶體&lt;/li&gt;
+&lt;li&gt;✅ 型別轉換（簡單型別 vs. 複雜結構）&lt;/li&gt;
+&lt;li&gt;✅ WASM 模組初始化模式&lt;/li&gt;
+&lt;li&gt;✅ 在瀏覽器 DevTools 中除錯 WASM&lt;/li&gt;
+&lt;li&gt;✅ 套件大小優化技術&lt;/li&gt;
+&lt;li&gt;✅ 建置工具（&lt;code&gt;wasm-pack&lt;/code&gt;、&lt;code&gt;wasm-bindgen&lt;/code&gt;）&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;什麼時候該用-wasm&#34;&gt;什麼時候該用 WASM？&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;適合的場景&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 計算密集型操作（解析、圖像處理）&lt;/li&gt;
+&lt;li&gt;✅ 想重用現有的 Rust 函式庫&lt;/li&gt;
+&lt;li&gt;✅ 效能關鍵路徑&lt;/li&gt;
+&lt;li&gt;✅ 套件大小可接受時&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;不太適合的場景&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;❌ 大量 DOM 操作（用 JS）&lt;/li&gt;
+&lt;li&gt;❌ 微小的工具函式（開銷不值得）&lt;/li&gt;
+&lt;li&gt;❌ 簡單的 CRUD 操作&lt;/li&gt;
+&lt;li&gt;❌ 套件大小是關鍵考量時&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;與純-javascript-方案的比較&#34;&gt;與純 JavaScript 方案的比較&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;效能&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Markdown 解析：比 JS 替代方案快約 2-3 倍&lt;/li&gt;
+&lt;li&gt;打字時沒有 GC 暫停&lt;/li&gt;
+&lt;li&gt;可預測的記憶體使用&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;套件大小&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;與流行的 JS 函式庫相當或更小&lt;/li&gt;
+&lt;li&gt;markdown-it.js：約 320 KB&lt;/li&gt;
+&lt;li&gt;我們的方案：&lt;strong&gt;235 KB&lt;/strong&gt;（包含解析器 + 統計）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;反思&#34;&gt;反思&lt;/h2&gt;
+&lt;h3 id=&#34;順利的部分&#34;&gt;順利的部分&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;流暢的建置過程&lt;/strong&gt;：wasm-pack「直接就能用」&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;優秀的文件&lt;/strong&gt;：Rust WASM book 非常有價值&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;型別安全&lt;/strong&gt;：編譯時就能捕捉錯誤&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;效能&lt;/strong&gt;：解析明顯流暢&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;工具鏈&lt;/strong&gt;：自動產生的 TypeScript 定義很有幫助&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;克服的挑戰&#34;&gt;克服的挑戰&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;路徑解析&lt;/strong&gt;：404 錯誤需要理解 WASM 服務方式&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;記憶體模型&lt;/strong&gt;：理解線性記憶體花了一些時間&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;型別轉換&lt;/strong&gt;：學習何時用 JsValue vs. 簡單型別&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;非同步初始化&lt;/strong&gt;：理解 init() 的必要性&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;驚喜的發現&#34;&gt;驚喜的發現&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;套件大小&lt;/strong&gt;：比預期小（222 KB 含完整解析器！）&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;建置速度&lt;/strong&gt;：增量建置很快（8 秒）&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;瀏覽器支援&lt;/strong&gt;：所有現代瀏覽器都能用，不需要 polyfill&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;開發體驗&lt;/strong&gt;：在 DevTools 中除錯 WASM 相當不錯&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;結論&#34;&gt;結論&lt;/h2&gt;
+&lt;p&gt;這個專案成功填補了我 rust-52-projects 學習旅程中的一個主要缺口。它證明了 &lt;strong&gt;Rust + WASM 已經可以用於生產環境&lt;/strong&gt;的互動式 Web 應用程式，尤其是像解析這樣的計算密集型任務。&lt;/p&gt;
+&lt;p&gt;Rust 的效能和安全性與 JavaScript 的普及性結合，創造了一個強大的開發模式。工具鏈（&lt;code&gt;wasm-pack&lt;/code&gt;、&lt;code&gt;wasm-bindgen&lt;/code&gt;）已經成熟到體驗流暢且高效的程度。&lt;/p&gt;
+&lt;p&gt;這是一個很好的「第一個 WASM 專案」，在學習核心概念的同時建構出真正實用的東西。&lt;/p&gt;
+&lt;h2 id=&#34;參考資源&#34;&gt;參考資源&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://rustwasm.github.io/docs/book/&#34;&gt;Rust and WebAssembly Book&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://rustwasm.github.io/wasm-bindgen/&#34;&gt;wasm-bindgen Guide&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://docs.rs/pulldown-cmark/&#34;&gt;pulldown-cmark Docs&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://docs.rs/serde-wasm-bindgen/&#34;&gt;serde-wasm-bindgen&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,855 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/"/>
+  <meta property="og:title" content="用 Rust 和 WebAssembly 打造即時 Markdown 編輯器"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-01-06 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="webassembly"/>
+  
+  <meta property="og:article:tag" content="wasm"/>
+  
+  <meta property="og:article:tag" content="markdown"/>
+  
+  <meta property="og:article:tag" content="web"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/01-04-vscode-peacock-colors/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            我的 VSCode Peacock 配色收藏
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/01-17-ffi-comparison/">
+            Rust FFI 完整指南：從手寫綁定到 AI 輔助的 Safe Wrapper
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</h2>
+      <div class="post-meta">
+        <span class="post-date">January 6, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/webassembly"><span class="label label-primary">webassembly</span></a>
+        
+        <a href="/tags/wasm"><span class="label label-primary">wasm</span></a>
+        
+        <a href="/tags/markdown"><span class="label label-primary">markdown</span></a>
+        
+        <a href="/tags/web"><span class="label label-primary">web</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        <img src="/posts/2026/01-06-rust-wasm-markdown-editor/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>這個專案是我「52 個 Rust 專案」學習計畫的一部分。在完成了 16 個專案後，我發現 WebAssembly 是一個重要的學習缺口，於是決定用 Rust 來打造一個即時 Markdown 編輯器。</p>
+<p>專案原始碼：<a href="https://github.com/p47t/rust-52-projects/tree/master/wasm-markdown-editor">wasm-markdown-editor</a></p>
+<h2 id="為什麼選擇這個專案">為什麼選擇這個專案？</h2>
+<p>在分析了之前完成的專案後，我發現幾個學習上的空白：</p>
+<ul>
+<li><strong>已掌握的領域</strong>：Async/await、網路程式設計（TCP/UDP/HTTP/WebSockets）、解析器、CLI 工具、錯誤處理</li>
+<li><strong>待加強的領域</strong>：資料庫 ORM、程序宏、FFI、<strong>WebAssembly</strong>、進階測試、GUI/圖形</li>
+</ul>
+<p>選擇 Markdown 編輯器的原因：</p>
+<ol>
+<li><strong>填補關鍵缺口</strong>：之前沒有任何 WASM 專案</li>
+<li><strong>善用既有技能</strong>：運用之前在計算機、shell、EBML 等專案中學到的解析技巧</li>
+<li><strong>互動性強</strong>：能立即看到成果，滿足感高</li>
+<li><strong>實用價值</strong>：這是真正能用的工具，不只是 demo</li>
+<li><strong>現代技術棧</strong>：WASM 在 Rust 生態系中越來越重要</li>
+</ol>
+<h2 id="技術架構">技術架構</h2>
+<h3 id="rust-依賴項">Rust 依賴項</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">wasm-bindgen</span> = <span style="color:#e6db74">&#34;0.2&#34;</span>           <span style="color:#75715e"># JavaScript 互操作層</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">pulldown-cmark</span> = <span style="color:#e6db74">&#34;0.12&#34;</span>        <span style="color:#75715e"># 經過實戰驗證的 Markdown 解析器</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">web-sys</span> = <span style="color:#e6db74">&#34;0.3&#34;</span>                <span style="color:#75715e"># Web API 綁定</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">serde</span> = { <span style="color:#a6e22e">version</span> = <span style="color:#e6db74">&#34;1.0&#34;</span>, <span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;derive&#34;</span>] }
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">serde-wasm-bindgen</span> = <span style="color:#e6db74">&#34;0.6&#34;</span>     <span style="color:#75715e"># Rust/JS 之間的資料序列化</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">console_error_panic_hook</span> = <span style="color:#e6db74">&#34;0.1&#34;</span>  <span style="color:#75715e"># 瀏覽器中更好的錯誤訊息</span></span></span></code></pre></div>
+
+<h3 id="專案結構">專案結構</h3>
+
+  <pre tabindex="0"><code>wasm-markdown-editor/
+├── Cargo.toml              # Rust 專案設定
+├── index.html              # 主進入點
+├── src/
+│   ├── lib.rs             # WASM 進入點
+│   ├── parser.rs          # Markdown 解析 + 統計邏輯
+│   └── utils.rs           # Panic hook 和工具函式
+├── www/
+│   ├── index.js           # JavaScript 應用邏輯
+│   └── styles.css         # 樣式
+└── pkg/                   # 建置輸出
+    ├── wasm_markdown_editor.js
+    └── wasm_markdown_editor_bg.wasm</code></pre>
+
+<h2 id="核心實作">核心實作</h2>
+<h3 id="將函式匯出到-javascript">將函式匯出到 JavaScript</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> wasm_bindgen::prelude::<span style="color:#f92672">*</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// WASM 模組載入時自動執行
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[wasm_bindgen(start)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">init</span>() {
+</span></span><span style="display:flex;"><span>    utils::set_panic_hook();  <span style="color:#75715e">// 更好的錯誤訊息
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 簡單的字串轉換
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[wasm_bindgen]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">markdown_to_html</span>(markdown: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; String {
+</span></span><span style="display:flex;"><span>    parser::parse_markdown(markdown)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 複雜結構 → JavaScript 物件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[wasm_bindgen]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">get_statistics</span>(text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">JsValue</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> stats <span style="color:#f92672">=</span> parser::calculate_stats(text);
+</span></span><span style="display:flex;"><span>    serde_wasm_bindgen::to_value(<span style="color:#f92672">&amp;</span>stats).unwrap()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵模式：</p>
+<ul>
+<li><code>#[wasm_bindgen]</code> 標記要匯出給 JS 的函式</li>
+<li><code>#[wasm_bindgen(start)]</code> 在模組初始化時自動執行</li>
+<li>簡單型別（str、數字、布林）自動轉換</li>
+<li>複雜型別需要 <code>serde-wasm-bindgen</code> 進行序列化</li>
+</ul>
+<h3 id="markdown-解析">Markdown 解析</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> pulldown_cmark::{html, Options, Parser};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parse_markdown</span>(markdown: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; String {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> options <span style="color:#f92672">=</span> Options::empty();
+</span></span><span style="display:flex;"><span>    options.insert(Options::<span style="color:#66d9ef">ENABLE_STRIKETHROUGH</span>);
+</span></span><span style="display:flex;"><span>    options.insert(Options::<span style="color:#66d9ef">ENABLE_TABLES</span>);
+</span></span><span style="display:flex;"><span>    options.insert(Options::<span style="color:#66d9ef">ENABLE_FOOTNOTES</span>);
+</span></span><span style="display:flex;"><span>    options.insert(Options::<span style="color:#66d9ef">ENABLE_TASKLISTS</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> parser <span style="color:#f92672">=</span> Parser::new_ext(markdown, options);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> html_output <span style="color:#f92672">=</span> String::new();
+</span></span><span style="display:flex;"><span>    html::push_html(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> html_output, parser);
+</span></span><span style="display:flex;"><span>    html_output
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>啟用的功能：刪除線、表格、註腳、任務清單、標題屬性。</p>
+<h3 id="統計資訊計算">統計資訊計算</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Serialize)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Statistics</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> characters: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> characters_no_spaces: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> words: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> lines: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> paragraphs: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> reading_time_minutes: <span style="color:#66d9ef">f64</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">calculate_stats</span>(text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; <span style="color:#a6e22e">Statistics</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> words <span style="color:#f92672">=</span> text.split_whitespace().count();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> paragraphs <span style="color:#f92672">=</span> text
+</span></span><span style="display:flex;"><span>        .split(<span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n\n</span><span style="color:#e6db74">&#34;</span>)
+</span></span><span style="display:flex;"><span>        .filter(<span style="color:#f92672">|</span>s<span style="color:#f92672">|</span> <span style="color:#f92672">!</span>s.trim().is_empty())
+</span></span><span style="display:flex;"><span>        .count();
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 平均閱讀速度：每分鐘 200 字
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> reading_time_minutes <span style="color:#f92672">=</span> (words <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">200.0</span>).ceil();
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h2 id="javascript-整合">JavaScript 整合</h2>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-javascript" data-lang="javascript"><span style="display:flex;"><span><span style="color:#66d9ef">import</span> <span style="color:#a6e22e">init</span>, {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">markdown_to_html</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">get_statistics</span>
+</span></span><span style="display:flex;"><span>} <span style="color:#a6e22e">from</span> <span style="color:#e6db74">&#39;../pkg/wasm_markdown_editor.js&#39;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">run</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 初始化 WASM 模組
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">init</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 現在可以使用 Rust 函式了
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">html</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">markdown_to_html</span>(<span style="color:#a6e22e">markdown</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">stats</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">get_statistics</span>(<span style="color:#a6e22e">text</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 效能優化：防抖動
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#a6e22e">debounceTimer</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">DEBOUNCE_DELAY</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">300</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">handleInput</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">debounceTimer</span>) <span style="color:#a6e22e">clearTimeout</span>(<span style="color:#a6e22e">debounceTimer</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">updateStatistics</span>();  <span style="color:#75715e">// 立即更新（快速）
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">debounceTimer</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">setTimeout</span>(() =&gt; {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">updatePreview</span>();   <span style="color:#75715e">// 防抖動（較重）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">saveToStorage</span>();
+</span></span><span style="display:flex;"><span>    }, <span style="color:#a6e22e">DEBOUNCE_DELAY</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵重點：</p>
+<ul>
+<li>ES6 模組匯入 WASM</li>
+<li>呼叫 Rust 函式前必須先執行非同步的 <code>init()</code></li>
+<li>防抖動避免過度渲染</li>
+<li>統計立即更新（便宜），預覽防抖動（昂貴）</li>
+</ul>
+<h2 id="wasm-編譯深入解析">WASM 編譯深入解析</h2>
+<h3 id="編譯流程">編譯流程</h3>
+
+  <pre tabindex="0"><code>1. Rust 原始碼 (lib.rs, parser.rs, utils.rs)
+   ↓
+2. rustc --target wasm32-unknown-unknown
+   ↓
+3. 原始 .wasm 二進位檔（WebAssembly 位元組碼）
+   ↓
+4. wasm-bindgen（產生 JS 膠水程式碼）
+   ↓
+5. wasm-opt（Binaryen 優化）
+   ↓
+6. 最終輸出：.wasm + .js + .d.ts</code></pre>
+
+<h3 id="記憶體模型">記憶體模型</h3>
+<p>WASM 使用<strong>線性記憶體</strong>（單一連續區塊），JavaScript 和 Rust 透過這塊共享記憶體交換資料：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    participant JS as JavaScript
+    participant Mem as WASM 線性記憶體
+    participant Rust as Rust
+
+    JS->>Mem: 1. 寫入字串
+    JS->>Rust: 2. 傳遞指標 + 長度
+    Rust->>Rust: 3. 處理資料
+    Rust->>Mem: 4. 寫入結果
+    Rust->>JS: 5. 回傳結果指標
+    JS->>Mem: 6. 讀取結果
+    JS->>Mem: 7. 釋放記憶體
+  </div>
+
+<p><strong>字串傳遞流程</strong>：</p>
+<ol>
+<li>JS 字串寫入 WASM 線性記憶體</li>
+<li>傳遞指標和長度給 Rust 函式</li>
+<li>Rust 處理資料</li>
+<li>Rust 將結果寫入記憶體</li>
+<li>回傳結果的指標給 JS</li>
+<li>JS 從記憶體讀取結果字串</li>
+<li>釋放不再需要的記憶體</li>
+</ol>
+<h3 id="型別轉換對照表">型別轉換對照表</h3>
+<table>
+  <thead>
+      <tr>
+          <th>Rust 型別</th>
+          <th>WASM 型別</th>
+          <th>JavaScript 型別</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>&amp;str</code>, <code>String</code></td>
+          <td>i32 (ptr) + i32 (len)</td>
+          <td><code>string</code></td>
+      </tr>
+      <tr>
+          <td><code>i32</code>, <code>u32</code></td>
+          <td>i32</td>
+          <td><code>number</code></td>
+      </tr>
+      <tr>
+          <td><code>f64</code></td>
+          <td>f64</td>
+          <td><code>number</code></td>
+      </tr>
+      <tr>
+          <td><code>bool</code></td>
+          <td>i32 (0 或 1)</td>
+          <td><code>boolean</code></td>
+      </tr>
+      <tr>
+          <td><code>JsValue</code></td>
+          <td>externref</td>
+          <td>any</td>
+      </tr>
+      <tr>
+          <td>可序列化 struct</td>
+          <td>externref</td>
+          <td><code>object</code></td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="建置與效能">建置與效能</h2>
+<h3 id="建置指令">建置指令</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 安裝 wasm-pack（只需一次）</span>
+</span></span><span style="display:flex;"><span>cargo install wasm-pack
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 建置 WASM 模組</span>
+</span></span><span style="display:flex;"><span>wasm-pack build --target web
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 執行 Rust 單元測試</span>
+</span></span><span style="display:flex;"><span>cargo test
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 在瀏覽器中執行 WASM 測試</span>
+</span></span><span style="display:flex;"><span>wasm-pack test --headless --firefox</span></span></code></pre></div>
+
+<h3 id="建置輸出">建置輸出</h3>
+<ul>
+<li><strong>WASM 套件</strong>：222 KB（已優化）</li>
+<li><strong>JS 膠水程式碼</strong>：13 KB</li>
+<li><strong>總下載量</strong>：235 KB</li>
+<li><strong>建置時間</strong>：約 8 秒（增量）、約 13 秒（完整）</li>
+</ul>
+<h3 id="cargotoml-關鍵設定">Cargo.toml 關鍵設定</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">lib</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">crate-type</span> = [<span style="color:#e6db74">&#34;cdylib&#34;</span>, <span style="color:#e6db74">&#34;rlib&#34;</span>]  <span style="color:#75715e"># WASM 編譯必需</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[<span style="color:#a6e22e">profile</span>.<span style="color:#a6e22e">release</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">opt-level</span> = <span style="color:#e6db74">&#34;s&#34;</span>    <span style="color:#75715e"># 優化檔案大小（而非速度）</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">lto</span> = <span style="color:#66d9ef">true</span>         <span style="color:#75715e"># 連結時優化，產生更小的套件</span></span></span></code></pre></div>
+
+<p>為什麼這些設定很重要：</p>
+<ul>
+<li><code>cdylib</code> = C 動態函式庫類型，WASM 必需</li>
+<li><code>opt-level = &quot;s&quot;</code> 產生的二進位檔比 &ldquo;3&rdquo; 小約 30%</li>
+<li>LTO 消除整個依賴樹中的死碼</li>
+</ul>
+<h2 id="遇到的問題與解決方案">遇到的問題與解決方案</h2>
+<h3 id="問題404-錯誤">問題：404 錯誤</h3>
+<p>從 <code>www/</code> 目錄提供服務時，瀏覽器無法存取 <code>../pkg/</code>（在提供的目錄之外）。</p>
+<p><strong>初始嘗試</strong>：從 <code>www/</code> 目錄提供服務</p>
+
+  <pre tabindex="0"><code>http://localhost:8080/  → www/index.html
+http://localhost:8080/pkg/...  → 404 錯誤</code></pre>
+
+<p><strong>解決方案</strong>：在專案根目錄建立 <code>index.html</code></p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 從專案根目錄提供服務，而非 www/</span>
+</span></span><span style="display:flex;"><span>cd wasm-markdown-editor
+</span></span><span style="display:flex;"><span>python -m http.server <span style="color:#ae81ff">8080</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 存取 http://localhost:8080</span></span></span></code></pre></div>
+
+<h2 id="實作的功能">實作的功能</h2>
+<ul>
+<li>✅ 帶防抖動的即時預覽</li>
+<li>✅ 即時統計（字數、字元數、閱讀時間）</li>
+<li>✅ LocalStorage 自動儲存</li>
+<li>✅ 帶內嵌 CSS 的 HTML 匯出</li>
+<li>✅ 範例 Markdown 載入器</li>
+<li>✅ 鍵盤快捷鍵（Ctrl+S、Ctrl+K）</li>
+<li>✅ 響應式分割視窗佈局</li>
+</ul>
+<h2 id="學習成果">學習成果</h2>
+<h3 id="wasm-特定技能">WASM 特定技能</h3>
+<ol>
+<li>✅ 理解 <code>cdylib</code> crate 類型及其作用</li>
+<li>✅ 使用 <code>#[wasm_bindgen]</code> 屬性匯出給 JS</li>
+<li>✅ 管理 Rust/JavaScript 邊界的記憶體</li>
+<li>✅ 型別轉換（簡單型別 vs. 複雜結構）</li>
+<li>✅ WASM 模組初始化模式</li>
+<li>✅ 在瀏覽器 DevTools 中除錯 WASM</li>
+<li>✅ 套件大小優化技術</li>
+<li>✅ 建置工具（<code>wasm-pack</code>、<code>wasm-bindgen</code>）</li>
+</ol>
+<h3 id="什麼時候該用-wasm">什麼時候該用 WASM？</h3>
+<p><strong>適合的場景</strong>：</p>
+<ul>
+<li>✅ 計算密集型操作（解析、圖像處理）</li>
+<li>✅ 想重用現有的 Rust 函式庫</li>
+<li>✅ 效能關鍵路徑</li>
+<li>✅ 套件大小可接受時</li>
+</ul>
+<p><strong>不太適合的場景</strong>：</p>
+<ul>
+<li>❌ 大量 DOM 操作（用 JS）</li>
+<li>❌ 微小的工具函式（開銷不值得）</li>
+<li>❌ 簡單的 CRUD 操作</li>
+<li>❌ 套件大小是關鍵考量時</li>
+</ul>
+<h2 id="與純-javascript-方案的比較">與純 JavaScript 方案的比較</h2>
+<p><strong>效能</strong>：</p>
+<ul>
+<li>Markdown 解析：比 JS 替代方案快約 2-3 倍</li>
+<li>打字時沒有 GC 暫停</li>
+<li>可預測的記憶體使用</li>
+</ul>
+<p><strong>套件大小</strong>：</p>
+<ul>
+<li>與流行的 JS 函式庫相當或更小</li>
+<li>markdown-it.js：約 320 KB</li>
+<li>我們的方案：<strong>235 KB</strong>（包含解析器 + 統計）</li>
+</ul>
+<h2 id="反思">反思</h2>
+<h3 id="順利的部分">順利的部分</h3>
+<ol>
+<li><strong>流暢的建置過程</strong>：wasm-pack「直接就能用」</li>
+<li><strong>優秀的文件</strong>：Rust WASM book 非常有價值</li>
+<li><strong>型別安全</strong>：編譯時就能捕捉錯誤</li>
+<li><strong>效能</strong>：解析明顯流暢</li>
+<li><strong>工具鏈</strong>：自動產生的 TypeScript 定義很有幫助</li>
+</ol>
+<h3 id="克服的挑戰">克服的挑戰</h3>
+<ol>
+<li><strong>路徑解析</strong>：404 錯誤需要理解 WASM 服務方式</li>
+<li><strong>記憶體模型</strong>：理解線性記憶體花了一些時間</li>
+<li><strong>型別轉換</strong>：學習何時用 JsValue vs. 簡單型別</li>
+<li><strong>非同步初始化</strong>：理解 init() 的必要性</li>
+</ol>
+<h3 id="驚喜的發現">驚喜的發現</h3>
+<ol>
+<li><strong>套件大小</strong>：比預期小（222 KB 含完整解析器！）</li>
+<li><strong>建置速度</strong>：增量建置很快（8 秒）</li>
+<li><strong>瀏覽器支援</strong>：所有現代瀏覽器都能用，不需要 polyfill</li>
+<li><strong>開發體驗</strong>：在 DevTools 中除錯 WASM 相當不錯</li>
+</ol>
+<h2 id="結論">結論</h2>
+<p>這個專案成功填補了我 rust-52-projects 學習旅程中的一個主要缺口。它證明了 <strong>Rust + WASM 已經可以用於生產環境</strong>的互動式 Web 應用程式，尤其是像解析這樣的計算密集型任務。</p>
+<p>Rust 的效能和安全性與 JavaScript 的普及性結合，創造了一個強大的開發模式。工具鏈（<code>wasm-pack</code>、<code>wasm-bindgen</code>）已經成熟到體驗流暢且高效的程度。</p>
+<p>這是一個很好的「第一個 WASM 專案」，在學習核心概念的同時建構出真正實用的東西。</p>
+<h2 id="參考資源">參考資源</h2>
+<ul>
+<li><a href="https://rustwasm.github.io/docs/book/">Rust and WebAssembly Book</a></li>
+<li><a href="https://rustwasm.github.io/wasm-bindgen/">wasm-bindgen Guide</a></li>
+<li><a href="https://docs.rs/pulldown-cmark/">pulldown-cmark Docs</a></li>
+<li><a href="https://docs.rs/serde-wasm-bindgen/">serde-wasm-bindgen</a></li>
+</ul>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

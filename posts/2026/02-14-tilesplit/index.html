@@ -1,0 +1,710 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/"/>
+  <meta property="og:title" content="TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-14 10:00:00 &#43;0800 &#43;0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ultrahdr"/>
+  
+  <meta property="og:article:tag" content="image-processing"/>
+  
+  <meta property="og:article:tag" content="jpeg"/>
+  
+  <meta property="og:article:tag" content="cli"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Rust Proc Macro：builder-derive 實戰
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">
+            TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</h2>
+      <div class="post-meta">
+        <span class="post-date">February 14, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ultrahdr"><span class="label label-primary">ultrahdr</span></a>
+        
+        <a href="/tags/image-processing"><span class="label label-primary">image-processing</span></a>
+        
+        <a href="/tags/jpeg"><span class="label label-primary">jpeg</span></a>
+        
+        <a href="/tags/cli"><span class="label label-primary">cli</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-14-tilesplit/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>每次要把橫幅風景照發 Instagram，都得打開 Lightroom 手動裁切——調整裁切框、對齊、最後再匯出。於是我就寫了 <a href="https://github.com/p47t/rust-52-projects/tree/tilesplit"><code>tilesplit</code></a>，一個用 Rust 打造的小工具，專門在分割圖片的同時保留 Ultra HDR 資訊。這篇文章來聊聊 Ultra HDR 是什麼，以及這個工具背後的技術細節。</p>
+<h2 id="為什麼需要-tilesplit">為什麼需要 TileSplit？</h2>
+<p>我最主要的使用情境是<strong>把 3:2 的橫幅風景照發到 Instagram 上</strong>。</p>
+<p>雖然 Instagram 現在允許以原始比例上傳照片，但橫幅照片在動態牆上顯示得比直幅照片小很多，視覺衝擊力大打折扣。所以現在 IG 很流行「無縫滑動」的發法：把一張橫幅照片切成兩張（或更多）直幅圖，使用者左右滑的時候會有連續的視覺體驗，同時每張圖在動態牆上都能佔滿版面。但如果這張照片是 Ultra HDR 格式，用一般工具切完，HDR 就沒了——原本在 HDR 螢幕上那種亮眼的層次感，瞬間變得平淡。</p>
+<p>原因很簡單：<strong>大多數工具在處理圖片時，根本不知道 Gain Map 的存在</strong>。它們只保留了 SDR 的部分，Gain Map 直接被丟掉了。</p>
+<h2 id="什麼是-ultra-hdr">什麼是 Ultra HDR？</h2>
+<p>Ultra HDR 是 Google 在 Android 14 引入的圖片格式，本質上還是 JPEG，但多藏了一些東西。它最厲害的地方在於<strong>向後兼容</strong>。</p>
+<p>傳統的 HDR 圖片（像 10-bit HEIF 或 AVIF）在舊手機或不支援 HDR 的螢幕上，常常會顏色怪怪的或是過暗。Ultra HDR 用了一個很聰明的方法解決這個問題：</p>
+<ol>
+<li><strong>SDR 基礎圖片</strong>：本質上就是一張普通的 JPEG，任何軟體都能打開、正常顯示。</li>
+<li><strong>Gain Map（增益圖）</strong>：在 JPEG 裡面偷偷塞了一張「變亮地圖」——告訴系統每個區域可以變多亮。</li>
+<li><strong>HDR 重建</strong>：在支援 HDR 的螢幕上，系統把 SDR 圖片和 Gain Map 合在一起算，就能還原出更亮的高光和更豐富的細節。</li>
+</ol>
+<p>同一張圖片，舊手機上正常顯示，新手機上閃閃發光。</p>
+<h2 id="tilesplit-是如何工作的">TileSplit 是如何工作的？</h2>
+<p>核心目標很單純：切圖的同時，把 Ultra HDR 的資料完整保留下來。整個流程大概分四步：</p>
+<h3 id="1-偵測與解析">1. 偵測與解析</h3>
+<p>程式先用 <code>jpegli</code> 去讀輸入檔案，檢查 JPEG 裡有沒有 XMP Metadata 和 Gain Map。如果 <code>jpegli</code> 讀不出來（不同手機產生的 Ultra HDR 格式會有差異），就退回去用 Google 原生的 <code>ultrahdr</code> 解碼器做更深入的解析。</p>
+<h3 id="2-雙層解碼">2. 雙層解碼</h3>
+<p>確認是 Ultra HDR 之後，程式會把圖片拆成兩層：<strong>SDR 主圖</strong>（標準 RGB 像素）和 <strong>Gain Map</strong>（亮度增益資料）。同時提取 Metadata（像 <code>hdrgm:GainMapMin</code>、<code>hdrgm:Gamma</code> 等），這些參數決定了 SDR 和 Gain Map 怎麼合成 HDR。</p>
+<p>來看看程式碼長什麼樣子（省略了 debug logging）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">try_extract_ultrahdr_with_jpegli</span>(
+</span></span><span style="display:flex;"><span>    source_bytes: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">u8</span>],
+</span></span><span style="display:flex;"><span>    debug: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>) -&gt; Option<span style="color:#f92672">&lt;</span>(ultrahdr::GainMapMetadata, RawImage, GainMap, Option<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u8</span><span style="color:#f92672">&gt;&gt;</span>)<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 用 catch_unwind 保護 jpegli 解碼——某些損壞的 JPEG 會造成 panic
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> decoded <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> catch_unwind_quiet(AssertUnwindSafe(<span style="color:#f92672">||</span> {
+</span></span><span style="display:flex;"><span>        JpegDecoder::new()
+</span></span><span style="display:flex;"><span>            .preserve(PreserveConfig::default())
+</span></span><span style="display:flex;"><span>            .output_format(JpegPixelFormat::Rgb)
+</span></span><span style="display:flex;"><span>            .decode(source_bytes)
+</span></span><span style="display:flex;"><span>    })) {
+</span></span><span style="display:flex;"><span>        Ok(Ok(image)) <span style="color:#f92672">=&gt;</span> image,
+</span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> None,
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 從 JPEG extras 裡挖出 XMP metadata 和 Gain Map
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> extras <span style="color:#f92672">=</span> decoded.extras()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> xmp <span style="color:#f92672">=</span> extras.xmp()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (metadata, _) <span style="color:#f92672">=</span> ultrahdr::metadata::xmp::parse_xmp(xmp).ok()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> gainmap <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> extras.gainmap() {
+</span></span><span style="display:flex;"><span>        Some(gainmap) <span style="color:#f92672">=&gt;</span> gainmap.to_vec(),
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// extras 裡找不到的話，試試 MPF（Multi-Picture Format）
+</span></span></span><span style="display:flex;"><span>        None <span style="color:#f92672">=&gt;</span> extract_gainmap_jpeg_from_mpf(source_bytes, debug)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 有些手機的 XMP metadata 不完整，嘗試從 Gain Map 本身的 XMP 補齊
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> metadata <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> metadata_looks_default_or_incomplete(<span style="color:#f92672">&amp;</span>metadata) {
+</span></span><span style="display:flex;"><span>        extract_metadata_from_gainmap_xmp(<span style="color:#f92672">&amp;</span>gainmap, debug).unwrap_or(metadata)
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        metadata
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> icc_profile <span style="color:#f92672">=</span> extras.icc_profile().map(<span style="color:#f92672">|</span>icc<span style="color:#f92672">|</span> icc.to_vec());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 把像素資料包成 RawImage 結構
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sdr <span style="color:#f92672">=</span> RawImage::from_data(
+</span></span><span style="display:flex;"><span>        decoded.width, decoded.height,
+</span></span><span style="display:flex;"><span>        PixelFormat::Rgb8, ColorGamut::Bt709, ColorTransfer::Srgb,
+</span></span><span style="display:flex;"><span>        decoded.data,
+</span></span><span style="display:flex;"><span>    ).ok()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Gain Map 的 JPEG 也需要解碼成像素資料
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> gainmap <span style="color:#f92672">=</span> decode_gainmap_jpeg(<span style="color:#f92672">&amp;</span>gainmap, ColorGamut::Bt709).ok()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Some((metadata, sdr, gainmap, icc_profile))
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個值得注意的設計：</p>
+<ul>
+<li><strong><code>catch_unwind_quiet</code></strong>：jpegli 是 C 庫的封裝，遇到格式損壞可能會 panic，用 <code>catch_unwind</code> 接住避免整個程式崩潰</li>
+<li><strong>MPF fallback</strong>：有些手機（特別是早期支援 Ultra HDR 的機型）把 Gain Map 存在 JPEG 的 Multi-Picture Format 區段而非 Extras 裡，需要額外處理</li>
+<li><strong>Metadata 補齊</strong>：某些裝置產生的 XMP metadata 不完整，程式會嘗試從 Gain Map 自身的 XMP 中提取更完整的參數</li>
+</ul>
+<h3 id="3-幾何映射與分割">3. 幾何映射與分割</h3>
+<p>根據使用者要的比例（像 4:5 for Instagram），程式算出 SDR 主圖的裁剪區域。</p>
+<p>這裡有個坑：<strong>Gain Map 的解析度通常比主圖小</strong>（常見是 1/4 大小），所以不能直接拿主圖的座標去切 Gain Map。需要根據兩者的比例做精確映射，不然切出來的 HDR 重建會位置偏移，高光對不準。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">map_rect_to_gainmap</span>(
+</span></span><span style="display:flex;"><span>    rect: <span style="color:#a6e22e">Rect</span>,
+</span></span><span style="display:flex;"><span>    source_width: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    source_height: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    gainmap_width: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    gainmap_height: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>) -&gt; <span style="color:#a6e22e">Rect</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 用整數運算避免浮點誤差
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x0 <span style="color:#f92672">=</span> (rect.x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">*</span> gainmap_width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">/</span> source_width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> y0 <span style="color:#f92672">=</span> (rect.y <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">*</span> gainmap_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">/</span> source_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> right_edge <span style="color:#f92672">=</span> rect.x.saturating_add(rect.width);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bottom_edge <span style="color:#f92672">=</span> rect.y.saturating_add(rect.height);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 右下角用 ceiling division，確保不會少切到像素
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> x1 <span style="color:#f92672">=</span> div_ceil_u64(
+</span></span><span style="display:flex;"><span>        right_edge <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">*</span> gainmap_width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>        source_width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>    ) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> y1 <span style="color:#f92672">=</span> div_ceil_u64(
+</span></span><span style="display:flex;"><span>        bottom_edge <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span> <span style="color:#f92672">*</span> gainmap_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>        source_height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>    ) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 邊界保護
+</span></span></span><span style="display:flex;"><span>    x1 <span style="color:#f92672">=</span> x1.clamp(<span style="color:#ae81ff">0</span>, gainmap_width);
+</span></span><span style="display:flex;"><span>    y1 <span style="color:#f92672">=</span> y1.clamp(<span style="color:#ae81ff">0</span>, gainmap_height);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> x1 <span style="color:#f92672">&lt;=</span> x0 {
+</span></span><span style="display:flex;"><span>        x1 <span style="color:#f92672">=</span> (x0 <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>).min(gainmap_width);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> y1 <span style="color:#f92672">&lt;=</span> y0 {
+</span></span><span style="display:flex;"><span>        y1 <span style="color:#f92672">=</span> (y0 <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>).min(gainmap_height);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Rect {
+</span></span><span style="display:flex;"><span>        x: <span style="color:#a6e22e">x0</span>,
+</span></span><span style="display:flex;"><span>        y: <span style="color:#a6e22e">y0</span>,
+</span></span><span style="display:flex;"><span>        width: <span style="color:#a6e22e">x1</span>.saturating_sub(x0),
+</span></span><span style="display:flex;"><span>        height: <span style="color:#a6e22e">y1</span>.saturating_sub(y0),
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="4-編碼與重組">4. 編碼與重組</h3>
+<p>最後一步是把切好的東西重新包裝成合法的 Ultra HDR JPEG。流程是：</p>
+<ol>
+<li>把裁剪後的 Gain Map 編碼成獨立的 JPEG，並嵌入 XMP metadata</li>
+<li>用 <code>jpegli</code> 編碼 SDR 主圖，保留 ICC Color Profile</li>
+<li>手動組裝 Ultra HDR 容器：插入 XMP APP1 和 MPF APP2，再接上 Gain Map JPEG</li>
+</ol>
+<p>為什麼不用 <code>jpegli</code> 的 <code>.add_gainmap()</code> 一行搞定？因為它生成的 MPF 偏移量是錯的（用了絕對偏移而非 MPF 規格要求的相對偏移），導致 viewer 找不到 Gain Map，HDR 就失效了。所以得自己手動組裝容器。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">encode_ultrahdr_tile</span>(
+</span></span><span style="display:flex;"><span>    sdr_tile: <span style="color:#a6e22e">RawImage</span>,
+</span></span><span style="display:flex;"><span>    gainmap_tile: <span style="color:#a6e22e">GainMap</span>,
+</span></span><span style="display:flex;"><span>    metadata: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">ultrahdr</span>::GainMapMetadata,
+</span></span><span style="display:flex;"><span>    source_icc_profile: Option<span style="color:#f92672">&lt;&amp;</span>[<span style="color:#66d9ef">u8</span>]<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>) -&gt; Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u8</span><span style="color:#f92672">&gt;</span>, <span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. Gain Map 編碼成 JPEG，同時嵌入 XMP metadata
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> gainmap_jpeg <span style="color:#f92672">=</span> encode_gainmap_jpeg(<span style="color:#f92672">&amp;</span>gainmap_tile, metadata)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 編碼 SDR 主圖（不含 Gain Map，容器組裝交給 assemble_ultrahdr_jpeg）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> config <span style="color:#f92672">=</span> EncoderConfig::ycbcr(<span style="color:#66d9ef">SDR_TILE_JPEG_QUALITY</span>, ChromaSubsampling::None);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(icc_profile) <span style="color:#f92672">=</span> source_icc_profile
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>icc_profile.is_empty()
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        config <span style="color:#f92672">=</span> config.icc_profile(icc_profile.to_vec());
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (pixel_layout, pixel_data) <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> sdr_tile.format {
+</span></span><span style="display:flex;"><span>        PixelFormat::Rgb8 <span style="color:#f92672">=&gt;</span> (PixelLayout::Rgb8Srgb, Cow::Borrowed(<span style="color:#f92672">&amp;</span>sdr_tile.data)),
+</span></span><span style="display:flex;"><span>        PixelFormat::Rgba8 <span style="color:#f92672">=&gt;</span> { <span style="color:#75715e">/* RGBA → RGB 轉換 */</span> }
+</span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Err(<span style="color:#66d9ef">EXIT_IO_ERROR</span>),
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sdr_jpeg <span style="color:#f92672">=</span> <span style="color:#75715e">/* jpegli encode */</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 手動組裝 Ultra HDR 容器
+</span></span></span><span style="display:flex;"><span>    assemble_ultrahdr_jpeg(<span style="color:#f92672">&amp;</span>sdr_jpeg, <span style="color:#f92672">&amp;</span>gainmap_jpeg, metadata)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>assemble_ultrahdr_jpeg</code> 做的事：把 XMP APP1 和 MPF APP2 插到主圖裡，再把 Gain Map JPEG 接在主圖後面。MPF header 裡的偏移量必須<strong>相對於 TIFF header</strong>（<code>mpf_marker_offset + 8</code>），這個細節後面的「踩坑」章節會詳細說明。</p>
+<p>這樣輸出的每一張切片都是完整的 Ultra HDR 檔案，可以在支援的設備上獨立顯示 HDR 效果。</p>
+<h2 id="關於重新編碼與畫質">關於重新編碼與畫質</h2>
+<p>你可能會問：「重新編碼會不會讓照片變糟？」</p>
+<p>會。但可以把損失降到很低。</p>
+<p>JPEG 每次重新編碼都會因為 DCT 量化而失去一些細節。為了盡量保住畫質，<code>tilesplit</code> 做了幾件事：</p>
+<ul>
+<li><strong>用 Jpegli 編碼器</strong>：Google 開源的 <code>jpegli</code> 在同樣檔案大小下，畫質比傳統 <code>libjpeg</code> 好不少</li>
+<li><strong>高畫質設定</strong>：預設 Quality 100，在 Instagram 上基本看不出和原圖的差異</li>
+<li><strong>避免不必要的轉換</strong>：直接操作解碼後的原始像素，不做多餘的格式轉換</li>
+</ul>
+<p>技術上不是「絕對無損」——要做到無損得用 <code>jpegtran</code> 那種直接操作 DCT 係數的方式，但那要同時處理 Ultra HDR 的 Metadata 封裝會極其困難。實際用起來，<code>tilesplit</code> 產出的畫質對攝影愛好者來說完全夠用。</p>
+<h2 id="關鍵相依庫">關鍵相依庫</h2>
+<p><code>tilesplit</code> 主要靠這三個 Rust crate：</p>
+<ul>
+<li><strong><a href="https://crates.io/crates/image"><code>image</code></a></strong>：Rust 生態系最常用的圖像處理庫，負責基礎的裁剪、格式轉換和非 HDR 圖片的處理。</li>
+<li><strong><a href="https://crates.io/crates/jpegli-rs"><code>jpegli-rs</code></a></strong>：Google <code>jpegli</code> 的 Rust 封裝，壓縮率比 <code>libjpeg</code> 好，而且支援 JPEG Extras——可以讀寫嵌在 JPEG 裡的 XMP Metadata 和 Gain Map。</li>
+<li><strong><a href="https://crates.io/crates/ultrahdr-rs"><code>ultrahdr-rs</code></a></strong>：Google <code>libultrahdr</code> 的封裝，包含 Ultra HDR 的核心邏輯（Metadata 解析、SDR/HDR 轉換公式等）。遇到格式比較特殊的圖片時，靠它來兜底。它的純 Rust 子 crate <code>ultrahdr-core</code> 也用來生成 XMP APP1 marker。</li>
+</ul>
+<h2 id="為什麼選擇-rust">為什麼選擇 Rust？</h2>
+<p>Rust 剛好適合這種場景：記憶體安全（不用擔心 segfault）、執行效率接近 C++、而且 FFI 很方便——<code>libultrahdr</code> 和 <code>jpegli</code> 都是 C/C++ 的庫，Rust 可以直接呼叫再包一層安全介面。加上 <code>Result</code> 型別強制處理所有錯誤情況，遇到檔案損壞或 metadata 缺失，不會直接 crash，而是給出有意義的錯誤訊息。</p>
+<h2 id="安裝與使用">安裝與使用</h2>
+<p>如果你也有類似需求，可以直接從 GitHub 安裝：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo install --git https://github.com/p47t/rust-52-projects --branch tilesplit</span></span></code></pre></div>
+
+<p>用法很簡單：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 基本用法，自動生成 photo-left.jpg 和 photo-right.jpg</span>
+</span></span><span style="display:flex;"><span>tilesplit --input photo.jpg
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 指定輸出路徑</span>
+</span></span><span style="display:flex;"><span>tilesplit --input photo.jpg --left-output left.jpg --right-output right.jpg</span></span></code></pre></div>
+
+<p>原始碼在 <a href="https://github.com/p47t/rust-52-projects/tree/tilesplit">rust-52-projects/tilesplit</a> 上。</p>
+<h2 id="踩過的坑亮度為什麼不對">踩過的坑：亮度為什麼不對？</h2>
+<p>做完初版後，切出來的圖在 HDR 螢幕上看起來比原圖暗很多。花了不少時間 debug 才搞清楚，「把 Gain Map 塞進去」跟「讓 viewer 正確解讀」是兩回事。以下是踩過的幾個主要坑：</p>
+<h3 id="mpf-偏移量的基準點">MPF 偏移量的基準點</h3>
+<p>Ultra HDR JPEG 是兩張圖接在一起——主圖和 Gain Map。MPF (Multi-Picture Format) APP2 marker 裡有個 TIFF IFD 結構，記錄 Gain Map 的位置。關鍵是：<strong>偏移量是相對於 MPF 裡的 TIFF header</strong>，不是檔案開頭。</p>
+
+  <pre tabindex="0"><code>MPF APP2 的二進制結構：
+FF E2          ← marker (2 bytes)
+xx xx          ← length (2 bytes)
+4D 50 46 00    ← &#34;MPF\0&#34; (4 bytes)
+4D 4D 00 2A    ← TIFF header ← 偏移量從這裡算起</code></pre>
+
+<p>TIFF header 在 MPF marker 起始位置 +8 bytes 的地方。一開始用了 <code>jpegli</code> 的 <code>.add_gainmap()</code> API，發現它寫入的是絕對偏移而非相對偏移，viewer 根本找不到 Gain Map。改成手動組裝容器才修好。</p>
+<h3 id="主圖和-gain-map-都要有-xmp">主圖和 Gain Map 都要有 XMP</h3>
+<p>原本以為只要主圖的 XMP 有完整參數就行。結果拿 Lightroom 匯出的 Ultra HDR 對比——<strong>主圖的 XMP 只有 <code>hdrgm:Version=&quot;1.0&quot;</code>，完整的 <code>GainMapMin</code>、<code>GainMapMax</code>、<code>Gamma</code> 等參數全在 Gain Map JPEG 自己的 XMP 裡</strong>。</p>
+<p>這表示很多 viewer（包括 Android 的 Photos 和 Chrome）是優先從 Gain Map 的 XMP 讀取參數的。Gain Map JPEG 如果沒嵌入 XMP，viewer 可能拿不到正確的 boost 參數，畫面就是暗的。</p>
+<h3 id="rdfseq-才是標準格式">rdf:Seq 才是標準格式</h3>
+<p>Gain Map 參數是 per-channel 的（RGB 各通道可以不同），在 XMP 裡有兩種表達方式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- 逗號分隔（有些 viewer 不認） --&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;rdf:Description</span> <span style="color:#a6e22e">hdrgm:GainMapMax=</span><span style="color:#e6db74">&#34;-0.699, -0.615, -0.603&#34;</span> <span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- rdf:Seq（標準，所有 viewer 都認） --&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;hdrgm:GainMapMax&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&lt;rdf:Seq&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;rdf:li&gt;</span>-0.699220<span style="color:#f92672">&lt;/rdf:li&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;rdf:li&gt;</span>-0.614892<span style="color:#f92672">&lt;/rdf:li&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;rdf:li&gt;</span>-0.603440<span style="color:#f92672">&lt;/rdf:li&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&lt;/rdf:Seq&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/hdrgm:GainMapMax&gt;</span></span></span></code></pre></div>
+
+<p><code>ultrahdr-rs</code> crate 的 <code>generate_xmp()</code> 用的是逗號分隔格式，實測某些 viewer 會 fallback 到預設值。改成 <code>rdf:Seq</code> 格式後就正常了。</p>
+<h3 id="gain-map-品質不能省">Gain Map 品質不能省</h3>
+<p>Gain Map 每個像素代表 HDR boost 強度，套用公式大致是 <code>boost = max_boost^(pixel/255)</code>。因為是<strong>指數關係</strong>，JPEG 壓縮的量化誤差會被指數放大——pixel 值差個 5，亮度可能差 5% 以上。所以 Gain Map 一律用 quality 100 編碼，不管使用者設的 SDR 品質是多少。</p>
+<h3 id="教訓">教訓</h3>
+<p>Ultra HDR 的正確性散落在 MPF 規格、XMP schema、和各家 viewer 的實作細節裡。光看 <a href="https://www.iso.org/standard/81379.html">ISO 21496-1</a> 不夠，得拿 Lightroom、Google Photos 等軟體的實際輸出做二進制比對，才能確認哪些欄位是必要的、viewer 怎麼解析。</p>
+<h2 id="結語">結語</h2>
+<p>HDR 螢幕越來越普及，Ultra HDR 這種格式以後只會更常見。現有的圖像處理工具大多還沒跟上，<code>tilesplit</code> 算是填補了這個小空白。如果你也有保留 HDR 切圖的需求，希望這個工具能幫到你。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

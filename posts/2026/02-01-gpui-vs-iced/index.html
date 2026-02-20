@@ -1,0 +1,789 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Rust GUI 框架比較：GPUI vs Iced</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-01-gpui-vs-iced/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-01-gpui-vs-iced/"/>
+  <meta property="og:title" content="Rust GUI 框架比較：GPUI vs Iced"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-01 00:00:00 &#43;0000 UTC"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="gpui"/>
+  
+  <meta property="og:article:tag" content="iced"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            從 GPUI 計算機學習 Rust 程式設計
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/">
+            Vibe Coding 實戰：打造 AlphaGPS
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">Rust GUI 框架比較：GPUI vs Iced</h2>
+      <div class="post-meta">
+        <span class="post-date">February 1, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/gpui"><span class="label label-primary">gpui</span></a>
+        
+        <a href="/tags/iced"><span class="label label-primary">iced</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-01-gpui-vs-iced/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>最近用兩個不同的 Rust GUI 框架實作了同一個計算機專案，分別是 <a href="https://www.gpui.rs/">GPUI</a> 和 <a href="https://iced.rs/">Iced</a>。這篇文章比較兩者的架構差異和開發體驗。</p>
+<h3 id="框架背景">框架背景</h3>
+<table>
+  <thead>
+      <tr>
+          <th>框架</th>
+          <th>開發者</th>
+          <th>特色</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>GPUI</strong></td>
+          <td>Zed Industries</td>
+          <td>GPU 加速、為 Zed 編輯器打造</td>
+      </tr>
+      <tr>
+          <td><strong>Iced</strong></td>
+          <td>社群驅動</td>
+          <td>受 Elm 啟發、跨平台、純 Rust</td>
+      </tr>
+  </tbody>
+</table>
+<p>兩者都是相對新的框架，目前都還在 0.x 版本階段。</p>
+<h3 id="1-架構設計">1. 架構設計</h3>
+<h4 id="gpui物件導向--render-trait">GPUI：物件導向 + Render Trait</h4>
+<p>GPUI 採用類似 React 的元件模式，每個元件是一個 struct，透過實作 <code>Render</code> trait 來定義 UI：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">CalculatorApp</span> {
+</span></span><span style="display:flex;"><span>    input: String,
+</span></span><span style="display:flex;"><span>    result: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    engine: <span style="color:#a6e22e">Calculator</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Render <span style="color:#66d9ef">for</span> CalculatorApp {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">render</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, _window: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Window, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span>Self<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">impl</span> IntoElement {
+</span></span><span style="display:flex;"><span>        div()
+</span></span><span style="display:flex;"><span>            .flex()
+</span></span><span style="display:flex;"><span>            .flex_col()
+</span></span><span style="display:flex;"><span>            .size_full()
+</span></span><span style="display:flex;"><span>            .bg(rgb(<span style="color:#ae81ff">0x1e1e1e</span>))
+</span></span><span style="display:flex;"><span>            .child(self.render_display())
+</span></span><span style="display:flex;"><span>            .child(self.render_keypad(cx))
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="icedelm-架構-model-view-update">Iced：Elm 架構 (Model-View-Update)</h4>
+<p>Iced 採用函數式的 Elm 架構，將應用程式分為三個部分：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// Model（狀態）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">App</span> {
+</span></span><span style="display:flex;"><span>    input: String,
+</span></span><span style="display:flex;"><span>    result: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    engine: <span style="color:#a6e22e">Calculator</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Message（事件）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Message</span> {
+</span></span><span style="display:flex;"><span>    ButtonPressed(String),
+</span></span><span style="display:flex;"><span>    Clear,
+</span></span><span style="display:flex;"><span>    Evaluate,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Update（狀態轉換）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> App {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">update</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, message: <span style="color:#a6e22e">Message</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> message {
+</span></span><span style="display:flex;"><span>            Message::Clear <span style="color:#f92672">=&gt;</span> self.input.clear(),
+</span></span><span style="display:flex;"><span>            Message::Evaluate <span style="color:#f92672">=&gt;</span> { <span style="color:#75715e">/* ... */</span> }
+</span></span><span style="display:flex;"><span>            Message::ButtonPressed(s) <span style="color:#f92672">=&gt;</span> self.input.push_str(<span style="color:#f92672">&amp;</span>s),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// View（UI 描述）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> App {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">view</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Element</span><span style="color:#f92672">&lt;</span>&#39;_, Message<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">column!</span>[
+</span></span><span style="display:flex;"><span>            self.view_display(),
+</span></span><span style="display:flex;"><span>            self.view_keypad(),
+</span></span><span style="display:flex;"><span>        ].into()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>關鍵差異</strong>：GPUI 的事件處理是內嵌在 view 中的閉包，而 Iced 強制將所有事件抽象為 <code>Message</code> enum，再透過獨立的 <code>update</code> 函數處理。</p>
+<h3 id="2-事件處理">2. 事件處理</h3>
+<h4 id="gpui閉包直接修改狀態">GPUI：閉包直接修改狀態</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>div()
+</span></span><span style="display:flex;"><span>    .on_click(cx.listener(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>this, _event, _window, cx<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> label.as_str() {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;C&#34;</span> <span style="color:#f92672">=&gt;</span> this.clear(),
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;=&#34;</span> <span style="color:#f92672">=&gt;</span> this.evaluate(),
+</span></span><span style="display:flex;"><span>            other <span style="color:#f92672">=&gt;</span> this.append(other),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        cx.notify();  <span style="color:#75715e">// 手動觸發重新渲染
+</span></span></span><span style="display:flex;"><span>    }))</span></span></code></pre></div>
+
+<h4 id="icedmessage--pattern-matching">Iced：Message + Pattern Matching</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// View 中只發送 Message
+</span></span></span><span style="display:flex;"><span>button(text(<span style="color:#e6db74">&#34;C&#34;</span>))
+</span></span><span style="display:flex;"><span>    .on_press(Message::Clear)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>button(text(<span style="color:#e6db74">&#34;=&#34;</span>))
+</span></span><span style="display:flex;"><span>    .on_press(Message::Evaluate)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Update 中統一處理
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">update</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, message: <span style="color:#a6e22e">Message</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> message {
+</span></span><span style="display:flex;"><span>        Message::Clear <span style="color:#f92672">=&gt;</span> self.input.clear(),
+</span></span><span style="display:flex;"><span>        Message::Evaluate <span style="color:#f92672">=&gt;</span> { <span style="color:#75715e">/* ... */</span> }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 自動重新渲染，不需手動觸發
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>Iced 的優點</strong>：</p>
+<ul>
+<li>所有狀態變更集中在 <code>update</code> 函數，易於追蹤和測試</li>
+<li>Message enum 是可序列化的，方便實作 undo/redo 或時間旅行除錯</li>
+</ul>
+<p><strong>GPUI 的優點</strong>：</p>
+<ul>
+<li>閉包可以直接存取局部變數，程式碼更緊湊</li>
+<li>不需要為每個動作定義 Message variant</li>
+</ul>
+<h3 id="3-樣式系統">3. 樣式系統</h3>
+<h4 id="gpuitailwind-風格的-fluent-api">GPUI：Tailwind 風格的 Fluent API</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>div()
+</span></span><span style="display:flex;"><span>    .flex()
+</span></span><span style="display:flex;"><span>    .flex_col()
+</span></span><span style="display:flex;"><span>    .p_4()           <span style="color:#75715e">// padding: 16px
+</span></span></span><span style="display:flex;"><span>    .gap_3()         <span style="color:#75715e">// gap: 12px
+</span></span></span><span style="display:flex;"><span>    .bg(rgb(<span style="color:#ae81ff">0x1e1e1e</span>))
+</span></span><span style="display:flex;"><span>    .rounded_lg()
+</span></span><span style="display:flex;"><span>    .text_xl()
+</span></span><span style="display:flex;"><span>    .text_color(rgb(<span style="color:#ae81ff">0xffffff</span>))</span></span></code></pre></div>
+
+<p>這種 API 對熟悉 Tailwind CSS 的開發者非常直覺。</p>
+<h4 id="icedclosure-based-styling">Iced：Closure-based Styling</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>container(content)
+</span></span><span style="display:flex;"><span>    .padding(<span style="color:#ae81ff">16</span>)
+</span></span><span style="display:flex;"><span>    .width(Length::Fill)
+</span></span><span style="display:flex;"><span>    .style(<span style="color:#f92672">|</span>_theme<span style="color:#f92672">|</span> container::Style {
+</span></span><span style="display:flex;"><span>        background: Some(<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x2d2d2d</span>).into()),
+</span></span><span style="display:flex;"><span>        border: <span style="color:#a6e22e">iced</span>::Border {
+</span></span><span style="display:flex;"><span>            radius: <span style="color:#ae81ff">8.0.</span>into(),
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>    })</span></span></code></pre></div>
+
+<p>Iced 的樣式透過 <code>style</code> 方法傳入閉包，可以根據 theme 和 widget status 動態決定樣式。</p>
+<h4 id="按鈕樣式比較">按鈕樣式比較</h4>
+<p><strong>GPUI</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>div()
+</span></span><span style="display:flex;"><span>    .bg(rgb(<span style="color:#ae81ff">0x3c3c3c</span>))
+</span></span><span style="display:flex;"><span>    .hover(<span style="color:#f92672">|</span>style<span style="color:#f92672">|</span> style.bg(rgb(<span style="color:#ae81ff">0x4a4a4a</span>)))
+</span></span><span style="display:flex;"><span>    .rounded_md()</span></span></code></pre></div>
+
+<p><strong>Iced</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>button(content)
+</span></span><span style="display:flex;"><span>    .style(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>_theme, status<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> bg <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> status {
+</span></span><span style="display:flex;"><span>            button::Status::Hovered <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x5a5a5a</span>),
+</span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x3c3c3c</span>),
+</span></span><span style="display:flex;"><span>        };
+</span></span><span style="display:flex;"><span>        button::Style {
+</span></span><span style="display:flex;"><span>            background: Some(bg.into()),
+</span></span><span style="display:flex;"><span>            border: <span style="color:#a6e22e">iced</span>::Border { radius: <span style="color:#ae81ff">6.0.</span>into(), <span style="color:#f92672">..</span>Default::default() },
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    })</span></span></code></pre></div>
+
+<h3 id="4-主題支援">4. 主題支援</h3>
+<h4 id="gpui">GPUI</h4>
+<p>GPUI 沒有內建主題系統，需要自己定義顏色常數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">BG_DARK</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x1e1e1e</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">BG_BUTTON</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x3c3c3c</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">TEXT_PRIMARY</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0xffffff</span>;</span></span></code></pre></div>
+
+<h4 id="iced">Iced</h4>
+<p>Iced 內建多種主題，只需一行切換：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>iced::application(<span style="color:#e6db74">&#34;Calculator&#34;</span>, App::update, App::view)
+</span></span><span style="display:flex;"><span>    .theme(<span style="color:#f92672">|</span>_<span style="color:#f92672">|</span> Theme::TokyoNightStorm)  <span style="color:#75715e">// 或 Theme::Dark, Theme::Light 等
+</span></span></span><span style="display:flex;"><span>    .run()</span></span></code></pre></div>
+
+<h3 id="5-程式進入點">5. 程式進入點</h3>
+<h4 id="gpui-1">GPUI</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> app <span style="color:#f92672">=</span> Application::new();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    app.run(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>cx<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> bounds <span style="color:#f92672">=</span> Bounds::centered(None, size(px(<span style="color:#ae81ff">340.</span>), px(<span style="color:#ae81ff">480.</span>)), cx);
+</span></span><span style="display:flex;"><span>        cx.open_window(
+</span></span><span style="display:flex;"><span>            WindowOptions {
+</span></span><span style="display:flex;"><span>                window_bounds: Some(WindowBounds::Windowed(bounds)),
+</span></span><span style="display:flex;"><span>                <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">|</span>_window, cx<span style="color:#f92672">|</span> cx.new(<span style="color:#f92672">|</span>_cx<span style="color:#f92672">|</span> CalculatorApp::new()),
+</span></span><span style="display:flex;"><span>        ).expect(<span style="color:#e6db74">&#34;Failed to open window&#34;</span>);
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="iced-1">Iced</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() -&gt; <span style="color:#a6e22e">iced</span>::Result {
+</span></span><span style="display:flex;"><span>    iced::application(<span style="color:#e6db74">&#34;Iced Calculator&#34;</span>, App::update, App::view)
+</span></span><span style="display:flex;"><span>        .theme(<span style="color:#f92672">|</span>_<span style="color:#f92672">|</span> Theme::TokyoNightStorm)
+</span></span><span style="display:flex;"><span>        .window_size((<span style="color:#ae81ff">340.0</span>, <span style="color:#ae81ff">480.0</span>))
+</span></span><span style="display:flex;"><span>        .run()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>Iced 的 builder pattern 更簡潔，GPUI 則提供更多底層控制。</p>
+<h3 id="6-跨平台支援">6. 跨平台支援</h3>
+<table>
+  <thead>
+      <tr>
+          <th>平台</th>
+          <th>GPUI</th>
+          <th>Iced</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>macOS</td>
+          <td>完整支援 (Metal)</td>
+          <td>完整支援</td>
+      </tr>
+      <tr>
+          <td>Windows</td>
+          <td>實驗性</td>
+          <td>完整支援</td>
+      </tr>
+      <tr>
+          <td>Linux</td>
+          <td>支援 (Vulkan)</td>
+          <td>完整支援</td>
+      </tr>
+      <tr>
+          <td>Web</td>
+          <td>不支援</td>
+          <td>支援 (WebGPU/WebGL)</td>
+      </tr>
+  </tbody>
+</table>
+<p>Iced 在跨平台方面明顯更成熟。</p>
+<h3 id="7-程式碼行數比較">7. 程式碼行數比較</h3>
+<p>同樣的計算機功能：</p>
+<table>
+  <thead>
+      <tr>
+          <th>檔案</th>
+          <th>GPUI</th>
+          <th>Iced</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>main.rs</td>
+          <td>~250 行</td>
+          <td>~260 行</td>
+      </tr>
+      <tr>
+          <td>總計</td>
+          <td>差不多</td>
+          <td>差不多</td>
+      </tr>
+  </tbody>
+</table>
+<p>兩者的程式碼量相當，但結構不同。</p>
+<h3 id="8-編譯時間與依賴">8. 編譯時間與依賴</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># GPUI</span>
+</span></span><span style="display:flex;"><span>cargo build  <span style="color:#75715e"># ~2 分鐘，743 個 crates</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Iced</span>
+</span></span><span style="display:flex;"><span>cargo build  <span style="color:#75715e"># ~1.5 分鐘，415 個 crates</span></span></span></code></pre></div>
+
+<p>Iced 的依賴較少，編譯速度稍快。</p>
+<h3 id="選擇建議">選擇建議</h3>
+<p><strong>選擇 GPUI 如果你</strong>：</p>
+<ul>
+<li>正在為 Zed 編輯器開發插件</li>
+<li>偏好物件導向的元件設計</li>
+<li>需要極致的渲染效能</li>
+<li>主要目標平台是 macOS</li>
+</ul>
+<p><strong>選擇 Iced 如果你</strong>：</p>
+<ul>
+<li>需要跨平台支援（特別是 Web）</li>
+<li>喜歡 Elm 架構的狀態管理</li>
+<li>想要內建主題支援</li>
+<li>偏好穩定的 API（雖然都還在 0.x）</li>
+</ul>
+<h3 id="總結">總結</h3>
+<table>
+  <thead>
+      <tr>
+          <th>特性</th>
+          <th>GPUI</th>
+          <th>Iced</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>架構</td>
+          <td>物件導向 + Render</td>
+          <td>Elm (MVU)</td>
+      </tr>
+      <tr>
+          <td>樣式</td>
+          <td>Tailwind-like</td>
+          <td>Closure-based</td>
+      </tr>
+      <tr>
+          <td>主題</td>
+          <td>手動定義</td>
+          <td>內建多種</td>
+      </tr>
+      <tr>
+          <td>事件</td>
+          <td>閉包 + <code>cx.notify()</code></td>
+          <td>Message enum</td>
+      </tr>
+      <tr>
+          <td>跨平台</td>
+          <td>有限</td>
+          <td>優秀</td>
+      </tr>
+      <tr>
+          <td>成熟度</td>
+          <td>較新</td>
+          <td>較成熟</td>
+      </tr>
+  </tbody>
+</table>
+<p>兩個框架都展示了 Rust GUI 開發的可能性。GPUI 代表了高效能、GPU 加速的方向，而 Iced 則體現了函數式、跨平台的設計理念。選擇哪個取決於你的專案需求和個人偏好。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/gpui-calculator">gpui-calculator 原始碼</a></li>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/iced-calculator">iced-calculator 原始碼</a></li>
+<li><a href="https://www.gpui.rs/">GPUI 官方網站</a></li>
+<li><a href="https://iced.rs/">Iced 官方網站</a></li>
+<li><a href="https://book.iced.rs/">Iced Book</a></li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

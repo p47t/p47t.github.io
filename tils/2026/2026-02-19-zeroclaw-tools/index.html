@@ -1,0 +1,784 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>zeroclaw 如何設計 Tool 的抽象層</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/"/>
+  <meta property="og:title" content="zeroclaw 如何設計 Tool 的抽象層"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-19 12:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="agent"/>
+  
+  <meta property="og:article:tag" content="design-patterns"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">205</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">23</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">11</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">4</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            zeroclaw 如何設計 Channel 的抽象層
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/">
+            zeroclaw 如何設計 Memory 的抽象層
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">zeroclaw 如何設計 Tool 的抽象層</h2>
+      <div class="post-meta">
+        <span class="post-date">February 19, 2026</span>
+        <a href="/tils"><span class="label label-info">TIL</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/agent"><span class="label label-primary">agent</span></a>
+        
+        <a href="/tags/design-patterns"><span class="label label-primary">design-patterns</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>zeroclaw</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-memory/">zeroclaw 如何設計 Memory 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-tools/">zeroclaw 如何設計 Tool 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-channel/">zeroclaw 如何設計 Channel 的抽象層</a></li>
+  
+    <li>Feb 19, 2026 - <a href="https://blog.simplypatrick.com/tils/2026/2026-02-19-zeroclaw-llm-provider/">zeroclaw 如何設計 LLM Provider 的抽象層</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>      
+      <div class="post-content">
+        <blockquote>
+<p>zeroclaw 的 Tool 是 agent 採取行動的核心機制——執行 shell 指令、讀寫檔案、瀏覽網頁、呼叫 HTTP API、操作記憶體、甚至把任務委派給另一個 sub-agent。目前實作了 30+ 種工具。這篇記錄它如何用一個乾淨的 trait 統一所有工具，以及工具的組裝、dispatch、schema 正規化、安全注入等設計。</p>
+</blockquote>
+<h2 id="tool-trait四個必填一個免費"><code>Tool</code> Trait：四個必填，一個免費</h2>
+<p>整個抽象的核心在 <code>src/tools/traits.rs</code>，只有四個方法是必須實作的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[async_trait]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> Tool: Send <span style="color:#f92672">+</span> Sync {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">name</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">description</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parameters_schema</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">serde_json</span>::Value;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">execute</span>(<span style="color:#f92672">&amp;</span>self, args: <span style="color:#a6e22e">serde_json</span>::Value) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>ToolResult<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 預設實作：把前三個方法組裝成 ToolSpec，免費附贈
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">spec</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">ToolSpec</span> {
+</span></span><span style="display:flex;"><span>        ToolSpec {
+</span></span><span style="display:flex;"><span>            name: <span style="color:#a6e22e">self</span>.name().to_string(),
+</span></span><span style="display:flex;"><span>            description: <span style="color:#a6e22e">self</span>.description().to_string(),
+</span></span><span style="display:flex;"><span>            parameters: <span style="color:#a6e22e">self</span>.parameters_schema(),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個設計決策值得注意：</p>
+<ul>
+<li><strong><code>Send + Sync</code></strong>：讓工具可以存進 <code>Arc&lt;dyn Tool&gt;</code> 並在 thread 之間共享，必要條件。</li>
+<li><strong><code>async fn execute</code></strong>：所有工具都可能有 I/O，統一用 async，不需要區分同步/非同步工具。</li>
+<li><strong>參數是 <code>serde_json::Value</code></strong>：不是每個工具一個強型別 struct，而是執行時從 JSON 取值。省去了大量 boilerplate，代價是錯誤在執行時才出現，而不是編譯時。</li>
+<li><strong><code>spec()</code> 是預設方法</strong>：把 <code>name</code>、<code>description</code>、<code>parameters_schema</code> 這三個方法的結果組裝成 <code>ToolSpec</code>，新增工具完全不需要自己實作這個。</li>
+</ul>
+<hr>
+<h2 id="核心資料型別">核心資料型別</h2>
+<p>三個關鍵型別：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 每次執行的回傳值
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ToolResult</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> success: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> output: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> error: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 送給 LLM 描述「這個工具能做什麼」的規格書
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ToolSpec</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> name: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> description: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> parameters: <span style="color:#a6e22e">serde_json</span>::Value,  <span style="color:#75715e">// JSON Schema 物件
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>注意 <code>execute</code> 的錯誤處理設計：<strong>正常的執行失敗</strong>（找不到檔案、路徑不允許）用 <code>ToolResult { success: false, error: Some(...) }</code> 回傳；只有程式本身的 bug 或不可恢復的錯誤才回傳 <code>anyhow::Result::Err</code>。這讓 agent loop 可以把執行失敗的結果繼續送給 LLM 讓它決定下一步，而不是直接炸掉整個流程。</p>
+<p>參數 schema 是用 <code>serde_json::json!()</code> 手寫 JSON Schema，沒有 proc macro 或 derive：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parameters_schema</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">serde_json</span>::Value {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">json!</span>({
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;object&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;properties&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;command&#34;</span>: {
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;string&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;The shell command to execute&#34;</span>
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;approved&#34;</span>: {
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;boolean&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;Set true to explicitly approve medium/high-risk commands&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;default&#34;</span>: <span style="color:#a6e22e">false</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;required&#34;</span>: [<span style="color:#e6db74">&#34;command&#34;</span>]
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="工具的組裝工廠函式不靠反射">工具的組裝：工廠函式，不靠反射</h2>
+<p>工具不是自動發現的，而是在 <code>src/tools/mod.rs</code> 裡用工廠函式顯式組裝：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 最小集合，給測試和簡單 agent 用
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">default_tools</span>(security: <span style="color:#a6e22e">Arc</span><span style="color:#f92672">&lt;</span>SecurityPolicy<span style="color:#f92672">&gt;</span>) -&gt; Vec<span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">vec!</span>[
+</span></span><span style="display:flex;"><span>        Box::new(ShellTool::new(security.clone(), runtime)),
+</span></span><span style="display:flex;"><span>        Box::new(FileReadTool::new(security.clone())),
+</span></span><span style="display:flex;"><span>        Box::new(FileWriteTool::new(security)),
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 完整工具集，根據設定條件啟用
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">all_tools_with_runtime</span>(config, security, runtime, memory, <span style="color:#f92672">..</span>.) -&gt; Vec<span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> tools: Vec<span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;&gt;</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[
+</span></span><span style="display:flex;"><span>        Box::new(ShellTool::new(<span style="color:#f92672">..</span>.)),
+</span></span><span style="display:flex;"><span>        Box::new(FileReadTool::new(<span style="color:#f92672">..</span>.)),
+</span></span><span style="display:flex;"><span>        Box::new(CronAddTool::new(<span style="color:#f92672">..</span>.)),
+</span></span><span style="display:flex;"><span>        Box::new(MemoryStoreTool::new(<span style="color:#f92672">..</span>.)),
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>    ];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 條件啟用：設定決定工具集，不是全部預設開啟
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> browser_config.enabled {
+</span></span><span style="display:flex;"><span>        tools.push(Box::new(BrowserTool::new_with_backend(<span style="color:#f92672">..</span>.)));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> http_config.enabled {
+</span></span><span style="display:flex;"><span>        tools.push(Box::new(HttpRequestTool::new(<span style="color:#f92672">..</span>.)));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>agents.is_empty() {
+</span></span><span style="display:flex;"><span>        tools.push(Box::new(DelegateTool::new(agents, <span style="color:#f92672">..</span>.)));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    tools
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這是<strong>工廠/建構器模式</strong>——沒有反射、沒有 <code>inventory</code> 這類 compile-time 自動收集 crate、沒有 <code>#[register_tool]</code> 巨集。好處是依賴關係一目了然，壞處是每加一個工具都要手動登記。對這個規模的 codebase 來說是對的取捨。</p>
+<hr>
+<h2 id="兩種-dispatch-模式">兩種 Dispatch 模式</h2>
+<p>工具的呼叫有兩條路，取決於 LLM provider 是否支援原生 function calling：</p>
+
+  <div class="mermaid">
+    graph TD
+    A[LLM 回應] --> B{支援原生 Tool Calling?}
+    B -->|是| C[NativeToolDispatcher]
+    B -->|否| D[XmlToolDispatcher]
+    C -->|解析 API 的 tool_calls 欄位| E[ParsedToolCall]
+    D -->|解析文字裡的 XML tag| E
+    E --> F["find_tool(name)"]
+    F --> G["tool.execute(args)"]
+    G --> H[ToolResult]
+    H --> I[轉成 ConversationMessage]
+    I --> J[送回 LLM 繼續下一輪]
+  </div>
+
+<p><code>NativeToolDispatcher</code> 用於 Anthropic、OpenAI、Gemini——這些 provider 會在 API response 裡回傳結構化的工具呼叫，直接解析即可。</p>
+<p><code>XmlToolDispatcher</code> 用於不支援原生 function calling 的 LLM。此時 zeroclaw 把工具的說明注入到 system prompt，要求 LLM 用特定格式回應：</p>
+
+  <pre tabindex="0"><code>&lt;tool_call&gt;{&#34;name&#34;: &#34;shell&#34;, &#34;arguments&#34;: {&#34;command&#34;: &#34;ls -la&#34;}}&lt;/tool_call&gt;</code></pre>
+
+<p>然後用字串解析從回應文字裡抓出這些 XML tag。</p>
+<p>Agent loop 查找工具的方式很簡單：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">find_tool</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span>(tools: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">&#39;a</span> [Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;</span>], name: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Option<span style="color:#f92672">&lt;&amp;</span><span style="color:#a6e22e">&#39;a</span> <span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    tools.iter().find(<span style="color:#f92672">|</span>t<span style="color:#f92672">|</span> t.name() <span style="color:#f92672">==</span> name).map(<span style="color:#f92672">|</span>t<span style="color:#f92672">|</span> t.as_ref())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>送給 LLM 的格式（以 OpenAI 為例）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">tools_to_openai_format</span>(tools: <span style="color:#66d9ef">&amp;</span>[Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> Tool<span style="color:#f92672">&gt;</span>]) -&gt; Vec<span style="color:#f92672">&lt;</span>serde_json::Value<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    tools.iter().map(<span style="color:#f92672">|</span>tool<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">json!</span>({
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;function&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;function&#34;</span>: {
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;name&#34;</span>: <span style="color:#a6e22e">tool</span>.name(),
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;description&#34;</span>: <span style="color:#a6e22e">tool</span>.description(),
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;parameters&#34;</span>: <span style="color:#a6e22e">tool</span>.parameters_schema()
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        })
+</span></span><span style="display:flex;"><span>    }).collect()
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h2 id="json-schema-的跨-provider-正規化">JSON Schema 的跨 Provider 正規化</h2>
+<p>各家 LLM API 對 JSON Schema 的支援程度差異很大，尤其是 Gemini——它會拒絕很多標準的 JSON Schema 關鍵字。<code>src/tools/schema.rs</code> 的 <code>SchemaCleanr</code> 專門處理這件事：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">CleaningStrategy</span> {
+</span></span><span style="display:flex;"><span>    Gemini,       <span style="color:#75715e">// 最嚴格
+</span></span></span><span style="display:flex;"><span>    Anthropic,
+</span></span><span style="display:flex;"><span>    OpenAI,       <span style="color:#75715e">// 最寬鬆
+</span></span></span><span style="display:flex;"><span>    Conservative, <span style="color:#75715e">// 保守策略，適合未知 provider
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SchemaCleanr</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> SchemaCleanr {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">clean_for_gemini</span>(schema: <span style="color:#a6e22e">Value</span>) -&gt; <span style="color:#a6e22e">Value</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">clean_for_anthropic</span>(schema: <span style="color:#a6e22e">Value</span>) -&gt; <span style="color:#a6e22e">Value</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">clean_for_openai</span>(schema: <span style="color:#a6e22e">Value</span>) -&gt; <span style="color:#a6e22e">Value</span> { <span style="color:#f92672">..</span>. }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>各策略的主要差異：</p>
+<table>
+  <thead>
+      <tr>
+          <th>關鍵字</th>
+          <th>Gemini</th>
+          <th>Anthropic</th>
+          <th>OpenAI</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>minLength</code>、<code>pattern</code></td>
+          <td>移除</td>
+          <td>移除</td>
+          <td>保留</td>
+      </tr>
+      <tr>
+          <td><code>$ref</code></td>
+          <td>內聯展開</td>
+          <td>內聯展開</td>
+          <td>保留</td>
+      </tr>
+      <tr>
+          <td><code>additionalProperties</code></td>
+          <td>移除</td>
+          <td>保留</td>
+          <td>保留</td>
+      </tr>
+      <tr>
+          <td><code>anyOf</code>/<code>oneOf</code></td>
+          <td>攤平為第一個型別</td>
+          <td>保留</td>
+          <td>保留</td>
+      </tr>
+      <tr>
+          <td><code>nullable</code></td>
+          <td>轉換格式</td>
+          <td>保留</td>
+          <td>保留</td>
+      </tr>
+  </tbody>
+</table>
+<p>Gemini 甚至連 <code>anyOf: [type: string, type: null]</code>（nullable 的常見寫法）都要特別轉換。這些邊緣情況全部藏在 <code>SchemaCleanr</code> 裡，工具本身完全不需要知道。</p>
+<hr>
+<h2 id="安全性是注入的不是全域的">安全性是注入的，不是全域的</h2>
+<p>zeroclaw 的安全設計有個核心原則：<strong>安全策略是建構時注入的，不是全域的靜態狀態</strong>。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 每個有 I/O 的工具都在建構時收到 SecurityPolicy
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">FileReadTool</span> {
+</span></span><span style="display:flex;"><span>    security: <span style="color:#a6e22e">Arc</span><span style="color:#f92672">&lt;</span>SecurityPolicy<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ShellTool</span> {
+</span></span><span style="display:flex;"><span>    security: <span style="color:#a6e22e">Arc</span><span style="color:#f92672">&lt;</span>SecurityPolicy<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    runtime: <span style="color:#a6e22e">Arc</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> RuntimeAdapter<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">execute</span>(<span style="color:#f92672">&amp;</span>self, args: <span style="color:#a6e22e">serde_json</span>::Value) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>ToolResult<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> path <span style="color:#f92672">=</span> args.get(<span style="color:#e6db74">&#34;path&#34;</span>).and_then(<span style="color:#f92672">|</span>v<span style="color:#f92672">|</span> v.as_str())<span style="color:#f92672">..</span>.;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 安全檢查在 execute 裡，繞不過去
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>self.security.is_path_allowed(path) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ok(ToolResult { success: <span style="color:#a6e22e">false</span>, error: Some(<span style="color:#e6db74">&#34;Path not allowed&#34;</span>.into()), <span style="color:#f92672">..</span>. });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 繼續執行...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>SecurityPolicy</code> 強制執行工作區沙盒（防止讀寫工作目錄以外的路徑）、自主等級（ReadOnly、Supervised、Full）、rate limiting 和指令白名單。</p>
+<p>Supervised 模式下還有 <code>ApprovalManager</code>，在執行高風險工具前暫停等待使用者確認：</p>
+
+  <pre tabindex="0"><code>[zeroclaw] Tool: shell
+Command: rm -rf /tmp/build
+[y]es / [n]o / [a]lways: _</code></pre>
+
+<p>選 <code>always</code> 之後，這個指令會被加進 session allowlist，下次遇到同樣的指令就不再詢問。</p>
+<hr>
+<h2 id="有趣的具體工具">有趣的具體工具</h2>
+<h3 id="delegatetool動態-schema-的工具">DelegateTool：動態 Schema 的工具</h3>
+<p><code>DelegateTool</code> 是最有趣的工具之一——它的 <code>parameters_schema()</code> 是<strong>執行時動態生成</strong>的，而不是靜態寫死的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">DelegateTool</span> {
+</span></span><span style="display:flex;"><span>    agents: <span style="color:#a6e22e">Arc</span><span style="color:#f92672">&lt;</span>HashMap<span style="color:#f92672">&lt;</span>String, DelegateAgentConfig<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    depth: <span style="color:#66d9ef">u32</span>,  <span style="color:#75715e">// 防止無限委派遞迴
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parameters_schema</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">serde_json</span>::Value {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 根據目前設定的 agent 列表動態生成 schema
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> agent_names: Vec<span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">str</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> self.agents.keys().map(<span style="color:#f92672">|</span>s<span style="color:#f92672">|</span> s.as_str()).collect();
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">json!</span>({
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;properties&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;agent&#34;</span>: {
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;string&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;description&#34;</span>: <span style="color:#a6e22e">format</span><span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;Which agent to delegate to. Available: {}&#34;</span>,
+</span></span><span style="display:flex;"><span>                                       agent_names.join(<span style="color:#e6db74">&#34;, &#34;</span>))
+</span></span><span style="display:flex;"><span>            },
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;task&#34;</span>: { <span style="color:#e6db74">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;string&#34;</span>, <span style="color:#e6db74">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;Task description for the agent&#34;</span> }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">execute</span>(<span style="color:#f92672">&amp;</span>self, args: <span style="color:#a6e22e">serde_json</span>::Value) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>ToolResult<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.depth <span style="color:#f92672">&gt;=</span> <span style="color:#66d9ef">MAX_DELEGATION_DEPTH</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ok(ToolResult { success: <span style="color:#a6e22e">false</span>, error: Some(<span style="color:#e6db74">&#34;Max delegation depth reached&#34;</span>), <span style="color:#f92672">..</span>. });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> provider <span style="color:#f92672">=</span> create_provider(<span style="color:#f92672">&amp;</span>agent_config.provider, <span style="color:#f92672">..</span>.)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 120 秒 timeout，防止 sub-agent 跑太久
+</span></span></span><span style="display:flex;"><span>    tokio::time::timeout(Duration::from_secs(<span style="color:#ae81ff">120</span>),
+</span></span><span style="display:flex;"><span>        provider.chat_with_system(<span style="color:#f92672">..</span>.)).<span style="color:#66d9ef">await</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>depth</code> 欄位防止 agent A 委派給 agent B、B 又委派回 A 的無限迴圈。</p>
+<h3 id="shelltool乾淨的執行環境">ShellTool：乾淨的執行環境</h3>
+<p><code>ShellTool</code> 的安全設計很謹慎——它<strong>清空整個環境變數</strong>，只保留一個安全白名單：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">execute</span>(<span style="color:#f92672">&amp;</span>self, args: <span style="color:#a6e22e">serde_json</span>::Value) -&gt; <span style="color:#a6e22e">anyhow</span>::Result<span style="color:#f92672">&lt;</span>ToolResult<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 清除所有環境變數，防止 API key 洩漏給子行程
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> cmd <span style="color:#f92672">=</span> Command::new(<span style="color:#e6db74">&#34;sh&#34;</span>);
+</span></span><span style="display:flex;"><span>    cmd.env_clear();  <span style="color:#75715e">// 全部清空
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> key <span style="color:#66d9ef">in</span> <span style="color:#66d9ef">SAFE_ENV_VARS</span> {  <span style="color:#75715e">// 只加回白名單裡的
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Ok(val) <span style="color:#f92672">=</span> std::env::var(key) {
+</span></span><span style="display:flex;"><span>            cmd.env(key, val);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 60 秒 timeout，截斷輸出到 1MB
+</span></span></span><span style="display:flex;"><span>    tokio::time::timeout(Duration::from_secs(<span style="color:#ae81ff">60</span>), cmd.output()).<span style="color:#66d9ef">await</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>SAFE_ENV_VARS</code> 包含 <code>PATH</code>、<code>HOME</code>、<code>LANG</code> 這類系統必要的變數，但不包含任何 <code>*_API_KEY</code>、<code>*_SECRET</code> 這類敏感變數。即使主行程有這些環境變數，子行程也看不到。</p>
+<hr>
+<h2 id="完整的-tool-call-流程">完整的 Tool Call 流程</h2>
+
+  <div class="mermaid">
+    sequenceDiagram
+    participant U as 使用者
+    participant AL as Agent Loop
+    participant P as Provider
+    participant LLM as LLM API
+    participant T as Tool
+
+    U->>AL: 送出訊息
+    AL->>P: tools_to_provider_format(specs)
+    P->>LLM: chat request + tool definitions
+    LLM-->>P: 回應（含 tool calls）
+    P-->>AL: ChatResponse { tool_calls: [...] }
+    loop 最多 10 次
+        AL->>AL: find_tool(name)
+        AL->>AL: ApprovalManager（Supervised 模式）
+        AL->>T: execute(args)
+        T->>T: SecurityPolicy 檢查
+        T-->>AL: ToolResult
+        AL->>P: 把結果轉成 ConversationMessage
+        P->>LLM: 繼續對話（含工具執行結果）
+        LLM-->>P: 新回應
+        alt 不再呼叫工具
+            P-->>AL: 純文字回應
+            AL-->>U: 最終答覆
+        end
+    end
+  </div>
+
+<p>整個流程最多迴圈 10 次（<code>DEFAULT_MAX_TOOL_ITERATIONS</code>）。超過就強制停止，防止 agent 無止境地呼叫工具。</p>
+<hr>
+<h2 id="小結">小結</h2>
+<p>zeroclaw 的 Tool 設計幾個值得借鑑的地方：</p>
+<ul>
+<li><strong>最小介面</strong>：四個必填方法，<code>spec()</code> 是免費的預設實作，新增工具的門檻很低。</li>
+<li><strong>工廠函式，不靠反射</strong>：顯式組裝、條件啟用，依賴關係清晰，沒有魔法。</li>
+<li><strong>兩種 Dispatch 兼顧</strong>：原生 API tool calling 和 XML prompt 注入都支援，對各種 LLM 都能用。</li>
+<li><strong>Schema 正規化是一等公民</strong>：<code>SchemaCleanr</code> 把各家 API 的奇葩限制集中處理，工具本身不受污染。</li>
+<li><strong>安全是建構時注入的</strong>：<code>SecurityPolicy</code> 在 <code>new()</code> 時就進去了，不是全域狀態，也無法繞過。</li>
+<li><strong>執行失敗不等於程式崩潰</strong>：<code>ToolResult { success: false }</code> 讓 agent 可以從失敗中學習，繼續嘗試。</li>
+</ul>
+
+      </div>
+      <hr>
+      
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>
