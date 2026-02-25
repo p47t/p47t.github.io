@@ -1,0 +1,872 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/"/>
+  <meta property="og:title" content="用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-02-23 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="iced"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="async"/>
+  
+  <meta property="og:article:tag" content="trait-object"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">206</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/observability">observability <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/opentelemetry">opentelemetry <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/prometheus">prometheus <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">26</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/trait-object">trait-object <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">12</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h2 class="post-title">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</h2>
+      <div class="post-meta">
+        <span class="post-date">February 23, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/iced"><span class="label label-primary">iced</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/async"><span class="label label-primary">async</span></a>
+        
+        <a href="/tags/trait-object"><span class="label label-primary">trait-object</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/02-23-comic-viewer/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>最近用 <a href="https://iced.rs/">Iced</a> 實作了一個漫畫閱讀器——能打開 CBZ、CB7 格式的漫畫壓縮檔，支援鍵盤翻頁，還有背景預載機制讓翻頁幾乎感受不到延遲。</p>
+<p>這篇文章聚焦在幾個有趣的設計決策：trait object 搭配 <code>Arc</code> 的多格式抽象、以「距離」驅逐的 LRU 快取、以及 <code>smol::unblock</code> 把同步 I/O 推進執行緒池的技巧。</p>
+<h3 id="專案概述">專案概述</h3>
+<p><code>comic-viewer</code> 支援的功能：</p>
+<ul>
+<li>開啟 CBZ（ZIP）、CB7（7-Zip）格式漫畫檔</li>
+<li>CBR（RAR）格式顯示友善的錯誤訊息（需外部函式庫，目前為 stub）</li>
+<li>鍵盤翻頁（方向鍵、PageUp/PageDown）</li>
+<li>頁面快取（最多 7 頁），快取命中時翻頁瞬間完成</li>
+<li>背景預載：目前頁面前後各 2 頁</li>
+<li>Tokyo Night Storm 主題的深色 UI</li>
+</ul>
+<p>專案結構很清楚：</p>
+
+  <pre tabindex="0"><code>comic-viewer/
+├── Cargo.toml
+└── src/
+    ├── main.rs          # Iced 應用程式主體（App、Message、PageCache）
+    └── reader/
+        ├── mod.rs       # ComicReader trait + open() 工廠函式
+        ├── cbz.rs       # ZIP 格式實作
+        ├── cb7.rs       # 7-Zip 格式實作
+        └── cbr.rs       # RAR stub</code></pre>
+
+<h3 id="1-arcdyn-comicreader多格式的-trait-object-抽象">1. <code>Arc&lt;dyn ComicReader&gt;</code>：多格式的 Trait Object 抽象</h3>
+<p>不同壓縮格式的解壓縮方式差異很大，但對應用程式來說只需要「給我第 N 頁的圖片」。<code>ComicReader</code> trait 完美地封裝這個差異：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> ComicReader: Send <span style="color:#f92672">+</span> Sync <span style="color:#f92672">+</span> std::fmt::Debug {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">title</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">page_count</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">extract_page</span>(<span style="color:#f92672">&amp;</span>self, index: <span style="color:#66d9ef">usize</span>) -&gt; Result<span style="color:#f92672">&lt;</span>iced::widget::image::Handle, String<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個設計細節值得注意：</p>
+<ul>
+<li><strong><code>Send + Sync</code></strong>：因為 <code>App.comic</code> 是 <code>Option&lt;Arc&lt;dyn ComicReader&gt;&gt;</code>，而 <code>Arc&lt;T&gt;</code> 要求 <code>T: Send + Sync</code> 才能跨執行緒共享。背景預載任務會 clone 這個 <code>Arc</code> 並在 smol 的執行緒池跑，所以必須是 <code>Sync</code></li>
+<li><strong><code>&amp;self</code> 而非 <code>&amp;mut self</code></strong>：<code>extract_page</code> 刻意設計成不可變借用，這樣就能從多個執行緒同時呼叫，不需要加鎖</li>
+<li><strong><code>std::fmt::Debug</code></strong>：讓整個 <code>App</code> struct 可以 derive <code>Debug</code>（Iced 有時會要求）</li>
+</ul>
+<p>工廠函式用副檔名做格式分派：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span>(path: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> ComicReader<span style="color:#f92672">&gt;</span>, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> path
+</span></span><span style="display:flex;"><span>        .extension()
+</span></span><span style="display:flex;"><span>        .and_then(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_str())
+</span></span><span style="display:flex;"><span>        .map(<span style="color:#66d9ef">str</span>::to_lowercase)
+</span></span><span style="display:flex;"><span>        .as_deref()
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        Some(<span style="color:#e6db74">&#34;cbz&#34;</span>) <span style="color:#f92672">=&gt;</span> cbz::CbzReader::open(path).map(<span style="color:#f92672">|</span>r<span style="color:#f92672">|</span> Box::new(r) <span style="color:#66d9ef">as</span> Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> ComicReader<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>        Some(<span style="color:#e6db74">&#34;cbr&#34;</span>) <span style="color:#f92672">=&gt;</span> cbr::CbrReader::open(path).map(<span style="color:#f92672">|</span>r<span style="color:#f92672">|</span> Box::new(r) <span style="color:#66d9ef">as</span> Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> ComicReader<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>        Some(<span style="color:#e6db74">&#34;cb7&#34;</span>) <span style="color:#f92672">=&gt;</span> cb7::Cb7Reader::open(path).map(<span style="color:#f92672">|</span>r<span style="color:#f92672">|</span> Box::new(r) <span style="color:#66d9ef">as</span> Box<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> ComicReader<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>        ext <span style="color:#f92672">=&gt;</span> Err(<span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;Unsupported format: </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, ext.unwrap_or(<span style="color:#e6db74">&#34;none&#34;</span>))),
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>呼叫端接到 <code>Box&lt;dyn ComicReader&gt;</code> 後立刻包進 <code>Arc::from(box)</code>，讓後續可以廉價 clone 給多個背景任務：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>Task::perform(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> { smol::unblock(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> reader::open(<span style="color:#f92672">&amp;</span>path).map(Arc::from)).<span style="color:#66d9ef">await</span> },
+</span></span><span style="display:flex;"><span>    Message::ComicLoaded,
+</span></span><span style="display:flex;"><span>)</span></span></code></pre></div>
+
+<p><code>Arc::from(box)</code> 把 <code>Box&lt;dyn ComicReader&gt;</code> 轉成 <code>Arc&lt;dyn ComicReader&gt;</code>——這個轉換是零成本的，只是改變了「誰擁有這塊記憶體的所有權計數器」。</p>
+<h3 id="2-cbz-與-cb7-的不同解壓策略">2. CBZ 與 CB7 的不同解壓策略</h3>
+<p>ZIP 和 7-Zip 的壓縮原理不同，導致兩種 reader 的實作策略截然不同。</p>
+<h4 id="cbzzip隨機存取按需解壓">CBZ（ZIP）：隨機存取，按需解壓</h4>
+<p>ZIP 格式的每個檔案是獨立壓縮的，可以不看前面的 entry 直接跳到任意 entry 開始解壓。<code>CbzReader</code> 利用這個特性，只在記憶體中保留整份 <code>.cbz</code> 的原始位元組，每次 <code>extract_page</code> 再用 <code>Cursor</code> 包起來重新開一個 <code>ZipArchive</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">CbzReader</span> {
+</span></span><span style="display:flex;"><span>    title: String,
+</span></span><span style="display:flex;"><span>    pages: Vec<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,      <span style="color:#75715e">// 排序後的圖片檔名列表
+</span></span></span><span style="display:flex;"><span>    archive_bytes: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u8</span><span style="color:#f92672">&gt;</span>,  <span style="color:#75715e">// 整份 .cbz 的原始位元組
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> ComicReader <span style="color:#66d9ef">for</span> CbzReader {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">extract_page</span>(<span style="color:#f92672">&amp;</span>self, index: <span style="color:#66d9ef">usize</span>) -&gt; Result<span style="color:#f92672">&lt;</span>image::Handle, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> filename <span style="color:#f92672">=</span> self.pages.get(index)
+</span></span><span style="display:flex;"><span>            .ok_or_else(<span style="color:#f92672">||</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;Page index </span><span style="color:#e6db74">{index}</span><span style="color:#e6db74"> out of bounds&#34;</span>))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> cursor <span style="color:#f92672">=</span> std::io::Cursor::new(<span style="color:#f92672">&amp;</span>self.archive_bytes);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> archive <span style="color:#f92672">=</span> zip::ZipArchive::new(cursor).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_string())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> file <span style="color:#f92672">=</span> archive.by_name(filename).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_string())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> bytes <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span>        file.read_to_end(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> bytes).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_string())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        Ok(image::Handle::from_bytes(bytes))
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>每次 <code>extract_page</code> 都重新建立 <code>ZipArchive</code>，看似浪費，但因為 <code>ZipArchive::new</code> 只是 parse ZIP 的 central directory（在檔案末尾，很快），解壓單頁的成本主要在 inflate，整體還是很快的。</p>
+<h4 id="cb77-zip區塊壓縮開檔時全部解壓">CB7（7-Zip）：區塊壓縮，開檔時全部解壓</h4>
+<p>7-Zip 使用 LZMA/LZMA2 區塊壓縮，整個壓縮包的資料是相互依賴的，沒辦法隨機存取單一 entry。<code>Cb7Reader</code> 乾脆在 <code>open()</code> 時一次解壓全部圖片，把位元組存進記憶體：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Cb7Reader</span> {
+</span></span><span style="display:flex;"><span>    title: String,
+</span></span><span style="display:flex;"><span>    pages: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u8</span><span style="color:#f92672">&gt;&gt;</span>,  <span style="color:#75715e">// 每頁的原始圖片位元組，開檔時全部解壓好
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Cb7Reader {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span>(path: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Self, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> reader <span style="color:#f92672">=</span> SevenZReader::open(path, Password::empty())
+</span></span><span style="display:flex;"><span>            .map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_string())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> entries: Vec<span style="color:#f92672">&lt;</span>(String, Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u8</span><span style="color:#f92672">&gt;</span>)<span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span>        reader.for_each_entries(<span style="color:#f92672">|</span>entry, reader<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> entry.is_directory() <span style="color:#f92672">||</span> <span style="color:#f92672">!</span><span style="color:#66d9ef">super</span>::is_image_file(entry.name()) {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> Ok(<span style="color:#66d9ef">true</span>); <span style="color:#75715e">// 跳過，繼續
+</span></span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> bytes <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span>            reader.read_to_end(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> bytes).map_err(sevenz_rust::Error::from)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            entries.push((entry.name().to_owned(), bytes));
+</span></span><span style="display:flex;"><span>            Ok(<span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>        }).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> e.to_string())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        entries.sort_by(<span style="color:#f92672">|</span>(a, _), (b, _)<span style="color:#f92672">|</span> a.cmp(b));
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>開檔比 CBZ 慢（要解壓全部內容），但 <code>extract_page</code> 就只是 <code>.clone()</code> 一個 <code>Vec&lt;u8&gt;</code>，非常快。</p>
+<p>這是一個典型的「把開銷前移」設計：把慢的動作（解壓縮）移到啟動時，換取後續每次存取都接近零成本。</p>
+<h4 id="cbrrar誠實的-stub">CBR（RAR）：誠實的 Stub</h4>
+<p>RAR 格式需要 <code>unrar</code> native library，不是純 Rust 可以輕鬆搞定的。<code>CbrReader</code> 選擇一個直白但很務實的做法：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> CbrReader {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open</span>(_path: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Self, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        Err(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;CBR (RAR) format is not yet supported. </span><span style="color:#ae81ff">\</span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">             Consider converting to CBZ using Calibre or 7-Zip.&#34;</span>
+</span></span><span style="display:flex;"><span>                .to_string(),
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>在 <code>open()</code> 時就立刻回傳清楚的錯誤和建議，不讓使用者走到一半才踩雷。這樣的 stub 還有個好處：整個程式的型別系統是完整的，未來只需要填充 <code>CbrReader::open</code> 的實作就好，其餘不用改。</p>
+<h3 id="3-以距離驅逐的-lru-快取">3. 以「距離」驅逐的 LRU 快取</h3>
+<p>傳統 LRU 快取驅逐最久未使用的項目，但對漫畫閱讀器來說「最久未使用」不是最好的策略——你更想保留目前頁面周圍的頁面，而不是剛才看完的頁面。</p>
+<p><code>PageCache</code> 改用「距離目前頁面最遠的項目優先驅逐」：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">CACHE_CAPACITY</span>: <span style="color:#66d9ef">usize</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">7</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">PageCache</span> {
+</span></span><span style="display:flex;"><span>    entries: <span style="color:#a6e22e">HashMap</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">usize</span>, image::Handle<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> PageCache {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">insert</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, index: <span style="color:#66d9ef">usize</span>, handle: <span style="color:#a6e22e">image</span>::Handle, current_page: <span style="color:#66d9ef">usize</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>self.entries.contains_key(<span style="color:#f92672">&amp;</span>index) <span style="color:#f92672">&amp;&amp;</span> self.entries.len() <span style="color:#f92672">&gt;=</span> <span style="color:#66d9ef">CACHE_CAPACITY</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 找距離 current_page 最遠的 key
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> evict <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>self
+</span></span><span style="display:flex;"><span>                .entries
+</span></span><span style="display:flex;"><span>                .keys()
+</span></span><span style="display:flex;"><span>                .max_by_key(<span style="color:#f92672">|&amp;&amp;</span>k<span style="color:#f92672">|</span> k.abs_diff(current_page))
+</span></span><span style="display:flex;"><span>                .expect(<span style="color:#e6db74">&#34;cache is non-empty&#34;</span>);
+</span></span><span style="display:flex;"><span>            self.entries.remove(<span style="color:#f92672">&amp;</span>evict);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        self.entries.insert(index, handle);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>usize::abs_diff</code> 計算兩個 <code>usize</code> 的絕對差值，不需要轉成有號整數，在 Rust 1.60 加入標準函式庫。</p>
+<p>有一個借用技巧值得注意：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// usize is Copy，所以可以在可變借用前先把 key 複製出來
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> evict <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>self
+</span></span><span style="display:flex;"><span>    .entries
+</span></span><span style="display:flex;"><span>    .keys()
+</span></span><span style="display:flex;"><span>    .max_by_key(<span style="color:#f92672">|&amp;&amp;</span>k<span style="color:#f92672">|</span> k.abs_diff(current_page))
+</span></span><span style="display:flex;"><span>    .expect(<span style="color:#e6db74">&#34;cache is non-empty&#34;</span>);
+</span></span><span style="display:flex;"><span>self.entries.remove(<span style="color:#f92672">&amp;</span>evict);  <span style="color:#75715e">// 這裡才開始可變借用
+</span></span></span></code></pre></div>
+
+<p>如果寫成 <code>let evict_ref = self.entries.keys().max_by_key(...)</code> 然後直接傳給 <code>remove</code>，借用檢查器會拒絕——因為 <code>keys()</code> 返回的 iterator 持有對 <code>self.entries</code> 的不可變借用，而 <code>remove</code> 需要可變借用。提前 <code>*</code> 解引用並把 <code>usize</code>（Copy 型別）複製出來，借用就在那一行結束了。</p>
+<p>為什麼 capacity 選 7？前後各 2 頁（4 頁）加上目前頁面（1 頁）= 5，多留 2 頁緩衝，讓快速翻頁時舊頁面還在快取裡。</p>
+<p>持有 <code>image::Handle</code> 的好處是：Iced 會把解碼後的圖片上傳到 GPU 紋理，而 <code>Handle</code> 是對那份紋理的引用（Arc 語義）。只要 <code>Handle</code> 活著，GPU 上的資料就不會被回收——快取命中時翻頁是真的零解碼。</p>
+<h3 id="4-iced-的-mvu-架構與-task-系統">4. Iced 的 MVU 架構與 Task 系統</h3>
+<p>Iced 採用 Elm 架構（Model-View-Update，MVU）。整個應用程式的運作流程是：</p>
+
+  <div class="mermaid">
+    graph LR
+    A[用戶操作 / 事件] -->|產生| B[Message]
+    B -->|傳入| C[update 函式]
+    C -->|修改| D[App 狀態]
+    C -->|回傳| E[Task]
+    E -->|完成後產生| B
+    D -->|傳入| F[view 函式]
+    F -->|產生| G[Element UI 樹]
+    G -->|渲染到螢幕| A
+  </div>
+
+<p><code>Message</code> enum 是所有事件的完整清單：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Message</span> {
+</span></span><span style="display:flex;"><span>    OpenFile,
+</span></span><span style="display:flex;"><span>    FileSelected(Option<span style="color:#f92672">&lt;</span>PathBuf<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>    ComicLoaded(Result<span style="color:#f92672">&lt;</span>Arc<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">dyn</span> reader::ComicReader<span style="color:#f92672">&gt;</span>, String<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>    NextPage,
+</span></span><span style="display:flex;"><span>    PrevPage,
+</span></span><span style="display:flex;"><span>    PagePreloaded(<span style="color:#66d9ef">usize</span>, Option<span style="color:#f92672">&lt;</span>image::Handle<span style="color:#f92672">&gt;</span>),
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>Task&lt;Message&gt;</code> 是 Iced 的非同步工作單元。<code>update</code> 函式回傳 <code>Task</code>，Iced 的 runtime 會執行它，完成後把結果包成 <code>Message</code> 再餵回 <code>update</code>。這讓狀態轉換邏輯永遠是同步、純粹的，而非同步副作用完全由 <code>Task</code> 處理。</p>
+<p>開檔的流程就是兩個 <code>Task</code> 串接：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 第一步：呼叫原生對話框
+</span></span></span><span style="display:flex;"><span>Message::OpenFile <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    Task::perform(
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">async</span> {
+</span></span><span style="display:flex;"><span>            rfd::AsyncFileDialog::new()
+</span></span><span style="display:flex;"><span>                .add_filter(<span style="color:#e6db74">&#34;Comic Book Archive&#34;</span>, <span style="color:#f92672">&amp;</span>[<span style="color:#e6db74">&#34;cbz&#34;</span>, <span style="color:#e6db74">&#34;cbr&#34;</span>, <span style="color:#e6db74">&#34;cb7&#34;</span>])
+</span></span><span style="display:flex;"><span>                .pick_file()
+</span></span><span style="display:flex;"><span>                .<span style="color:#66d9ef">await</span>
+</span></span><span style="display:flex;"><span>                .map(<span style="color:#f92672">|</span>f<span style="color:#f92672">|</span> f.path().to_owned())
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        Message::FileSelected,  <span style="color:#75715e">// 完成後產生 FileSelected(Option&lt;PathBuf&gt;)
+</span></span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 第二步：在執行緒池解壓縮並建立 Reader
+</span></span></span><span style="display:flex;"><span>Message::FileSelected(Some(path)) <span style="color:#f92672">=&gt;</span> Task::perform(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> { smol::unblock(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> reader::open(<span style="color:#f92672">&amp;</span>path).map(Arc::from)).<span style="color:#66d9ef">await</span> },
+</span></span><span style="display:flex;"><span>    Message::ComicLoaded,  <span style="color:#75715e">// 完成後產生 ComicLoaded(Result&lt;Arc&lt;...&gt;, String&gt;)
+</span></span></span><span style="display:flex;"><span>),</span></span></code></pre></div>
+
+<h3 id="5-smolunblock把同步-io-推進執行緒池">5. <code>smol::unblock</code>：把同步 I/O 推進執行緒池</h3>
+<p>Iced 的 async runtime 是基於 <code>futures-executor</code>（smol 生態系），<strong>不是</strong> Tokio——從 <code>Cargo.lock</code> 可以確認整個依賴樹裡根本沒有 <code>tokio</code>。但不管底層是哪套 executor，async 執行緒都不適合跑耗時的同步運算（如解壓縮）。如果直接在 async task 裡呼叫 <code>zip::ZipArchive::new()</code>，會阻塞整個執行緒，造成 UI 卡頓。</p>
+<p><code>smol::unblock</code> 是解法：把一個同步的閉包包起來，丟進 smol 的阻塞執行緒池（blocking thread pool）跑，並回傳一個 <code>Future</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 背景預載的單頁提取
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> comic <span style="color:#f92672">=</span> Arc::clone(comic);
+</span></span><span style="display:flex;"><span>Task::perform(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> handle <span style="color:#f92672">=</span> smol::unblock(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> comic.extract_page(idx).ok()).<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>        (idx, handle)
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">|</span>(idx, handle)<span style="color:#f92672">|</span> Message::PagePreloaded(idx, handle),
+</span></span><span style="display:flex;"><span>)</span></span></code></pre></div>
+
+<p><code>smol::unblock</code> 的原理很直觀：它維護一個獨立的執行緒池，專門用來跑阻塞工作。<code>move ||</code> 閉包在那個執行緒上同步執行，<code>.await</code> 等它完成，結果就像一個普通的 <code>Future</code>。</p>
+<p>這裡 <code>Arc::clone(comic)</code> 非常關鍵——每個預載任務需要獨立持有對 <code>ComicReader</code> 的引用，才能在自己的執行緒上呼叫 <code>extract_page</code>，而且這份 clone 是 <code>O(1)</code> 的引用計數遞增，不是深複製。</p>
+<h3 id="6-預載窗口與-taskbatch">6. 預載窗口與 <code>Task::batch</code></h3>
+<p><code>preload_adjacent</code> 計算出需要預載的頁面集合，然後用 <code>Task::batch</code> 同時啟動所有任務：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">preload_adjacent</span>(<span style="color:#f92672">&amp;</span>self, around: <span style="color:#66d9ef">usize</span>) -&gt; <span style="color:#a6e22e">Task</span><span style="color:#f92672">&lt;</span>Message<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> Some(comic) <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>self.comic <span style="color:#66d9ef">else</span> { <span style="color:#66d9ef">return</span> Task::none(); };
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> page_count <span style="color:#f92672">=</span> comic.page_count();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> start <span style="color:#f92672">=</span> around.saturating_sub(<span style="color:#66d9ef">PRELOAD_LOOKAHEAD</span>);  <span style="color:#75715e">// 避免 usize 下溢
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> end <span style="color:#f92672">=</span> (around <span style="color:#f92672">+</span> <span style="color:#66d9ef">PRELOAD_LOOKAHEAD</span>).min(page_count <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> candidates: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> (start<span style="color:#f92672">..=</span>end)
+</span></span><span style="display:flex;"><span>        .filter(<span style="color:#f92672">|&amp;</span>i<span style="color:#f92672">|</span> i <span style="color:#f92672">!=</span> around <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>self.page_cache.contains(i))
+</span></span><span style="display:flex;"><span>        .collect();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> candidates.is_empty() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Task::none();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> tasks: Vec<span style="color:#f92672">&lt;</span>Task<span style="color:#f92672">&lt;</span>Message<span style="color:#f92672">&gt;&gt;</span> <span style="color:#f92672">=</span> candidates
+</span></span><span style="display:flex;"><span>        .into_iter()
+</span></span><span style="display:flex;"><span>        .map(<span style="color:#f92672">|</span>idx<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> comic <span style="color:#f92672">=</span> Arc::clone(comic);
+</span></span><span style="display:flex;"><span>            Task::perform(
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">move</span> {
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">let</span> handle <span style="color:#f92672">=</span> smol::unblock(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> comic.extract_page(idx).ok()).<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>                    (idx, handle)
+</span></span><span style="display:flex;"><span>                },
+</span></span><span style="display:flex;"><span>                <span style="color:#f92672">|</span>(idx, handle)<span style="color:#f92672">|</span> Message::PagePreloaded(idx, handle),
+</span></span><span style="display:flex;"><span>            )
+</span></span><span style="display:flex;"><span>        })
+</span></span><span style="display:flex;"><span>        .collect();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Task::batch(tasks)  <span style="color:#75715e">// 並行啟動所有預載任務
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>saturating_sub</code> 是個小細節：<code>around</code> 是 <code>usize</code>，如果 <code>around &lt; PRELOAD_LOOKAHEAD</code> 直接相減會 panic（或在 debug 模式 panic，release 模式則 wrap around）。<code>saturating_sub</code> 讓結果最低為 0，不需要額外的 <code>if around &gt;= PRELOAD_LOOKAHEAD</code> 判斷。</p>
+<p><code>Task::batch</code> 把多個 <code>Task</code> 打包成一個，Iced 會並行執行它們。這意味著如果需要預載頁面 4 和頁面 6，兩個解壓縮任務會同時在執行緒池跑，而不是串行。</p>
+<h3 id="7-on_press_maybe條件式按鈕啟用">7. <code>on_press_maybe</code>：條件式按鈕啟用</h3>
+<p>Iced 提供了一個很方便的 API 來處理「條件式可按」的按鈕：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> can_prev <span style="color:#f92672">=</span> self.current_page <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> can_next <span style="color:#f92672">=</span> self
+</span></span><span style="display:flex;"><span>    .comic
+</span></span><span style="display:flex;"><span>    .as_ref()
+</span></span><span style="display:flex;"><span>    .is_some_and(<span style="color:#f92672">|</span>c<span style="color:#f92672">|</span> self.current_page <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;</span> c.page_count());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> prev_btn <span style="color:#f92672">=</span> button(text(<span style="color:#e6db74">&#34;◄ Previous&#34;</span>).size(<span style="color:#ae81ff">14</span>))
+</span></span><span style="display:flex;"><span>    .on_press_maybe((has_comic <span style="color:#f92672">&amp;&amp;</span> can_prev).then_some(Message::PrevPage));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> next_btn <span style="color:#f92672">=</span> button(text(<span style="color:#e6db74">&#34;Next ►&#34;</span>).size(<span style="color:#ae81ff">14</span>))
+</span></span><span style="display:flex;"><span>    .on_press_maybe((has_comic <span style="color:#f92672">&amp;&amp;</span> can_next).then_some(Message::NextPage));</span></span></code></pre></div>
+
+<p><code>on_press_maybe</code> 接受 <code>Option&lt;Message&gt;</code>：<code>Some(msg)</code> 代表按鈕可按，<code>None</code> 代表禁用。搭配 <code>bool::then_some</code>（<code>true</code> 回傳 <code>Some(value)</code>，<code>false</code> 回傳 <code>None</code>），可以非常簡潔地表達「有符合條件才能按」。</p>
+<p>禁用狀態的視覺樣式也透過 <code>nav_button_style</code> 函式裡的 <code>button::Status::Disabled</code> 分支處理：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">nav_button_style</span>(_theme: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Theme</span>, status: <span style="color:#a6e22e">button</span>::Status) -&gt; <span style="color:#a6e22e">button</span>::Style {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bg <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> status {
+</span></span><span style="display:flex;"><span>        button::Status::Hovered <span style="color:#f92672">|</span> button::Status::Pressed <span style="color:#f92672">=&gt;</span> iced::<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x565f89</span>),
+</span></span><span style="display:flex;"><span>        button::Status::Disabled <span style="color:#f92672">=&gt;</span> iced::<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x292e42</span>),  <span style="color:#75715e">// 暗色，表示禁用
+</span></span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> iced::<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x414868</span>),
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> text_color <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> status {
+</span></span><span style="display:flex;"><span>        button::Status::Disabled <span style="color:#f92672">=&gt;</span> iced::<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0x3d4168</span>),  <span style="color:#75715e">// 文字也變暗
+</span></span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> iced::<span style="color:#a6e22e">color!</span>(<span style="color:#ae81ff">0xc0caf5</span>),
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="8-subscription鍵盤事件的全域監聽">8. Subscription：鍵盤事件的全域監聽</h3>
+<p><code>Subscription</code> 是 Iced 中持續監聽某個事件來源的機制，不同於 <code>Task</code>（一次性任務），<code>Subscription</code> 會在應用程式整個生命週期都保持活躍。</p>
+<p>鍵盤翻頁用 <code>iced::keyboard::on_key_press</code> 建立訂閱：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">subscription</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">Subscription</span><span style="color:#f92672">&lt;</span>Message<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    iced::keyboard::on_key_press(<span style="color:#f92672">|</span>key, _modifiers<span style="color:#f92672">|</span> <span style="color:#66d9ef">match</span> key.as_ref() {
+</span></span><span style="display:flex;"><span>        iced::keyboard::Key::Named(Named::ArrowRight)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">|</span> iced::keyboard::Key::Named(Named::PageDown) <span style="color:#f92672">=&gt;</span> Some(Message::NextPage),
+</span></span><span style="display:flex;"><span>        iced::keyboard::Key::Named(Named::ArrowLeft)
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">|</span> iced::keyboard::Key::Named(Named::PageUp) <span style="color:#f92672">=&gt;</span> Some(Message::PrevPage),
+</span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> None,
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>閉包接受按鍵和修飾鍵，回傳 <code>Option&lt;Message&gt;</code>：<code>Some(msg)</code> 代表這個按鍵要觸發對應的 message，<code>None</code> 代表忽略。這讓翻頁鍵（方向鍵 + PageUp/PageDown）不需要點擊按鈕就能使用，閱讀體驗更自然。</p>
+<p><code>key.as_ref()</code> 是必要的——<code>iced::keyboard::Key</code> 包含 owned 的字元資料，<code>.as_ref()</code> 轉成借用版本才能做 pattern matching 而不移動所有權。</p>
+<h3 id="總結">總結</h3>
+<table>
+  <thead>
+      <tr>
+          <th>概念</th>
+          <th>在專案中的應用</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>Arc&lt;dyn Trait&gt;</code></td>
+          <td><code>ComicReader</code> 跨執行緒共享，零成本 clone 給預載任務</td>
+      </tr>
+      <tr>
+          <td><code>Send + Sync</code> bound</td>
+          <td>確保 trait object 可安全跨執行緒使用</td>
+      </tr>
+      <tr>
+          <td><code>&amp;self</code> on trait method</td>
+          <td>允許多執行緒並發呼叫 <code>extract_page</code>，不需鎖</td>
+      </tr>
+      <tr>
+          <td>按需解壓 vs 全量預載</td>
+          <td>ZIP 隨機存取 vs 7-Zip 區塊壓縮，各自最佳策略</td>
+      </tr>
+      <tr>
+          <td>距離驅逐快取</td>
+          <td>比傳統 LRU 更適合線性翻頁場景</td>
+      </tr>
+      <tr>
+          <td><code>abs_diff</code> + Copy 借用技巧</td>
+          <td>規避借用檢查器限制的慣用寫法</td>
+      </tr>
+      <tr>
+          <td><code>Task</code> + <code>Task::batch</code></td>
+          <td>Iced 的非同步副作用模型，並行預載</td>
+      </tr>
+      <tr>
+          <td><code>smol::unblock</code></td>
+          <td>把同步阻塞 I/O 推進獨立執行緒池</td>
+      </tr>
+      <tr>
+          <td><code>on_press_maybe</code></td>
+          <td>條件式按鈕啟用，搭配 <code>then_some</code> 很簡潔</td>
+      </tr>
+      <tr>
+          <td><code>Subscription</code></td>
+          <td>全域鍵盤事件監聽，生命週期同整個應用程式</td>
+      </tr>
+  </tbody>
+</table>
+<p>漫畫閱讀器是一個很好的 Rust GUI 練習專案：需要處理多種檔案格式（trait object 的最佳用武之地）、需要快取和預載（資料結構設計）、需要在不卡 UI 的前提下做 I/O（非同步設計）。如果你正在學 Iced 的 MVU 架構，這個專案的規模剛好——不會太小而沒有學習點，也不會大到難以消化。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/comic-viewer">comic-viewer 原始碼</a> - 本文範例的完整程式碼</li>
+<li><a href="https://iced.rs/">Iced 官方網站</a> - Rust 跨平台 GUI 框架</li>
+<li><a href="https://book.iced.rs/">Iced Book</a> - Iced 架構深入說明</li>
+<li><a href="https://docs.rs/smol">smol 文件</a> - 輕量 async runtime，<code>smol::unblock</code> 出自這裡</li>
+<li><a href="https://docs.rs/zip">zip crate</a> - Rust ZIP 格式讀寫</li>
+<li><a href="https://docs.rs/sevenz-rust">sevenz-rust crate</a> - Rust 7-Zip 格式支援</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

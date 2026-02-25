@@ -1,0 +1,155 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/kotlin/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2018-02-14 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Kotlin Coroutines and Threads</title>
+      <link>https://blog.simplypatrick.com/posts/2018/02-14-kotlin-coroutines-and-threads/</link>
+      <pubDate>Wed, 14 Feb 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/02-14-kotlin-coroutines-and-threads/</guid>
+      <description>&lt;h3 id=&#34;coroutine-跟-thread-的關係&#34;&gt;Coroutine 跟 thread 的關係&lt;/h3&gt;
+&lt;p&gt;Coroutine 通常可以理解成輕量化的 thread，但實際運作還是需要被排程到作業系統層級的 thread，然後再被排程到某個 CPU來執行：&lt;/p&gt;
+&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR6ZVOirpUEhDxVjbJJgJiSzTdXsvn5IXRjTh8oqZ4JoHg04JhqsU6vTjjCK_BVvwdbIky5oYDzjMWI/pub?w=398&amp;amp;h=284&#34;&gt;
+&lt;p&gt;相對於 thread，使用 coroutine 的好處是， coroutine 之間的切換快速，需要耗用的系統資源也比較小。&lt;/p&gt;
+&lt;h3 id=&#34;coroutine-如何排程&#34;&gt;Coroutine 如何排程？&lt;/h3&gt;
+&lt;p&gt;Kotlin 的 coroutine 會被分派到那個 thread 是由呼叫 coroutine builder 時提供的 &lt;code&gt;CoroutineContext&lt;/code&gt; 參數來決定。&lt;/p&gt;
+&lt;p&gt;透過觀察這個&lt;a href=&#34;https://github.com/yinghau76/kotlin-playground/blob/29bb2f7a5385047bcd1a9b0303d2cb70f1f2dd7e/app/src/main/java/com/simplypatrick/android/coroutines/CoroutineContextActivity.kt#L7&#34;&gt;範例&lt;/a&gt;的輸出，我們可以了解不同 &lt;code&gt;CoroutineContext&lt;/code&gt; 的行為：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineContextActivity&lt;/span&gt; : ConsoleActivity() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;onCreate&lt;/span&gt;(savedInstanceState: Bundle?) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;super&lt;/span&gt;.onCreate(savedInstanceState)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Begin onCreate&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        launch(UI) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Begin launch(UI)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;10_000&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;End launch(UI)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        launch(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Begin launch(CommonPool)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;10_000&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;End launch(CommonPool)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        launch(Unconfined) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Begin launch(Unconfined)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;10_000&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;End launch(Unconfined)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        launch(newSingleThreadContext(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;MyOwnThread&amp;#34;&lt;/span&gt;)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Begin launch(newSingleThreadContext)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;10_000&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;End launch(newSingleThreadContext)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        logThread(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;End onCreate&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;logThread&lt;/span&gt;(msg: String) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$msg&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${Thread.currentThread().name}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;結果：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;1:48:50:866 (   1) Begin onCreate: main
+1:48:50:937 (   1) Begin launch(Unconfined): main
+1:48:50:938 (1719) Begin launch(CommonPool): ForkJoinPool.commonPool-worker-2
+1:48:50:967 (   1) End onCreate: main
+1:48:50:968 (1721) Begin launch(newSingleThreadContext): MyOwnThread
+1:48:51:015 (   1) Begin launch(UI): main
+1:49:00:971 (1721) End launch(newSingleThreadContext): MyOwnThread
+1:49:00:973 (1720) End launch(Unconfined): kotlinx.coroutines.DefaultExecutor
+1:49:00:980 (1724) End launch(CommonPool): ForkJoinPool.commonPool-worker-1
+1:49:01:016 (   1) End launch(UI): main&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;心得：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Unconfined&lt;/code&gt; 在 suspend 之前會是由 calling thread 直接執行，suspend 之後則是用 DefaultExecutor thread 來執行。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CommonPool&lt;/code&gt; 會是由 common thread pool 裡面的 thread 來執行，suspend 前後被分配的 thread 有可能不同。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;UI&lt;/code&gt; 只能在 main thread 上執行，並且因為是依賴 Android Looper 來實現的，coroutine 會在 onCreate 結束後才被執行到。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;newSingleThreadContext&lt;/code&gt; 會由新產生的 thread 來執行，因爲創建新的 thread 需要一點時間，coroutine 是在 onCreate 結束後才被呼叫到。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這樣的設計主要有兩個優點：一來提供彈性讓使用者根據使用情境決定要使用那些 thread，二來提供擴充性讓使用者可以設計不一樣的 thread dispatching strategy。&lt;/p&gt;
+&lt;p&gt;如果想要掌握更進階的 coroutine 用法，&lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#coroutine-context-and-dispatchers&#34;&gt;Coroutine context and dispatchers&lt;/a&gt; 是很不錯的使用指南。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Kotlin Coroutine API</title>
+      <link>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</link>
+      <pubDate>Tue, 13 Feb 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</guid>
+      <description>&lt;h3 id=&#34;kotlin-coroutine-的架構&#34;&gt;Kotlin Coroutine 的架構&lt;/h3&gt;
+&lt;p&gt;Kotlin 從 1.1 版開始實驗性地支援 coroutine，主要的目標是簡化非同步編程的複雜度。&lt;a href=&#34;https://www.kotlindevelopment.com/deep-dive-coroutines/&#34;&gt;Diving deep into Kotlin Coroutines&lt;/a&gt; 解釋了 coroutine 跟一般常用的 callback 及目前蠻多人在用的 reactive 模式有何不同。&lt;/p&gt;
+&lt;p&gt;由於目前 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines&#34;&gt;kotlinx-coroutines-core&lt;/a&gt; 的實現包含了不同抽象程度的 API，初學者建議可以用下面這張圖來學習如何使用 Kotlin coroutine：&lt;/p&gt;
+&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR70Re48nVLUrBy7crWv4oBTGeDsWKAYmYz2zFCb0NZCnUwd7vmh2LZFsJs9bgeBrLjs7oRrwV_rDQD/pub?w=360&amp;amp;h=284&#34;&gt;
+&lt;h3 id=&#34;範例分析&#34;&gt;範例分析&lt;/h3&gt;
+&lt;p&gt;套用下面這個&lt;a href=&#34;https://proandroiddev.com/approaching-kotlin-coroutines-an-extensive-feature-concurrent-programming-in-kotlin-eaaa19b003d2&#34;&gt;範例&lt;/a&gt;來理解:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sendEmail&lt;/span&gt;(r: String, msg: String): Boolean { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;2000&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sent &amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$msg&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39; to &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$r&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;getReceiverAddressFromDatabase&lt;/span&gt;(): String { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;1000&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;coroutine@kotlin.org&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sendEmailSuspending&lt;/span&gt;(): Boolean { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; msg = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;500&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;The message content&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; recipient = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        getReceiverAddressFromDatabase()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Waiting for email data&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; sendStatus = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sendEmail(recipient.await(), msg.await()) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; sendStatus.await()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;(args: Array&amp;lt;String&amp;gt;) = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; runBlocking(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; job = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; launch(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sendEmailSuspending()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Email sent successfully.&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    job.join() &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Finished&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;其中：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;runBlocking&lt;/code&gt;, &lt;code&gt;launch&lt;/code&gt;, 及 &lt;code&gt;async&lt;/code&gt; 是最常被使用的 coroutine builder。&lt;/li&gt;
+&lt;li&gt;coroutine builder 後面跟著的就是我們撰寫的 suspending lambda，可以視為 coroutine 的進入點。&lt;/li&gt;
+&lt;li&gt;通常在 suspending lambda 裡會再呼叫其他 suspending function，例如 &lt;code&gt;sendEmailSuspending&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;delay&lt;/code&gt;, &lt;code&gt;Job.join&lt;/code&gt;, &lt;code&gt;Deferred.await&lt;/code&gt; 則是用來&lt;strong&gt;等待&lt;/strong&gt;的 high-level API。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;high-level-api&#34;&gt;High-level API&lt;/h3&gt;
+&lt;p&gt;範例中的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#concurrent-using-async&#34;&gt;async/await&lt;/a&gt; 並不是目前唯一支援的 concurrency pattern，目前看到正在開發中的還有：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Golang 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#channels&#34;&gt;channel/select&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Python 的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#generators-api-in-kotlincoroutines&#34;&gt;generator/yield&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Erlang 或 Scala 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#actors&#34;&gt;Actor&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Java 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/tree/master/reactive/kotlinx-coroutines-reactor&#34;&gt;Reactor&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;low-level-api&#34;&gt;Low-level API&lt;/h3&gt;
+&lt;p&gt;所有的 coroutine 機制都是基於底層的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#low-level-api-kotlincoroutines&#34;&gt;low-level API&lt;/a&gt; 來實現的。之後有時間的話會再研究並分享 high-level API 是如何用 low-level API 來實現的。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

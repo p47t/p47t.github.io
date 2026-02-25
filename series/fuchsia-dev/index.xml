@@ -1,0 +1,127 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/series/fuchsia-dev/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2019-06-06 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Setup Fuchsia Rust Development on macOS</title>
+      <link>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</link>
+      <pubDate>Thu, 06 Jun 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/06-06-setup-fuchsia-rust-dev/</guid>
+      <description>&lt;p&gt;基本上照著官方的指引 &lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/docs/development/languages/rust/editors.md&#34;&gt;Rust Editor Configuration&lt;/a&gt;，設置 Fuchsia OS 開發的 Rust 開發環境主要就兩個步驟:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;設定編輯器使用 Rust 的 Language Server (&lt;code&gt;RLS&lt;/code&gt;)&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;產生-cargotoml&#34;&gt;產生 &lt;code&gt;Cargo.toml&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;很簡單，就是用 &lt;code&gt;fx gen-cargo //garnet/foo/path/to/target:label&lt;/code&gt; 產生對應的 &lt;code&gt;Cargo.toml&lt;/code&gt;。例如 &lt;code&gt;fx gen-cargo //garnet/bin/log_listener:bin&lt;/code&gt; 會產生 &lt;code&gt;/garnet/bin/log_listener/Cargo.toml&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;設定-rls&#34;&gt;設定 RLS&lt;/h3&gt;
+&lt;p&gt;官方文檔提到要先把 Fuchsia 自帶的 Rust 連結到 rustup，並且設成預設的 toolchain:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ rustup toolchain link fuchsia /&amp;lt;your Fuchsia root&amp;gt;/buildtools/&amp;lt;platform&amp;gt;/rust
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ rustup default fuchsia&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;我是有做第一步，但第二步我比較持保留態度，之後試過似乎不做也沒影響，我會建議跳過這一步。&lt;/p&gt;
+&lt;h4 id=&#34;vim&#34;&gt;Vim&lt;/h4&gt;
+&lt;p&gt;跟 C++ 類似，只是 Language Server 我們必須從 &lt;code&gt;clangd&lt;/code&gt; 換成 &lt;code&gt;RLS&lt;/code&gt;，所以可以在 Vim 裡用 &lt;code&gt;:CocInstall coc-rls&lt;/code&gt; 來安裝 &lt;a href=&#34;https://github.com/neoclide/coc-rls&#34;&gt;coc-rls&lt;/a&gt; extension，如果你系統之前就有裝過 RLS 的話，在 Vim 裡打開對應的目錄就會有 code completion 的功能了。&lt;/p&gt;
+&lt;p&gt;如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，可以用 &lt;code&gt;:CocConfig&lt;/code&gt; 把下列設定加進去:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.target&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;x86_64-fuchsia&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.target_dir&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;/&amp;lt;your Fuchsia root&amp;gt;/out/cargo_target&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.unstable_features&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.rlsPath&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;/&amp;lt;your Fuchsia root&amp;gt;/buildtools/&amp;lt;platform&amp;gt;/rust/bin/rls&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.disableRustup&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;// Some optional settings that may help:
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.goto_def_racer_fallback&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.logToFile&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;visual-studio-code&#34;&gt;Visual Studio Code&lt;/h4&gt;
+&lt;p&gt;VSCode 則是需要安裝 &lt;a href=&#34;https://marketplace.visualstudio.com/items?itemName=rust-lang.rust&#34;&gt;Rust (rls)&lt;/a&gt; 這個 plugin。同樣如果你的系統沒有 RLS 或你覺得用 Fuchsia 自帶的 Rust toolchain 比較保險，加入下列的設定到 VS Code 裡：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.target&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;x86_64-fuchsia&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.target_dir&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;/&amp;lt;your Fuchsia root&amp;gt;/out/cargo_target&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.unstable_features&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.rlsPath&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;/&amp;lt;your Fuchsia root&amp;gt;/buildtools/&amp;lt;platform&amp;gt;/rust/bin/rls&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.disableRustup&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;// Some optional settings that may help:
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust.goto_def_racer_fallback&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rust-client.logToFile&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Setup Fuchsia C&#43;&#43; Development on macOS</title>
+      <link>https://blog.simplypatrick.com/posts/2019/06-05-setup-fuchsia-c&#43;&#43;-dev/</link>
+      <pubDate>Wed, 05 Jun 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/06-05-setup-fuchsia-c&#43;&#43;-dev/</guid>
+      <description>&lt;h2 id=&#34;關於-fuchsia&#34;&gt;關於 Fuchsia&lt;/h2&gt;
+&lt;p&gt;Fuchsia 是 Google 開發中的新作業系統，它的底層原始碼可以到 &lt;a href=&#34;https://fuchsia.googlesource.com&#34;&gt;https://fuchsia.googlesource.com&lt;/a&gt; 公開下載。雖然 Google 對外宣稱 Fuchsia 是個實驗性質的專案，但蠻多人認為它有潛力成為 Google 的大一統 OS，慢慢取代掉 Android 或 Chrome OS，姑且不論這是否會發生，對於喜歡研究系統軟體或嵌入式軟體技術的開發人員，Fuchsia 可以讓你一窺如何打造一個現代化的 OS。&lt;/p&gt;
+&lt;h2 id=&#34;fuchsia-的開發環境&#34;&gt;Fuchsia 的開發環境&lt;/h2&gt;
+&lt;p&gt;目前 Fuchsia OS 可以在 Linux 或 macOS 上編譯，這篇主要是分享在 macOS 上建置 C++ 的 OS 開發環境的經驗，包括:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;基本的編輯器 (Vim 及 Visual Studio Code) 設置&lt;/li&gt;
+&lt;li&gt;Code completion 的設置&lt;/li&gt;
+&lt;li&gt;使用 &lt;a href=&#34;https://direnv.net/&#34;&gt;direnv&lt;/a&gt; 來實現設置自動化&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;編輯器選擇&#34;&gt;編輯器選擇&lt;/h2&gt;
+&lt;p&gt;我的環境建置基本是根據這份官方提供的 &lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/docs/development/languages/c-cpp/editors.md&#34;&gt;C++ Editor/IDE Setup&lt;/a&gt; 指南，裡面有提到 CLion, Vim, 以及 Visual Studio Code，試用過後個人推薦 &lt;strong&gt;Vim &amp;gt; VS Code &amp;raquo; CLion&lt;/strong&gt;，主要還是因為個人開發時通常只會需要修改全部 code base 的極小一部份，小巧的編輯器使用體驗會比較流暢，也不會耗用太多的機器資源去處理不會修改的部份。&lt;/p&gt;
+&lt;p&gt;而開發必備的 code completion 功能，個人推薦使用 &lt;strong&gt;compilation database + &lt;code&gt;clangd&lt;/code&gt;&lt;/strong&gt; 的設置。&lt;/p&gt;
+&lt;h2 id=&#34;vim-設置&#34;&gt;Vim 設置&lt;/h2&gt;
+&lt;h3 id=&#34;vim-版本&#34;&gt;Vim 版本&lt;/h3&gt;
+&lt;p&gt;推薦使用 Vim &amp;gt;= 8.1 或是最新的 Neovim (我目前用 v0.3.7)。&lt;/p&gt;
+&lt;h3 id=&#34;fuchsia_dir-及-fuchsiavim&#34;&gt;&lt;code&gt;FUCHSIA_DIR&lt;/code&gt; 及 &lt;code&gt;fuchsia.vim&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Fuchsia 預設提供了&lt;a href=&#34;https://fuchsia.googlesource.com/fuchsia/+/refs/heads/master/scripts/vim/README.md&#34;&gt;一些 Vim 專用的設定&lt;/a&gt;，在 &lt;code&gt;~/.vimrc&lt;/code&gt; 裡套用這些設定的修改如下:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; $FUCHSIA_DIR !&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  source $FUCHSIA_DIR/scripts/vim/fuchsia.vim
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;endif&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;我不喜歡每次手動設置 &lt;code&gt;export FUCHSIA_DIR=/path/to/fuchsia-dir&lt;/code&gt;，也不喜歡直接修改 &lt;code&gt;~/.bashrc&lt;/code&gt;，所以用 &lt;a href=&#34;https://direnv.net/&#34;&gt;direnv&lt;/a&gt; (直接用 Homebrew 安裝) 在進目錄時自動套用設定。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;path/to/fuchsia-dir/.envrc&lt;/code&gt; 加入:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# For VIM to find fuchsia.vim&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;export FUCHSIA_DIR&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;pwd&lt;span style=&#34;color:#e6db74&#34;&gt;`&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;之後 &lt;code&gt;cd&lt;/code&gt; 進去就會幫你把 &lt;code&gt;FUCHSIA_DIR&lt;/code&gt; 的環境變量設定好了。&lt;/p&gt;
+&lt;h3 id=&#34;code-completion-設置&#34;&gt;Code Completion 設置&lt;/h3&gt;
+&lt;h4 id=&#34;前置準備&#34;&gt;前置準備&lt;/h4&gt;
+&lt;p&gt;確認 &lt;code&gt;fx build&lt;/code&gt; 是成功的，然後使用 &lt;code&gt;fx compdb&lt;/code&gt; 產生 &lt;code&gt;compile_commands.json&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;language-server-clangd&#34;&gt;Language Server &lt;code&gt;clangd&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;同樣利用 direnv 來套用 &lt;code&gt;PATH&lt;/code&gt; 的修改，因此新增這一行到 &lt;code&gt;path/to/fuchsia-dir/.envrc&lt;/code&gt; :&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;export PATH&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;$FUCHSIA_DIR/buildtools/mac-x64/clang/bin:$PATH&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;目的是讓 Vim 優先使用 Fuchsia 自帶的 &lt;code&gt;clangd&lt;/code&gt;，否則使用其他版本的 &lt;code&gt;clangd&lt;/code&gt; 可能會有 C++ 編譯的問題產生。&lt;/p&gt;
+&lt;h4 id=&#34;conquer-of-completion-coc&#34;&gt;Conquer of Completion (CoC)&lt;/h4&gt;
+&lt;p&gt;因為 &lt;a href=&#34;https://github.com/Valloric/YouCompleteMe&#34;&gt;YCM&lt;/a&gt; 其實有點肥大，安裝上也比較麻煩，我現在比較喜歡用 &lt;a href=&#34;https://github.com/neoclide/coc.nvim&#34;&gt;Coc&lt;/a&gt;，Coc 的詳細配置可以參考 &lt;a href=&#34;https://medium.com/@rohmanhakim/how-to-set-up-code-completion-for-vim-in-macos-9766dd459385&#34;&gt;How to Set Up Code-Completion for Vim in macOS&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;基本上在 Vim 裡執行 &lt;code&gt;:CocConfig&lt;/code&gt; 把以下配置填上應該就行了。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;languageserver&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;clangd&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;command&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;clangd&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;rootPatterns&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compile_flags.txt&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compile_commands.json&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.vim/&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.git/&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.hg/&amp;#34;&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;filetypes&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;c&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cc&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cpp&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;objc&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;objcpp&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;visual-studio-code-設置&#34;&gt;Visual Studio Code 設置&lt;/h2&gt;
+&lt;p&gt;VS Code 設置上比較簡單，基本上只要把 &lt;a href=&#34;https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd&#34;&gt;vscode-clangd&lt;/a&gt; 安裝起來並確保 Fuchsia 自帶的 &lt;code&gt;clangd&lt;/code&gt; 可以在 &lt;code&gt;PATH&lt;/code&gt; 裡找到就可以用了。使用速度上雖然比起 Vim 遲鈍了一些，但整體流暢度還是可是在我可以接受的範圍。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
