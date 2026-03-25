@@ -1,0 +1,900 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/"/>
+  <meta property="og:title" content="NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-03-17 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="emulator"/>
+  
+  <meta property="og:article:tag" content="nes"/>
+  
+  <meta property="og:article:tag" content="joypad"/>
+  
+  <meta property="og:article:tag" content="input"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">213</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/6502">6502 <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">21</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/apu">apu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/bank-switching">bank-switching <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/bevy">bevy <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/cpu">cpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ecs">ecs <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game-engine">game-engine <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/graphics">graphics <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/input">input <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/joypad">joypad <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/mapper">mapper <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/nes">nes <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/observability">observability <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/opentelemetry">opentelemetry <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ppu">ppu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/prometheus">prometheus <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">33</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/trait-object">trait-object <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">19</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">
+            NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</h2>
+      <div class="post-meta">
+        <span class="post-date">March 17, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/emulator"><span class="label label-primary">emulator</span></a>
+        
+        <a href="/tags/nes"><span class="label label-primary">nes</span></a>
+        
+        <a href="/tags/joypad"><span class="label label-primary">joypad</span></a>
+        
+        <a href="/tags/input"><span class="label label-primary">input</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        <img src="/posts/2026/03-17-nes-joypad/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>前兩篇我們完成了 NES 的 <a href="/posts/2026/03-16-nes-cpu/">CPU</a> 和 <a href="/posts/2026/03-16-nes-ppu/">PPU</a>——能跑指令、能畫畫面，但玩家還沒辦法操作。NES 的控制器看似簡單（就八個按鈕），但它用了一個很優雅的<strong>串列協議</strong>：CPU 透過 strobe 信號鎖存按鈕狀態，然後逐 bit 讀取——八次讀取拿到八個按鈕，就像一個 8-bit shift register。</p>
+<p>這個專案不只實作了 joypad 的硬體協議，還負責把整個 NES 系統串起來——CPU、PPU、Mapper、Joypad 全部接在同一條 bus 上，最後做出一個可以<strong>真的玩遊戲</strong>的 NES 模擬器。</p>
+<h3 id="專案結構">專案結構</h3>
+
+  <pre tabindex="0"><code>nes-joypad/
+├── Cargo.toml
+└── src/
+    ├── lib.rs              # 模組匯出
+    ├── joypad.rs           # Joypad 核心：strobe/shift-register 協議（178 行）
+    ├── input.rs            # 輸入映射：鍵盤 + 手把（99 行）
+    ├── composite_io.rs     # 複合 Bus I/O 分發器（38 行）
+    ├── system.rs           # 完整 NES 系統整合器（147 行）
+    └── demos/
+        └── play/main.rs    # NES 播放器 demo（98 行）</code></pre>
+
+<p>依賴：<code>nes-cpu</code>、<code>nes-ppu</code>、<code>nes-mapper</code>，加上 optional 的 <code>minifb</code>（視窗）和 <code>gilrs</code>（手把）。</p>
+<h3 id="nes-控制器的硬體協議">NES 控制器的硬體協議</h3>
+<p>NES 控制器只有 8 個按鈕——A、B、Select、Start、上、下、左、右——但 CPU 不是一次讀到所有按鈕的。它用了一個<strong>串列通訊協議</strong>：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    participant CPU
+    participant Joypad
+
+    CPU->>Joypad: 寫入 $4016 = 1（strobe on）
+    Note over Joypad: 持續從 button_state 載入
+    CPU->>Joypad: 寫入 $4016 = 0（strobe off）
+    Note over Joypad: 鎖存！凍結 shift register
+    CPU->>Joypad: 讀取 $4016 → A
+    CPU->>Joypad: 讀取 $4016 → B
+    CPU->>Joypad: 讀取 $4016 → Select
+    CPU->>Joypad: 讀取 $4016 → Start
+    CPU->>Joypad: 讀取 $4016 → Up
+    CPU->>Joypad: 讀取 $4016 → Down
+    CPU->>Joypad: 讀取 $4016 → Left
+    CPU->>Joypad: 讀取 $4016 → Right
+    CPU->>Joypad: 讀取 $4016 → 1（open bus）
+  </div>
+
+<p>為什麼要這樣設計？因為 NES 的 CPU bus 是 8-bit，但控制器只用了每次讀取的 bit 0。串列協議讓一個 I/O 位址就能讀完 8 個按鈕，節省了寶貴的位址空間。</p>
+<h3 id="1-joypad-核心四個欄位搞定一切">1. Joypad 核心：四個欄位搞定一切</h3>
+<p>Joypad 的狀態非常精簡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Joypad</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 即時按鈕狀態（bit N = Button N 被按下）
+</span></span></span><span style="display:flex;"><span>    button_state: <span style="color:#66d9ef">u8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 鎖存快照——strobe 下降沿時凍結
+</span></span></span><span style="display:flex;"><span>    shift_register: <span style="color:#66d9ef">u8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 下一次讀取要回傳的 bit 位置（0-7，之後回傳 open bus）
+</span></span></span><span style="display:flex;"><span>    read_index: <span style="color:#66d9ef">u8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// strobe 信號狀態
+</span></span></span><span style="display:flex;"><span>    strobe: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>按鈕的定義用 enum 對應 shift register 的讀取順序：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[repr(u8)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Button</span> {
+</span></span><span style="display:flex;"><span>    A <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, B <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>, Select <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span>, Start <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>,
+</span></span><span style="display:flex;"><span>    Up <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>, Down <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span>, Left <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>, Right <span style="color:#f92672">=</span> <span style="color:#ae81ff">7</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>#[repr(u8)]</code> 確保 enum 的值就是 shift register 裡的 bit 位置——<code>A</code> 最先被讀出、<code>Right</code> 最後。</p>
+<h3 id="2-strobe-協議鎖存的藝術">2. Strobe 協議：鎖存的藝術</h3>
+<p>Strobe 協議的核心在 <code>write_strobe()</code> 和 <code>read_bit()</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">write_strobe</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, val: <span style="color:#66d9ef">u8</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> new_strobe <span style="color:#f92672">=</span> val <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.strobe <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>new_strobe {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Falling edge: 鎖存並重置
+</span></span></span><span style="display:flex;"><span>        self.shift_register <span style="color:#f92672">=</span> self.button_state;
+</span></span><span style="display:flex;"><span>        self.read_index <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    self.strobe <span style="color:#f92672">=</span> new_strobe;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.strobe {
+</span></span><span style="display:flex;"><span>        self.shift_register <span style="color:#f92672">=</span> self.button_state;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_bit</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.strobe {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> self.button_state <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>; <span style="color:#75715e">// strobe 開著時永遠回傳 A 鍵
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.read_index <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">8</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> bit <span style="color:#f92672">=</span> (self.shift_register <span style="color:#f92672">&gt;&gt;</span> self.read_index) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        self.read_index <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        bit
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">1</span> <span style="color:#75715e">// open bus
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個關鍵行為：</p>
+<table>
+  <thead>
+      <tr>
+          <th>狀態</th>
+          <th>行為</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Strobe = 1</td>
+          <td>持續從 <code>button_state</code> 載入，讀取永遠回傳 A 鍵</td>
+      </tr>
+      <tr>
+          <td>Strobe 1→0</td>
+          <td><strong>鎖存</strong>：凍結當前按鈕狀態到 shift register</td>
+      </tr>
+      <tr>
+          <td>讀取第 1-8 次</td>
+          <td>依序回傳 A、B、Select、Start、上、下、左、右</td>
+      </tr>
+      <tr>
+          <td>讀取第 9+ 次</td>
+          <td>回傳 1（open bus，標準控制器行為）</td>
+      </tr>
+  </tbody>
+</table>
+<p><strong>為什麼 strobe 開著時只回傳 A 鍵？</strong> 因為在 strobe 模式下，shift register 每次讀取前都會被重新載入——等於 <code>read_index</code> 永遠停在 0，而 bit 0 就是 A 鍵。</p>
+<h3 id="3-雙控制器匯流排一個-strobe-控兩隻">3. 雙控制器匯流排：一個 Strobe 控兩隻</h3>
+<p>NES 支援兩個控制器，但 strobe 信號是共享的——CPU 寫入 <code>$4016</code> 時，<strong>兩個控制器同時</strong>被 strobe。讀取時則分開：<code>$4016</code> 讀 P1，<code>$4017</code> 讀 P2。</p>
+<p><code>CompositeBusIo</code> 把所有 I/O 設備統一到一條 bus 上：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">CompositeBusIo</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ppu_io: <span style="color:#a6e22e">PpuBusIo</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> joypad1: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Joypad<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> joypad2: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Joypad<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> BusIo <span style="color:#66d9ef">for</span> CompositeBusIo {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, addr: <span style="color:#66d9ef">u16</span>) -&gt; <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> addr {
+</span></span><span style="display:flex;"><span>            addr::<span style="color:#66d9ef">JOYPAD1</span> <span style="color:#f92672">=&gt;</span> self.joypad1.borrow_mut().read_bit(),
+</span></span><span style="display:flex;"><span>            addr::<span style="color:#66d9ef">JOYPAD2</span> <span style="color:#f92672">=&gt;</span> self.joypad2.borrow_mut().read_bit(),
+</span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=&gt;</span> self.ppu_io.read(addr),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">write</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, addr: <span style="color:#66d9ef">u16</span>, val: <span style="color:#66d9ef">u8</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> addr {
+</span></span><span style="display:flex;"><span>            addr::<span style="color:#66d9ef">JOYPAD1</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// Strobe 同時鎖存兩個控制器
+</span></span></span><span style="display:flex;"><span>                self.joypad1.borrow_mut().write_strobe(val);
+</span></span><span style="display:flex;"><span>                self.joypad2.borrow_mut().write_strobe(val);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=&gt;</span> self.ppu_io.write(addr, val),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個 38 行的模組是整個系統的「交通警察」——CPU 的每一次 I/O 讀寫都經過這裡，然後被路由到正確的設備（PPU 或 Joypad）。</p>
+<h3 id="4-輸入映射鍵盤與手把">4. 輸入映射：鍵盤與手把</h3>
+<p>模擬器需要把實際的輸入裝置映射到 NES 的 8 個按鈕。鍵盤映射很直覺：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">keyboard_to_buttons</span>(window: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">minifb</span>::Window) -&gt; <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> state <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span><span style="color:#66d9ef">u8</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::Up)    { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Up <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::Down)  { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Down <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::Left)  { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Left <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::Right) { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Right <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::Z)     { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::A <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::X)     { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::B <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::A)     { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Select <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> window.is_key_down(Key::S)     { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Start <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    state
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>手把映射多了一個 <strong>deadzone</strong> 處理——類比搖桿在中心附近的微小偏移要過濾掉，避免誤觸：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 左搖桿 deadzone = 0.5
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(axis) <span style="color:#f92672">=</span> gp.axis_data(Axis::LeftStickX) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> axis.value() <span style="color:#f92672">&lt;</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">0.5</span> { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Left <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> axis.value() <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0.5</span>  { state <span style="color:#f92672">|=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Right <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>; }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>最終的 <code>state</code> 是一個 <code>u8</code> bitfield，可以直接用 <code>|=</code> 合併鍵盤和手把的輸入——兩者任一按下就算按下。</p>
+<h3 id="5-完整-nes-系統整合">5. 完整 NES 系統整合</h3>
+<p><code>System</code> 把所有元件串在一起：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">System</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> cpu: <span style="color:#a6e22e">Cpu</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ppu: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Ppu<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> joypad1: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Joypad<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> joypad2: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Joypad<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    cpu_cycles: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>Cell<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u64</span><span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    ppu_cycles: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>Cell<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u64</span><span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>初始化的接線圖：</p>
+
+  <div class="mermaid">
+    graph TD
+    ROM[iNES ROM] --> Mapper[Mapper<br/>bank switching]
+    Mapper --> Bus[CPU Bus]
+    Mapper --> PPU[PPU]
+    Bus --> CPU[6502 CPU]
+
+    subgraph CompositeBusIo
+        PpuBusIo[PPU Bus I/O<br/>catch-up ticking]
+        JP1[Joypad 1]
+        JP2[Joypad 2]
+    end
+
+    Bus -->|I/O delegate| CompositeBusIo
+    PpuBusIo --> PPU
+
+    CPU_CYC[cpu_cycles<br/>Rc Cell u64] -.->|shared| CPU
+    CPU_CYC -.->|shared| PpuBusIo
+    PPU_CYC[ppu_cycles<br/>Rc Cell u64] -.->|shared| PpuBusIo
+  </div>
+
+<p><code>from_rom()</code> 的關鍵是<strong>共享狀態的接線</strong>——Mapper、PPU、Joypad 都用 <code>Rc&lt;RefCell&lt;&gt;&gt;</code> 包裝，因為多個元件需要同時存取它們。CPU 和 PPU 的 cycle counter 則用 <code>Rc&lt;Cell&lt;u64&gt;&gt;</code> 做零成本的共享。</p>
+<p>初始化結束後，還要把 PPU「追上」CPU 的 reset cycle 數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>cpu.reset();
+</span></span><span style="display:flex;"><span>cpu_cycles.set(cpu.cycles);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> reset_ppu_dots <span style="color:#f92672">=</span> cpu.cycles <span style="color:#f92672">*</span> <span style="color:#ae81ff">3</span>;
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> p <span style="color:#f92672">=</span> ppu.borrow_mut();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>reset_ppu_dots {
+</span></span><span style="display:flex;"><span>        p.tick();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>ppu_cycles.set(reset_ppu_dots);</span></span></code></pre></div>
+
+<p>CPU reset 會消耗 7 個 cycle，PPU 需要追上 7 × 3 = 21 個 dot，確保兩者從一開始就同步。</p>
+<h3 id="6-主迴圈每幀一次的節奏">6. 主迴圈：每幀一次的節奏</h3>
+<p>Demo 的主迴圈非常乾淨——每幀做三件事：讀取輸入、跑一幀模擬、更新畫面：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>window.set_target_fps(<span style="color:#ae81ff">60</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> window.is_open() <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>window.is_key_down(Key::Escape) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 讀取輸入
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> p1_state <span style="color:#f92672">=</span> keyboard_to_buttons(<span style="color:#f92672">&amp;</span>window);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[cfg(feature = </span><span style="color:#e6db74">&#34;gamepad&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> (Some(<span style="color:#66d9ef">ref</span> <span style="color:#66d9ef">mut</span> gilrs), Some(gp_id)) <span style="color:#f92672">=</span> (<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> gilrs_ctx, gamepad_id) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> gilrs.next_event().is_some() {} <span style="color:#75715e">// drain events
+</span></span></span><span style="display:flex;"><span>        p1_state <span style="color:#f92672">|=</span> gamepad_to_buttons(gilrs, gp_id);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    sys.joypad1.borrow_mut().set_buttons(p1_state);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 跑一幀
+</span></span></span><span style="display:flex;"><span>    sys.run_until_frame();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 更新畫面
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> ppu <span style="color:#f92672">=</span> sys.ppu.borrow();
+</span></span><span style="display:flex;"><span>    window.update_with_buffer(<span style="color:#f92672">&amp;*</span>ppu.framebuffer, <span style="color:#66d9ef">WIDTH</span>, <span style="color:#66d9ef">HEIGHT</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>run_until_frame()</code> 會一直呼叫 <code>step()</code> 直到 PPU 設定 <code>frame_ready</code>（VBlank 開始），然後把 256×240 的 framebuffer 丟給 minifb 視窗，用 3 倍 scale 顯示（768×720）。</p>
+<p>gilrs 的 gamepad 輸入有個小細節：每次讀取前要先 <code>drain</code> 所有待處理的事件（<code>while gilrs.next_event().is_some() {}</code>），否則 gilrs 的內部狀態不會更新。</p>
+<h3 id="7-測試驗證硬體協議的每個角落">7. 測試：驗證硬體協議的每個角落</h3>
+<p>Joypad 的協議雖然簡單，但邊界情況不少。測試覆蓋了所有行為：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_order_matches_button_enum</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> jp <span style="color:#f92672">=</span> Joypad::new();
+</span></span><span style="display:flex;"><span>    jp.set_buttons(<span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> Button::Start <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>);
+</span></span><span style="display:flex;"><span>    jp.write_strobe(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    jp.write_strobe(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// A
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// B
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// Select
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">1</span>); <span style="color:#75715e">// Start ← 只有這個是 1
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// Up
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// Down
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// Left
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">0</span>); <span style="color:#75715e">// Right
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">open_bus_after_8_reads</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> jp <span style="color:#f92672">=</span> Joypad::new();
+</span></span><span style="display:flex;"><span>    jp.write_strobe(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    jp.write_strobe(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#ae81ff">8</span> { jp.read_bit(); }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">1</span>); <span style="color:#75715e">// open bus
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(jp.read_bit(), <span style="color:#ae81ff">1</span>); <span style="color:#75715e">// 一直是 1
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<table>
+  <thead>
+      <tr>
+          <th>測試</th>
+          <th>驗證行為</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>strobe_latches_all_buttons</code></td>
+          <td>全部按下後 strobe，8 個 bit 都是 1</td>
+      </tr>
+      <tr>
+          <td><code>read_order_matches_button_enum</code></td>
+          <td>讀取順序：A→B→Select→Start→↑→↓→←→→</td>
+      </tr>
+      <tr>
+          <td><code>open_bus_after_8_reads</code></td>
+          <td>第 9 次以後讀取回傳 1</td>
+      </tr>
+      <tr>
+          <td><code>strobe_high_returns_a_button</code></td>
+          <td>strobe 開著時只回傳 A 鍵</td>
+      </tr>
+      <tr>
+          <td><code>no_buttons_reads_all_zero</code></td>
+          <td>沒按任何鍵，8 次讀取全是 0</td>
+      </tr>
+      <tr>
+          <td><code>multiple_buttons_simultaneously</code></td>
+          <td>同時按 A 和 Right，正確回傳</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="總結">總結</h3>
+<table>
+  <thead>
+      <tr>
+          <th>模組</th>
+          <th>行數</th>
+          <th>角色</th>
+          <th>核心 Pattern</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>joypad.rs</code></td>
+          <td>~178</td>
+          <td>Strobe/shift-register 協議</td>
+          <td>Falling edge latch + serial read</td>
+      </tr>
+      <tr>
+          <td><code>input.rs</code></td>
+          <td>~99</td>
+          <td>鍵盤/手把映射</td>
+          <td>Bitfield OR 合併多輸入源</td>
+      </tr>
+      <tr>
+          <td><code>composite_io.rs</code></td>
+          <td>~38</td>
+          <td>Bus I/O 分發器</td>
+          <td>Address-based routing</td>
+      </tr>
+      <tr>
+          <td><code>system.rs</code></td>
+          <td>~147</td>
+          <td>完整 NES 系統整合</td>
+          <td><code>Rc&lt;RefCell&lt;&gt;&gt;</code> 共享 + cycle sync</td>
+      </tr>
+      <tr>
+          <td><code>demos/play</code></td>
+          <td>~98</td>
+          <td>NES 播放器</td>
+          <td>60 FPS frame loop</td>
+      </tr>
+  </tbody>
+</table>
+<p>Joypad 本身的協議很簡單——四個欄位、幾十行核心邏輯。但這個 crate 真正的意義是<strong>把所有東西串起來</strong>。<code>CompositeBusIo</code> 讓 CPU、PPU、Joypad 共享一條 bus；<code>System</code> 協調它們的時序；最後 <code>demos/play</code> 把這一切變成一個可以拿手把玩的 NES 模擬器。</p>
+<p>下一步是 <a href="/posts/2026/03-17-nes-mapper/">nes-mapper</a>——NES 卡匣上的 bank switching 硬體，讓 32KB 的 CPU 定址空間能跑 512KB 甚至更大的遊戲。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://www.nesdev.org/wiki/Standard_controller">NES Controller Protocol</a> — 標準控制器的硬體協議</li>
+<li><a href="https://www.nesdev.org/wiki/Input_devices">nesdev.org Input Wiki</a> — 所有 NES 輸入設備</li>
+<li><a href="https://gitlab.com/gilrs-project/gilrs">gilrs</a> — Rust 跨平台手把輸入庫</li>
+<li><a href="https://github.com/emoon/rust_minifb">minifb</a> — Rust 輕量視窗 framebuffer 庫</li>
+</ul>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

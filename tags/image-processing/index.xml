@@ -1,0 +1,490 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/image-processing/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-15 10:00:00 &#43;0800 &#43;0800</updated>
+    
+    <item>
+      <title>TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/</link>
+      <pubDate>Sun, 15 Feb 2026 10:00:00 &#43;0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/&#34;&gt;上一篇&lt;/a&gt;介紹了 &lt;code&gt;tilesplit&lt;/code&gt; CLI，一個用 Rust 寫的工具，可以在切割圖片的同時保留 Ultra HDR 資訊。但要用 CLI 切個照片還得先裝 Rust 工具鏈&amp;hellip; 不如直接在瀏覽器裡搞定？&lt;/p&gt;
+&lt;p&gt;這篇就來聊聊怎麼把 &lt;code&gt;tilesplit&lt;/code&gt; 移植到 WebAssembly，讓任何人&lt;a href=&#34;https://blog.simplypatrick.com/demos/tilesplit/&#34;&gt;打開網頁&lt;/a&gt;就能用。&lt;/p&gt;
+&lt;h2 id=&#34;先玩再說&#34;&gt;先玩再說&lt;/h2&gt;
+&lt;iframe src=&#34;https://blog.simplypatrick.com/demos/tilesplit/&#34; style=&#34;width: 100%; height: 730px; border: 1px solid #333; border-radius: 8px; background: #0f1117;&#34; loading=&#34;lazy&#34;&gt;&lt;/iframe&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;使用方式&lt;/strong&gt;：拖一張 JPEG 進去（支援 3:2 或 16:10 比例），調整品質後按 Split。如果是 Ultra HDR 照片，會自動偵測並顯示 HDR 標籤。切完的圖可以直接下載。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id=&#34;從-cli-到-wasm關鍵差異&#34;&gt;從 CLI 到 WASM：關鍵差異&lt;/h2&gt;
+&lt;p&gt;把 &lt;code&gt;tilesplit&lt;/code&gt; 搬到瀏覽器不是改個編譯目標就完事的。最大的挑戰在於&lt;strong&gt;依賴庫的替換&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;CLI 版本用了兩個 C/C++ FFI 的 crate：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt;&lt;/strong&gt;：Google &lt;code&gt;libultrahdr&lt;/code&gt; 的封裝，處理 Ultra HDR 的編解碼和容器組裝&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;jpegli-rs&lt;/code&gt;&lt;/strong&gt;：Google &lt;code&gt;jpegli&lt;/code&gt; 的封裝，高品質 JPEG 編解碼器，支援讀寫 Gain Map&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;問題是：&lt;strong&gt;WASM 沒辦法呼叫 C FFI&lt;/strong&gt;。這兩個 crate 都需要編譯 C/C++ 原始碼，在 &lt;code&gt;wasm32-unknown-unknown&lt;/code&gt; 目標下根本編不過。&lt;/p&gt;
+&lt;p&gt;WASM 版本的替代方案：&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;功能&lt;/th&gt;
+          &lt;th&gt;CLI 版本&lt;/th&gt;
+          &lt;th&gt;WASM 版本&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;JPEG 編解碼&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;jpegli-rs&lt;/code&gt; (C FFI)&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;image&lt;/code&gt; crate (純 Rust)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Ultra HDR metadata&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt; (C FFI)&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;ultrahdr-core&lt;/code&gt; (純 Rust)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;容器組裝&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt; 的 &lt;code&gt;add_gainmap()&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;手動組裝 MPF 格式&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;a href=&#34;https://crates.io/crates/ultrahdr-core&#34;&gt;&lt;code&gt;ultrahdr-core&lt;/code&gt;&lt;/a&gt; 是個輕量的純 Rust crate，只做 metadata 解析和 XMP 生成，不碰任何 C 程式碼——正好適合 WASM。而 &lt;a href=&#34;https://crates.io/crates/image&#34;&gt;&lt;code&gt;image&lt;/code&gt;&lt;/a&gt; crate 的 JPEG 功能雖然沒有 &lt;code&gt;jpegli&lt;/code&gt; 那麼強，但對我們的需求來說夠用了。&lt;/p&gt;
+&lt;p&gt;最麻煩的是容器組裝。CLI 版本靠 &lt;code&gt;jpegli-rs&lt;/code&gt; 的 &lt;code&gt;.add_gainmap()&lt;/code&gt; 一行搞定，但 WASM 版本得自己手動把 XMP marker、MPF header、Gain Map JPEG 按照正確的格式塞回主圖裡。這部分後面會詳細說明。&lt;/p&gt;
+&lt;h2 id=&#34;wasm-api-設計&#34;&gt;WASM API 設計&lt;/h2&gt;
+&lt;p&gt;WASM 模組只暴露三個函式給 JavaScript：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;validate_image&lt;/span&gt;(data: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;JsValue, JsValue&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    console_error_panic_hook::set_once();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; img &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; image::load_from_memory(data)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .map_err(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;e&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; JsValue::from_str(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;format!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Failed to decode image: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{e}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (width, height) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (img.width(), img.height());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; is_ultra_hdr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; detect_ultrahdr(data).is_some();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (left, _) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; compute_split_rectangles(width, height)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .map_err(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;e&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; JsValue::from_str(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;e))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; info &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ImageInfo { width, height, &lt;span style=&#34;color:#75715e&#34;&gt;/* ... */&lt;/span&gt; };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    serde_wasm_bindgen::to_value(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;info)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .map_err(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;e&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; JsValue::from_str(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;format!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Serialization error: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{e}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;split_left&lt;/span&gt;(data: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;], quality: &lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, JsValue&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    console_error_panic_hook::set_once();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    split_tile(data, quality, Side::Left).map_err(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;e&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; JsValue::from_str(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;e))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[wasm_bindgen]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;split_right&lt;/span&gt;(data: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;], quality: &lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, JsValue&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    console_error_panic_hook::set_once();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    split_tile(data, quality, Side::Right).map_err(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;e&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; JsValue::from_str(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;e))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;回傳給 JS 的 &lt;code&gt;ImageInfo&lt;/code&gt; 用 &lt;code&gt;serde&lt;/code&gt; 序列化成 JS object：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Serialize)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ImageInfo&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    aspect: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[serde(rename = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;isUltraHdr&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    is_ultra_hdr: &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[serde(rename = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;tileWidth&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    tile_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[serde(rename = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;tileHeight&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    tile_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;資料流很直覺：JS 透過 &lt;code&gt;FileReader&lt;/code&gt; 讀取使用者選的檔案，轉成 &lt;code&gt;Uint8Array&lt;/code&gt; 傳進 WASM，WASM 處理完回傳 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;（自動轉成 &lt;code&gt;Uint8Array&lt;/code&gt;），JS 再包成 Blob URL 給 &lt;code&gt;&amp;lt;img&amp;gt;&lt;/code&gt; 顯示和下載。&lt;/p&gt;
+&lt;h2 id=&#34;ultra-hdr-偵測&#34;&gt;Ultra HDR 偵測&lt;/h2&gt;
+&lt;p&gt;WASM 版本的 Ultra HDR 偵測是直接解析 JPEG 的二進制結構，不靠任何外部庫的 JPEG 解碼器：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;detect_ultrahdr&lt;/span&gt;(data: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]) -&amp;gt; Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;UltraHdrData&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 從 JPEG 的 APP1 marker 裡撈出 XMP metadata
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extract_xmp_from_jpeg_bytes(data)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 解析 XMP 得到 GainMapMetadata
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; metadata, _) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ultrahdr_core::metadata::xmp::parse_xmp(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;xmp).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 從 MPF (Multi-Picture Format) 裡提取 Gain Map JPEG
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap_jpeg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extract_gainmap_from_mpf(data)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 主圖的 metadata 可能不完整，試試從 Gain Map 自己的 XMP 補齊
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; metadata_looks_default_or_incomplete(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;metadata) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(gm_xmp) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extract_xmp_from_jpeg_bytes(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_jpeg) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Ok((&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gm_meta, _)) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ultrahdr_core::metadata::xmp::parse_xmp(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gm_xmp) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                apply_lenient_xmp_overrides(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gm_xmp, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gm_meta);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;metadata_looks_default_or_incomplete(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gm_meta) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    metadata &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; gm_meta;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    apply_lenient_xmp_overrides(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;xmp, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; metadata);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Some(UltraHdrData { metadata, gainmap_jpeg })
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;跟 CLI 版本比起來，最大的差異是 XMP 提取。CLI 版本靠 &lt;code&gt;jpegli&lt;/code&gt; 解碼器順便把 XMP 和 Gain Map 從 JPEG extras 裡讀出來。WASM 版本沒有 &lt;code&gt;jpegli&lt;/code&gt;，只好自己掃描 JPEG marker——找 &lt;code&gt;0xFFE1&lt;/code&gt; (APP1) 拿 XMP，再用 &lt;code&gt;ultrahdr-core&lt;/code&gt; 的 MPF parser 找 Gain Map 的位置。&lt;/p&gt;
+&lt;h2 id=&#34;手動組裝-ultra-hdr-容器&#34;&gt;手動組裝 Ultra HDR 容器&lt;/h2&gt;
+&lt;p&gt;這是 WASM 移植裡最複雜的部分。CLI 版本一行 &lt;code&gt;.add_gainmap()&lt;/code&gt; 就搞定的事，在 WASM 版本得手動處理 MPF (Multi-Picture Format) 的二進制結構。&lt;/p&gt;
+&lt;p&gt;一張 Ultra HDR JPEG 的結構大概長這樣：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;┌─────────────────────────────────┐
+│ SOI (0xFFD8)                    │
+│ APP1 - XMP metadata             │  ← 告訴系統「我是 Ultra HDR」
+│ APP2 - MPF header               │  ← 告訴系統「Gain Map 在哪裡」
+│ ... 正常的 JPEG 資料 ...         │
+│ EOI (0xFFD9)                    │
+├─────────────────────────────────┤
+│ Gain Map JPEG (完整的第二張圖)   │  ← 亮度增益資訊
+└─────────────────────────────────┘&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;code&gt;assemble_ultrahdr_tile&lt;/code&gt; 函式負責把這些東西拼在一起：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;assemble_ultrahdr_tile&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sdr_jpeg: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_jpeg: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    metadata: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;GainMapMetadata&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 在 Gain Map JPEG 裡嵌入 XMP metadata
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap_xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; generate_gainmap_xmp(metadata);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap_jpeg_with_xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; embed_xmp_in_jpeg(gainmap_jpeg, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_xmp);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 產生主圖的 XMP APP1 marker（包含完整參數 + Container directory）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; generate_primary_xmp(metadata, gainmap_jpeg_with_xmp.len());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; xmp_marker &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ultrahdr_core::metadata::xmp::create_xmp_app1_marker(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;xmp);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 把 XMP 插到 SOI 後面
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; primary_with_xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Vec::with_capacity(sdr_jpeg.len() &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; xmp_marker.len());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    primary_with_xmp.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_jpeg[&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;]); &lt;span style=&#34;color:#75715e&#34;&gt;// SOI
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    primary_with_xmp.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;xmp_marker);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    primary_with_xmp.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_jpeg[&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;]);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 4. 找到插入 MPF APP2 的位置（在 APP0/APP1 之後）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; insert_pos &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; find_mpf_insert_position(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;primary_with_xmp)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 5. 計算 MPF header（需要知道最終的 primary 大小，所以先算一次）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gm_len &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; gainmap_jpeg_with_xmp.len() &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; placeholder_mpf &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; create_mpf_app2(&lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;::&lt;span style=&#34;color:#66d9ef&#34;&gt;MAX&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;[gm_len], insert_pos);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; primary_final_size &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (primary_with_xmp.len() &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; placeholder_mpf.len()) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; mpf_header &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; create_mpf_app2(primary_final_size, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;[gm_len], insert_pos);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 6. 組裝最終輸出
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Vec::with_capacity(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        primary_with_xmp.len() &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; mpf_header.len() &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; gainmap_jpeg_with_xmp.len()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    );
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    output.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;primary_with_xmp[&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;insert_pos]);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    output.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;mpf_header);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    output.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;primary_with_xmp[insert_pos&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;]);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    output.extend_from_slice(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_jpeg_with_xmp);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(output)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;MPF header 裡面是個迷你的 TIFF IFD 結構，記錄了每張圖片的大小和偏移量。這裡有個雞生蛋的問題：MPF header 裡需要填 primary 的最終大小，但 primary 的大小又取決於 MPF header 有多大。解法是先用 placeholder 算出 MPF 的固定大小，再用正確的數值重新生成。&lt;/p&gt;
+&lt;h2 id=&#34;wasm-體積優化&#34;&gt;WASM 體積優化&lt;/h2&gt;
+&lt;p&gt;WASM 版本最終編出來的 &lt;code&gt;.wasm&lt;/code&gt; 檔案大約 &lt;strong&gt;286 KB&lt;/strong&gt;，對一個包含完整 JPEG 編解碼和 Ultra HDR 處理的模組來說算很小了。主要靠幾個手段：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;profile&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;release&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;opt-level&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;s&amp;#34;&lt;/span&gt;   &lt;span style=&#34;color:#75715e&#34;&gt;# 優化體積而非速度&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lto&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;         &lt;span style=&#34;color:#75715e&#34;&gt;# 跨 crate 的 Link-Time Optimization&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;加上 &lt;code&gt;image&lt;/code&gt; crate 只啟用 &lt;code&gt;jpeg&lt;/code&gt; feature，不拉進 PNG、GIF 等不需要的格式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;dependencies&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;image&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.25.5&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;default-features&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;features&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;jpeg&amp;#34;&lt;/span&gt;] }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;default-features = false&lt;/code&gt; 很重要——&lt;code&gt;image&lt;/code&gt; crate 預設會拉進一大堆圖片格式的支援，對 WASM 體積影響很大。&lt;/p&gt;
+&lt;h2 id=&#34;js-端的整合&#34;&gt;JS 端的整合&lt;/h2&gt;
+&lt;p&gt;前端部分很簡單，用原生的 ES module 載入 WASM：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;init&lt;/span&gt;, { &lt;span style=&#34;color:#a6e22e&#34;&gt;validate_image&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;split_left&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;split_right&lt;/span&gt; } &lt;span style=&#34;color:#a6e22e&#34;&gt;from&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;./tilesplit_wasm.js&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;function&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;init&lt;/span&gt;();  &lt;span style=&#34;color:#75715e&#34;&gt;// 載入並初始化 WASM 模組
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;console&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;log&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;TileSplit WASM loaded&amp;#39;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;();&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;wasm-pack build --target web&lt;/code&gt; 產生的 JS glue code 會自動處理 WASM 的載入和記憶體管理。&lt;code&gt;init()&lt;/code&gt; 內部用 &lt;code&gt;WebAssembly.instantiateStreaming&lt;/code&gt; 做串流載入，瀏覽器可以在下載 WASM 的同時開始編譯，體驗很流暢。&lt;/p&gt;
+&lt;p&gt;圖片處理的流程：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-javascript&#34; data-lang=&#34;javascript&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 使用者選擇檔案後
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;reader&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;new&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;FileReader&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;reader&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;onload&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;e&lt;/span&gt;) =&amp;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;new&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Uint8Array&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;e&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;target&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;info&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;validate_image&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt;);  &lt;span style=&#34;color:#75715e&#34;&gt;// WASM 驗證
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 顯示圖片資訊...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;reader&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;readAsArrayBuffer&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;file&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 按下 Split 後
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;leftBytes&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;split_left&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;currentData&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;quality&lt;/span&gt;);   &lt;span style=&#34;color:#75715e&#34;&gt;// WASM 切割
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;rightBytes&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;split_right&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;currentData&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;quality&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;leftBlob&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;new&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Blob&lt;/span&gt;([&lt;span style=&#34;color:#a6e22e&#34;&gt;leftBytes&lt;/span&gt;], { &lt;span style=&#34;color:#a6e22e&#34;&gt;type&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;image/jpeg&amp;#39;&lt;/span&gt; });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;previewLeft&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;src&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;URL&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;createObjectURL&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;leftBlob&lt;/span&gt;);       &lt;span style=&#34;color:#75715e&#34;&gt;// 顯示預覽
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;整個過程都在瀏覽器本地完成，圖片不會上傳到任何伺服器。&lt;/p&gt;
+&lt;h3 id=&#34;小結&#34;&gt;小結&lt;/h3&gt;
+&lt;p&gt;Ultra HDR 的「正確」其實散落在規格的各個角落。光看 &lt;a href=&#34;https://www.iso.org/standard/81379.html&#34;&gt;ISO 21496-1&lt;/a&gt; 規格書不夠，得拿 Lightroom、Google Photos 等軟體的實際輸出來對照，才能確定哪些欄位是必要的、viewer 實際上怎麼解析。&lt;/p&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;把 Rust CLI 工具移植到 WASM 最大的收穫是：&lt;strong&gt;降低了使用門檻&lt;/strong&gt;。不需要安裝任何東西，打開網頁就能用。對於像 &lt;code&gt;tilesplit&lt;/code&gt; 這種偶爾才用一次的小工具，WASM 版本可能比 CLI 更實用。&lt;/p&gt;
+&lt;p&gt;當然也有取捨——WASM 版本用的 &lt;code&gt;image&lt;/code&gt; crate JPEG 編碼器品質沒有 &lt;code&gt;jpegli&lt;/code&gt; 好，處理速度也稍慢一些。但對於「切一張照片發 IG」這個使用情境來說，完全夠用。&lt;/p&gt;
+&lt;p&gt;完整程式碼在 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/main/tilesplit-wasm&#34;&gt;GitHub&lt;/a&gt; 上。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/</link>
+      <pubDate>Sat, 14 Feb 2026 10:00:00 &#43;0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;每次要把橫幅風景照發 Instagram，都得打開 Lightroom 手動裁切——調整裁切框、對齊、最後再匯出。於是我就寫了 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/tilesplit&#34;&gt;&lt;code&gt;tilesplit&lt;/code&gt;&lt;/a&gt;，一個用 Rust 打造的小工具，專門在分割圖片的同時保留 Ultra HDR 資訊。這篇文章來聊聊 Ultra HDR 是什麼，以及這個工具背後的技術細節。&lt;/p&gt;
+&lt;h2 id=&#34;為什麼需要-tilesplit&#34;&gt;為什麼需要 TileSplit？&lt;/h2&gt;
+&lt;p&gt;我最主要的使用情境是&lt;strong&gt;把 3:2 的橫幅風景照發到 Instagram 上&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;雖然 Instagram 現在允許以原始比例上傳照片，但橫幅照片在動態牆上顯示得比直幅照片小很多，視覺衝擊力大打折扣。所以現在 IG 很流行「無縫滑動」的發法：把一張橫幅照片切成兩張（或更多）直幅圖，使用者左右滑的時候會有連續的視覺體驗，同時每張圖在動態牆上都能佔滿版面。但如果這張照片是 Ultra HDR 格式，用一般工具切完，HDR 就沒了——原本在 HDR 螢幕上那種亮眼的層次感，瞬間變得平淡。&lt;/p&gt;
+&lt;p&gt;原因很簡單：&lt;strong&gt;大多數工具在處理圖片時，根本不知道 Gain Map 的存在&lt;/strong&gt;。它們只保留了 SDR 的部分，Gain Map 直接被丟掉了。&lt;/p&gt;
+&lt;h2 id=&#34;什麼是-ultra-hdr&#34;&gt;什麼是 Ultra HDR？&lt;/h2&gt;
+&lt;p&gt;Ultra HDR 是 Google 在 Android 14 引入的圖片格式，本質上還是 JPEG，但多藏了一些東西。它最厲害的地方在於&lt;strong&gt;向後兼容&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;傳統的 HDR 圖片（像 10-bit HEIF 或 AVIF）在舊手機或不支援 HDR 的螢幕上，常常會顏色怪怪的或是過暗。Ultra HDR 用了一個很聰明的方法解決這個問題：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;SDR 基礎圖片&lt;/strong&gt;：本質上就是一張普通的 JPEG，任何軟體都能打開、正常顯示。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Gain Map（增益圖）&lt;/strong&gt;：在 JPEG 裡面偷偷塞了一張「變亮地圖」——告訴系統每個區域可以變多亮。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;HDR 重建&lt;/strong&gt;：在支援 HDR 的螢幕上，系統把 SDR 圖片和 Gain Map 合在一起算，就能還原出更亮的高光和更豐富的細節。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;同一張圖片，舊手機上正常顯示，新手機上閃閃發光。&lt;/p&gt;
+&lt;h2 id=&#34;tilesplit-是如何工作的&#34;&gt;TileSplit 是如何工作的？&lt;/h2&gt;
+&lt;p&gt;核心目標很單純：切圖的同時，把 Ultra HDR 的資料完整保留下來。整個流程大概分四步：&lt;/p&gt;
+&lt;h3 id=&#34;1-偵測與解析&#34;&gt;1. 偵測與解析&lt;/h3&gt;
+&lt;p&gt;程式先用 &lt;code&gt;jpegli&lt;/code&gt; 去讀輸入檔案，檢查 JPEG 裡有沒有 XMP Metadata 和 Gain Map。如果 &lt;code&gt;jpegli&lt;/code&gt; 讀不出來（不同手機產生的 Ultra HDR 格式會有差異），就退回去用 Google 原生的 &lt;code&gt;ultrahdr&lt;/code&gt; 解碼器做更深入的解析。&lt;/p&gt;
+&lt;h3 id=&#34;2-雙層解碼&#34;&gt;2. 雙層解碼&lt;/h3&gt;
+&lt;p&gt;確認是 Ultra HDR 之後，程式會把圖片拆成兩層：&lt;strong&gt;SDR 主圖&lt;/strong&gt;（標準 RGB 像素）和 &lt;strong&gt;Gain Map&lt;/strong&gt;（亮度增益資料）。同時提取 Metadata（像 &lt;code&gt;hdrgm:GainMapMin&lt;/code&gt;、&lt;code&gt;hdrgm:Gamma&lt;/code&gt; 等），這些參數決定了 SDR 和 Gain Map 怎麼合成 HDR。&lt;/p&gt;
+&lt;p&gt;來看看程式碼長什麼樣子（省略了 debug logging）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;try_extract_ultrahdr_with_jpegli&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_bytes: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    debug: &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;(ultrahdr::GainMapMetadata, RawImage, GainMap, Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 用 catch_unwind 保護 jpegli 解碼——某些損壞的 JPEG 會造成 panic
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; decoded &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; catch_unwind_quiet(AssertUnwindSafe(&lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        JpegDecoder::new()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .preserve(PreserveConfig::default())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .output_format(JpegPixelFormat::Rgb)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .decode(source_bytes)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    })) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(Ok(image)) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; image,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 從 JPEG extras 裡挖出 XMP metadata 和 Gain Map
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; extras &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; decoded.extras()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extras.xmp()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (metadata, _) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ultrahdr::metadata::xmp::parse_xmp(xmp).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; extras.gainmap() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Some(gainmap) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; gainmap.to_vec(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// extras 裡找不到的話，試試 MPF（Multi-Picture Format）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        None &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; extract_gainmap_jpeg_from_mpf(source_bytes, debug)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 有些手機的 XMP metadata 不完整，嘗試從 Gain Map 本身的 XMP 補齊
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; metadata &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; metadata_looks_default_or_incomplete(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;metadata) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        extract_metadata_from_gainmap_xmp(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap, debug).unwrap_or(metadata)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        metadata
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; icc_profile &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extras.icc_profile().map(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;icc&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; icc.to_vec());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 把像素資料包成 RawImage 結構
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sdr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; RawImage::from_data(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        decoded.width, decoded.height,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgb8, ColorGamut::Bt709, ColorTransfer::Srgb,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        decoded.data,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Gain Map 的 JPEG 也需要解碼成像素資料
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; decode_gainmap_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap, ColorGamut::Bt709).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Some((metadata, sdr, gainmap, icc_profile))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;幾個值得注意的設計：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;catch_unwind_quiet&lt;/code&gt;&lt;/strong&gt;：jpegli 是 C 庫的封裝，遇到格式損壞可能會 panic，用 &lt;code&gt;catch_unwind&lt;/code&gt; 接住避免整個程式崩潰&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;MPF fallback&lt;/strong&gt;：有些手機（特別是早期支援 Ultra HDR 的機型）把 Gain Map 存在 JPEG 的 Multi-Picture Format 區段而非 Extras 裡，需要額外處理&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Metadata 補齊&lt;/strong&gt;：某些裝置產生的 XMP metadata 不完整，程式會嘗試從 Gain Map 自身的 XMP 中提取更完整的參數&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;3-幾何映射與分割&#34;&gt;3. 幾何映射與分割&lt;/h3&gt;
+&lt;p&gt;根據使用者要的比例（像 4:5 for Instagram），程式算出 SDR 主圖的裁剪區域。&lt;/p&gt;
+&lt;p&gt;這裡有個坑：&lt;strong&gt;Gain Map 的解析度通常比主圖小&lt;/strong&gt;（常見是 1/4 大小），所以不能直接拿主圖的座標去切 Gain Map。需要根據兩者的比例做精確映射，不然切出來的 HDR 重建會位置偏移，高光對不準。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;map_rect_to_gainmap&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    rect: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rect&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Rect&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 用整數運算避免浮點誤差
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; x0 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (rect.x &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; source_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; y0 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (rect.y &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; source_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; right_edge &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rect.x.saturating_add(rect.width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bottom_edge &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rect.y.saturating_add(rect.height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 右下角用 ceiling division，確保不會少切到像素
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; div_ceil_u64(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        right_edge &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        source_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; div_ceil_u64(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        bottom_edge &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        source_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 邊界保護
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; x1.clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, gainmap_width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; y1.clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, gainmap_height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; x1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; x0 {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (x0 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;).min(gainmap_width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; y1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; y0 {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (y0 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;).min(gainmap_height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Rect {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x: &lt;span style=&#34;color:#a6e22e&#34;&gt;x0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y: &lt;span style=&#34;color:#a6e22e&#34;&gt;y0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        width: &lt;span style=&#34;color:#a6e22e&#34;&gt;x1&lt;/span&gt;.saturating_sub(x0),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        height: &lt;span style=&#34;color:#a6e22e&#34;&gt;y1&lt;/span&gt;.saturating_sub(y0),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;4-編碼與重組&#34;&gt;4. 編碼與重組&lt;/h3&gt;
+&lt;p&gt;最後一步是把切好的東西重新包裝成合法的 Ultra HDR JPEG。流程是：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;把裁剪後的 Gain Map 編碼成獨立的 JPEG，並嵌入 XMP metadata&lt;/li&gt;
+&lt;li&gt;用 &lt;code&gt;jpegli&lt;/code&gt; 編碼 SDR 主圖，保留 ICC Color Profile&lt;/li&gt;
+&lt;li&gt;手動組裝 Ultra HDR 容器：插入 XMP APP1 和 MPF APP2，再接上 Gain Map JPEG&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;為什麼不用 &lt;code&gt;jpegli&lt;/code&gt; 的 &lt;code&gt;.add_gainmap()&lt;/code&gt; 一行搞定？因為它生成的 MPF 偏移量是錯的（用了絕對偏移而非 MPF 規格要求的相對偏移），導致 viewer 找不到 Gain Map，HDR 就失效了。所以得自己手動組裝容器。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;encode_ultrahdr_tile&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sdr_tile: &lt;span style=&#34;color:#a6e22e&#34;&gt;RawImage&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_tile: &lt;span style=&#34;color:#a6e22e&#34;&gt;GainMap&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    metadata: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;ultrahdr&lt;/span&gt;::GainMapMetadata,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_icc_profile: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. Gain Map 編碼成 JPEG，同時嵌入 XMP metadata
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap_jpeg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; encode_gainmap_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_tile, metadata)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 編碼 SDR 主圖（不含 Gain Map，容器組裝交給 assemble_ultrahdr_jpeg）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; config &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; EncoderConfig::ycbcr(&lt;span style=&#34;color:#66d9ef&#34;&gt;SDR_TILE_JPEG_QUALITY&lt;/span&gt;, ChromaSubsampling::None);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(icc_profile) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; source_icc_profile
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;icc_profile.is_empty()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        config &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; config.icc_profile(icc_profile.to_vec());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (pixel_layout, pixel_data) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; sdr_tile.format {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgb8 &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; (PixelLayout::Rgb8Srgb, Cow::Borrowed(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_tile.data)),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgba8 &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#75715e&#34;&gt;/* RGBA → RGB 轉換 */&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; Err(&lt;span style=&#34;color:#66d9ef&#34;&gt;EXIT_IO_ERROR&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sdr_jpeg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;/* jpegli encode */&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 手動組裝 Ultra HDR 容器
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assemble_ultrahdr_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_jpeg, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_jpeg, metadata)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;assemble_ultrahdr_jpeg&lt;/code&gt; 做的事：把 XMP APP1 和 MPF APP2 插到主圖裡，再把 Gain Map JPEG 接在主圖後面。MPF header 裡的偏移量必須&lt;strong&gt;相對於 TIFF header&lt;/strong&gt;（&lt;code&gt;mpf_marker_offset + 8&lt;/code&gt;），這個細節後面的「踩坑」章節會詳細說明。&lt;/p&gt;
+&lt;p&gt;這樣輸出的每一張切片都是完整的 Ultra HDR 檔案，可以在支援的設備上獨立顯示 HDR 效果。&lt;/p&gt;
+&lt;h2 id=&#34;關於重新編碼與畫質&#34;&gt;關於重新編碼與畫質&lt;/h2&gt;
+&lt;p&gt;你可能會問：「重新編碼會不會讓照片變糟？」&lt;/p&gt;
+&lt;p&gt;會。但可以把損失降到很低。&lt;/p&gt;
+&lt;p&gt;JPEG 每次重新編碼都會因為 DCT 量化而失去一些細節。為了盡量保住畫質，&lt;code&gt;tilesplit&lt;/code&gt; 做了幾件事：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;用 Jpegli 編碼器&lt;/strong&gt;：Google 開源的 &lt;code&gt;jpegli&lt;/code&gt; 在同樣檔案大小下，畫質比傳統 &lt;code&gt;libjpeg&lt;/code&gt; 好不少&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;高畫質設定&lt;/strong&gt;：預設 Quality 100，在 Instagram 上基本看不出和原圖的差異&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;避免不必要的轉換&lt;/strong&gt;：直接操作解碼後的原始像素，不做多餘的格式轉換&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;技術上不是「絕對無損」——要做到無損得用 &lt;code&gt;jpegtran&lt;/code&gt; 那種直接操作 DCT 係數的方式，但那要同時處理 Ultra HDR 的 Metadata 封裝會極其困難。實際用起來，&lt;code&gt;tilesplit&lt;/code&gt; 產出的畫質對攝影愛好者來說完全夠用。&lt;/p&gt;
+&lt;h2 id=&#34;關鍵相依庫&#34;&gt;關鍵相依庫&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;tilesplit&lt;/code&gt; 主要靠這三個 Rust crate：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/image&#34;&gt;&lt;code&gt;image&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Rust 生態系最常用的圖像處理庫，負責基礎的裁剪、格式轉換和非 HDR 圖片的處理。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/jpegli-rs&#34;&gt;&lt;code&gt;jpegli-rs&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Google &lt;code&gt;jpegli&lt;/code&gt; 的 Rust 封裝，壓縮率比 &lt;code&gt;libjpeg&lt;/code&gt; 好，而且支援 JPEG Extras——可以讀寫嵌在 JPEG 裡的 XMP Metadata 和 Gain Map。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/ultrahdr-rs&#34;&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Google &lt;code&gt;libultrahdr&lt;/code&gt; 的封裝，包含 Ultra HDR 的核心邏輯（Metadata 解析、SDR/HDR 轉換公式等）。遇到格式比較特殊的圖片時，靠它來兜底。它的純 Rust 子 crate &lt;code&gt;ultrahdr-core&lt;/code&gt; 也用來生成 XMP APP1 marker。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;為什麼選擇-rust&#34;&gt;為什麼選擇 Rust？&lt;/h2&gt;
+&lt;p&gt;Rust 剛好適合這種場景：記憶體安全（不用擔心 segfault）、執行效率接近 C++、而且 FFI 很方便——&lt;code&gt;libultrahdr&lt;/code&gt; 和 &lt;code&gt;jpegli&lt;/code&gt; 都是 C/C++ 的庫，Rust 可以直接呼叫再包一層安全介面。加上 &lt;code&gt;Result&lt;/code&gt; 型別強制處理所有錯誤情況，遇到檔案損壞或 metadata 缺失，不會直接 crash，而是給出有意義的錯誤訊息。&lt;/p&gt;
+&lt;h2 id=&#34;安裝與使用&#34;&gt;安裝與使用&lt;/h2&gt;
+&lt;p&gt;如果你也有類似需求，可以直接從 GitHub 安裝：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo install --git https://github.com/p47t/rust-52-projects --branch tilesplit&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;用法很簡單：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 基本用法，自動生成 photo-left.jpg 和 photo-right.jpg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tilesplit --input photo.jpg
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 指定輸出路徑&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tilesplit --input photo.jpg --left-output left.jpg --right-output right.jpg&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;原始碼在 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/tilesplit&#34;&gt;rust-52-projects/tilesplit&lt;/a&gt; 上。&lt;/p&gt;
+&lt;h2 id=&#34;踩過的坑亮度為什麼不對&#34;&gt;踩過的坑：亮度為什麼不對？&lt;/h2&gt;
+&lt;p&gt;做完初版後，切出來的圖在 HDR 螢幕上看起來比原圖暗很多。花了不少時間 debug 才搞清楚，「把 Gain Map 塞進去」跟「讓 viewer 正確解讀」是兩回事。以下是踩過的幾個主要坑：&lt;/p&gt;
+&lt;h3 id=&#34;mpf-偏移量的基準點&#34;&gt;MPF 偏移量的基準點&lt;/h3&gt;
+&lt;p&gt;Ultra HDR JPEG 是兩張圖接在一起——主圖和 Gain Map。MPF (Multi-Picture Format) APP2 marker 裡有個 TIFF IFD 結構，記錄 Gain Map 的位置。關鍵是：&lt;strong&gt;偏移量是相對於 MPF 裡的 TIFF header&lt;/strong&gt;，不是檔案開頭。&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;MPF APP2 的二進制結構：
+FF E2          ← marker (2 bytes)
+xx xx          ← length (2 bytes)
+4D 50 46 00    ← &amp;#34;MPF\0&amp;#34; (4 bytes)
+4D 4D 00 2A    ← TIFF header ← 偏移量從這裡算起&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;TIFF header 在 MPF marker 起始位置 +8 bytes 的地方。一開始用了 &lt;code&gt;jpegli&lt;/code&gt; 的 &lt;code&gt;.add_gainmap()&lt;/code&gt; API，發現它寫入的是絕對偏移而非相對偏移，viewer 根本找不到 Gain Map。改成手動組裝容器才修好。&lt;/p&gt;
+&lt;h3 id=&#34;主圖和-gain-map-都要有-xmp&#34;&gt;主圖和 Gain Map 都要有 XMP&lt;/h3&gt;
+&lt;p&gt;原本以為只要主圖的 XMP 有完整參數就行。結果拿 Lightroom 匯出的 Ultra HDR 對比——&lt;strong&gt;主圖的 XMP 只有 &lt;code&gt;hdrgm:Version=&amp;quot;1.0&amp;quot;&lt;/code&gt;，完整的 &lt;code&gt;GainMapMin&lt;/code&gt;、&lt;code&gt;GainMapMax&lt;/code&gt;、&lt;code&gt;Gamma&lt;/code&gt; 等參數全在 Gain Map JPEG 自己的 XMP 裡&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;這表示很多 viewer（包括 Android 的 Photos 和 Chrome）是優先從 Gain Map 的 XMP 讀取參數的。Gain Map JPEG 如果沒嵌入 XMP，viewer 可能拿不到正確的 boost 參數，畫面就是暗的。&lt;/p&gt;
+&lt;h3 id=&#34;rdfseq-才是標準格式&#34;&gt;rdf:Seq 才是標準格式&lt;/h3&gt;
+&lt;p&gt;Gain Map 參數是 per-channel 的（RGB 各通道可以不同），在 XMP 裡有兩種表達方式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-xml&#34; data-lang=&#34;xml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- 逗號分隔（有些 viewer 不認） --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:Description&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;hdrgm:GainMapMax=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-0.699, -0.615, -0.603&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- rdf:Seq（標準，所有 viewer 都認） --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;hdrgm:GainMapMax&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:Seq&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.699220&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.614892&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.603440&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:Seq&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/hdrgm:GainMapMax&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt; crate 的 &lt;code&gt;generate_xmp()&lt;/code&gt; 用的是逗號分隔格式，實測某些 viewer 會 fallback 到預設值。改成 &lt;code&gt;rdf:Seq&lt;/code&gt; 格式後就正常了。&lt;/p&gt;
+&lt;h3 id=&#34;gain-map-品質不能省&#34;&gt;Gain Map 品質不能省&lt;/h3&gt;
+&lt;p&gt;Gain Map 每個像素代表 HDR boost 強度，套用公式大致是 &lt;code&gt;boost = max_boost^(pixel/255)&lt;/code&gt;。因為是&lt;strong&gt;指數關係&lt;/strong&gt;，JPEG 壓縮的量化誤差會被指數放大——pixel 值差個 5，亮度可能差 5% 以上。所以 Gain Map 一律用 quality 100 編碼，不管使用者設的 SDR 品質是多少。&lt;/p&gt;
+&lt;h3 id=&#34;教訓&#34;&gt;教訓&lt;/h3&gt;
+&lt;p&gt;Ultra HDR 的正確性散落在 MPF 規格、XMP schema、和各家 viewer 的實作細節裡。光看 &lt;a href=&#34;https://www.iso.org/standard/81379.html&#34;&gt;ISO 21496-1&lt;/a&gt; 不夠，得拿 Lightroom、Google Photos 等軟體的實際輸出做二進制比對，才能確認哪些欄位是必要的、viewer 怎麼解析。&lt;/p&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;HDR 螢幕越來越普及，Ultra HDR 這種格式以後只會更常見。現有的圖像處理工具大多還沒跟上，&lt;code&gt;tilesplit&lt;/code&gt; 算是填補了這個小空白。如果你也有保留 HDR 切圖的需求，希望這個工具能幫到你。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

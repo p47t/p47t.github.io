@@ -1,0 +1,373 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/cli/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-18 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/</link>
+      <pubDate>Wed, 18 Feb 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;這次的 rust-52-projects 系列帶來了 &lt;code&gt;media-metadata-explorer&lt;/code&gt;——一個能深入剖析影音檔案內部結構的 CLI 工具。它透過 FFmpeg 的 &lt;code&gt;libavformat&lt;/code&gt; 函式庫讀取媒體容器資訊，同時還做了一件很有趣的事：附帶了一個 &lt;code&gt;libavformat-ffi&lt;/code&gt; companion crate，示範三種不同的 Rust FFI 呼叫方式（詳見&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/01-17-ffi-comparison&#34;&gt;之前的 FFI 比較文章&lt;/a&gt;）。&lt;/p&gt;
+&lt;p&gt;這篇文章會聚焦在工具本身的設計——三個實用的 CLI 子命令，以及用 &lt;code&gt;crossterm&lt;/code&gt; 打造互動式 TUI 的過程。&lt;/p&gt;
+&lt;h3 id=&#34;專案功能概覽&#34;&gt;專案功能概覽&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;media-metadata-explorer&lt;/code&gt; 提供三個子命令，對應三種使用情境：&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;inspect &amp;lt;file&amp;gt; [--json]&lt;/code&gt;&lt;/strong&gt; 是最基本的單檔檢視模式。打開一個 &lt;code&gt;.mkv&lt;/code&gt; 或 &lt;code&gt;.mp3&lt;/code&gt;，它會列出容器格式名稱、總時長、檔案大小、位元率、容器層級的 metadata 標籤（如 title、encoder），以及每條串流的詳細資訊：影片串流會顯示解析度與幀率，音訊串流則顯示取樣率、聲道數、語言標籤等。加上 &lt;code&gt;--json&lt;/code&gt; 旗標可以輸出結構化的 &lt;code&gt;MediaReport&lt;/code&gt;，方便接到其他工具做二次處理。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;catalog &amp;lt;dir&amp;gt; [--recursive] [--json]&lt;/code&gt;&lt;/strong&gt; 是媒體庫整理利器。它會走訪目錄，篩選 &lt;code&gt;mp4&lt;/code&gt;、&lt;code&gt;mkv&lt;/code&gt;、&lt;code&gt;mov&lt;/code&gt;、&lt;code&gt;avi&lt;/code&gt;、&lt;code&gt;webm&lt;/code&gt;、&lt;code&gt;mp3&lt;/code&gt;、&lt;code&gt;flac&lt;/code&gt;、&lt;code&gt;wav&lt;/code&gt; 等常見副檔名，逐一探測後彙整成 &lt;code&gt;CatalogReport&lt;/code&gt;：總時長、容器格式出現頻率（依次排序）、編解碼器統計，以及探測失敗的檔案清單。有個小細節：FFmpeg 回傳的格式名稱常常是 &lt;code&gt;&amp;quot;mov,mp4,m4a,3gp,3g2,mj2&amp;quot;&lt;/code&gt; 這樣一串，程式只取第一個 token，讓統計結果更好讀。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;tui &amp;lt;file&amp;gt; [--max-packets N]&lt;/code&gt;&lt;/strong&gt; 則是整個專案最有趣的部分——互動式終端瀏覽器，下一節細說。&lt;/p&gt;
+&lt;h3 id=&#34;tui-設計用-crossterm-打造終端介面&#34;&gt;TUI 設計：用 crossterm 打造終端介面&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;tui&lt;/code&gt; 子命令會先讀取最多 N 個封包（預設 2000），在記憶體中建立一棵樹，再用 &lt;code&gt;crossterm&lt;/code&gt; 啟動全螢幕互動介面。&lt;/p&gt;
+&lt;p&gt;樹狀結構分三個頂層節點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Container Info&lt;/strong&gt;：格式名稱、時長、位元率、檔案大小、metadata 標籤&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Streams&lt;/strong&gt;：每條串流展開後顯示編解碼器參數、串流標籤&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Packets&lt;/strong&gt;：依串流索引分群，每個封包顯示 PTS、DTS、大小、是否為關鍵幀&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;導覽鍵支援 Vim 風格（&lt;code&gt;j&lt;/code&gt;/&lt;code&gt;k&lt;/code&gt; 上下、&lt;code&gt;h&lt;/code&gt;/&lt;code&gt;l&lt;/code&gt; 收合/展開）以及方向鍵、PageUp/PageDown、Home/End。Space 切換展開狀態，&lt;code&gt;q&lt;/code&gt; 或 Esc 退出。顏色區分不同節點類型：cyan 是標題、magenta 是容器資訊、blue 是串流節點、green 是封包節點、yellow 是標籤值。&lt;/p&gt;
+&lt;h4 id=&#34;crossterm-的角色&#34;&gt;crossterm 的角色&lt;/h4&gt;
+&lt;p&gt;&lt;code&gt;crossterm&lt;/code&gt; 是 Rust 生態系裡最常見的跨平台終端控制函式庫，名字裡的 &amp;ldquo;cross&amp;rdquo; 就是這個意思——同一套 API 可以在 Windows、macOS、Linux 上跑，不用自己處理 ANSI escape code 或 Windows Console API 的差異。&lt;/p&gt;
+&lt;p&gt;它的 API 設計圍繞著「命令（command）」的概念，每個動作都是一個實作 &lt;code&gt;Command&lt;/code&gt; trait 的型別：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; crossterm::{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    cursor::{Hide, MoveTo, Show},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    event::{self, Event, KeyCode},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;執行命令有兩個 macro：&lt;code&gt;execute!&lt;/code&gt; 會立刻寫入並 flush，&lt;code&gt;queue!&lt;/code&gt; 只是把命令放進緩衝區。TUI 的 render 函式全程用 &lt;code&gt;queue!&lt;/code&gt; 積攢所有繪製動作，最後才呼叫一次 &lt;code&gt;out.flush()&lt;/code&gt;——這樣終端只會看到一個完整畫面，不會因為部分更新而閃爍：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;queue!&lt;/span&gt;(out, MoveTo(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;), Clear(ClearType::All))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ... 積攢所有列的繪製命令 ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;out.flush()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// 一次送出
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;進入 TUI 之前，程式需要做三件準備工作：啟用 &lt;strong&gt;raw mode&lt;/strong&gt;（讓按鍵立刻送達、不等換行、不回顯到螢幕）、切換到 &lt;strong&gt;alternate screen&lt;/strong&gt;（保留原本的終端內容，退出後可以還原）、以及隱藏游標。這三步統一在 &lt;code&gt;TerminalGuard::enter()&lt;/code&gt; 裡完成，&lt;code&gt;Drop&lt;/code&gt; 時反向還原：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;enter&lt;/span&gt;(out: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; Stdout) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Self&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    terminal::enable_raw_mode()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;execute!&lt;/span&gt;(out, EnterAlternateScreen, Hide)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(Self)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Drop &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; TerminalGuard {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;drop&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; _ &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; terminal::disable_raw_mode();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; _ &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;execute!&lt;/span&gt;(stdout(), Show, LeaveAlternateScreen);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;事件迴圈用 &lt;code&gt;event::read()&lt;/code&gt; 阻塞等待下一個事件，&lt;code&gt;Event::Key&lt;/code&gt; 處理按鍵，&lt;code&gt;Event::Resize&lt;/code&gt; 處理視窗大小改變。Resize 事件不需要任何邏輯——只要設 &lt;code&gt;dirty = true&lt;/code&gt;，下一個 frame 就會用新的 &lt;code&gt;terminal::size()&lt;/code&gt; 重繪，自然就適應了新的寬高。&lt;/p&gt;
+&lt;h4 id=&#34;三層資料結構設計&#34;&gt;三層資料結構設計&lt;/h4&gt;
+&lt;p&gt;TUI 的樹狀結構採用了一個乾淨的三層分離設計。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;第一層：&lt;code&gt;TreeNode&lt;/code&gt;（資料層）&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TreeNode&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    id: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    label: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    children: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;TreeNode&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這是一棵遞迴的 owned tree，&lt;code&gt;children&lt;/code&gt; 直接擁有子節點，不用指標也不用 &lt;code&gt;Rc&lt;/code&gt;。每個節點的 &lt;code&gt;id&lt;/code&gt; 由建構時的 &lt;code&gt;&amp;amp;mut usize&lt;/code&gt; counter 遞增分配，全域唯一。&lt;strong&gt;這棵樹只管結構，完全不知道展開/收合狀態。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;第二層：&lt;code&gt;TreeState&lt;/code&gt;（狀態層）&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TreeState&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    selected: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,          &lt;span style=&#34;color:#75715e&#34;&gt;// 游標在第幾行（flat index）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    scroll: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,            &lt;span style=&#34;color:#75715e&#34;&gt;// viewport 捲動偏移
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    expanded: &lt;span style=&#34;color:#a6e22e&#34;&gt;BTreeSet&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, &lt;span style=&#34;color:#75715e&#34;&gt;// 哪些 node_id 目前是展開的
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;展開狀態完全分離在 &lt;code&gt;BTreeSet&amp;lt;node_id&amp;gt;&lt;/code&gt; 裡，不碰 &lt;code&gt;TreeNode&lt;/code&gt; 本身。要展開一個節點就 &lt;code&gt;insert(id)&lt;/code&gt;，要收合就 &lt;code&gt;remove(id)&lt;/code&gt;，操作極其簡單。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;第三層：&lt;code&gt;FlatLine&lt;/code&gt;（視圖層）&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;FlatLine&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    node_id: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    label: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    depth: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    has_children: &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    expanded: &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;每次重繪前，&lt;code&gt;flatten_tree()&lt;/code&gt; 遍歷 &lt;code&gt;TreeNode&lt;/code&gt;、搭配 &lt;code&gt;expanded&lt;/code&gt; set，產生「目前可見行」的扁平 &lt;code&gt;Vec&amp;lt;FlatLine&amp;gt;&lt;/code&gt;。如果一個節點的 id 不在 &lt;code&gt;expanded&lt;/code&gt; 裡，它的子節點就不會被加入——視覺上就「消失」了：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;flatten_tree&lt;/span&gt;(node: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;TreeNode&lt;/span&gt;, expanded_ids: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;BTreeSet&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, depth: &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;, out: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;FlatLine&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; expanded &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; expanded_ids.contains(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;node.id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    out.push(FlatLine { node_id: &lt;span style=&#34;color:#a6e22e&#34;&gt;node&lt;/span&gt;.id, label: &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;., depth, has_children: &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;., expanded });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; has_children &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; expanded {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; child &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;node.children {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            flatten_tree(child, expanded_ids, depth &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, out);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這是典型的 &lt;strong&gt;document-view 分離&lt;/strong&gt;：&lt;code&gt;TreeNode&lt;/code&gt; 是不可變的文件結構，一次建立後不再修改；&lt;code&gt;TreeState.expanded&lt;/code&gt; 是可變的互動狀態；&lt;code&gt;Vec&amp;lt;FlatLine&amp;gt;&lt;/code&gt; 則是每個 render frame 重新推導的視圖，不需要維護反向指標。&lt;code&gt;selected&lt;/code&gt; 和 &lt;code&gt;scroll&lt;/code&gt; 追蹤的是 flat list 的 index，不是 &lt;code&gt;node_id&lt;/code&gt;，因為鍵盤導覽只關心「螢幕上第幾行」。&lt;/p&gt;
+&lt;p&gt;實作上有幾個設計值得一提：&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Dirty flag 避免不必要重繪。&lt;/strong&gt; TUI 的事件迴圈維護一個 &lt;code&gt;dirty: bool&lt;/code&gt;，只有真正改變畫面狀態的按鍵（移動選取、展開/收合、視窗 resize）才設 &lt;code&gt;dirty = true&lt;/code&gt;，下一個迴圈才重繪。這比每個 tick 無條件清屏再重畫要省 CPU，也避免畫面閃爍。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;&lt;code&gt;TerminalGuard&lt;/code&gt; 確保終端狀態復原。&lt;/strong&gt; 進入 TUI 前需要切換到 alternate screen、啟用 raw mode、隱藏游標。為了確保不論正常退出還是 panic，終端都能恢復正常，程式定義了一個零大小的 &lt;code&gt;TerminalGuard&lt;/code&gt; struct，在 &lt;code&gt;Drop&lt;/code&gt; 裡執行清理動作（disable raw mode、show cursor、leave alternate screen）。這是 Rust RAII 慣用法的典型應用。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Parent 節點搜尋是 O(n) 的線性掃描。&lt;/strong&gt; 當使用者按 &lt;code&gt;h&lt;/code&gt; 要跳到父節點時，程式從當前行往上掃，找第一個 &lt;code&gt;depth == current_depth - 1&lt;/code&gt; 的行。雖然理論上是 O(n)，但實際上樹的深度有限、總行數也不多，這個簡單實作完全夠用，不需要額外維護父節點指標。&lt;/p&gt;
+&lt;h3 id=&#34;開發心得與踩坑記錄&#34;&gt;開發心得與踩坑記錄&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;BTreeMap 讓輸出穩定有序。&lt;/strong&gt; 容器和串流的 metadata 標籤改用 &lt;code&gt;BTreeMap&amp;lt;String, String&amp;gt;&lt;/code&gt; 而非 &lt;code&gt;HashMap&lt;/code&gt;，好處是不論 JSON 輸出還是 TUI 顯示，標籤永遠按字母順序排列，不會因 hash 隨機性產生不穩定的輸出。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;FFmpeg 的「不知道」值要小心處理。&lt;/strong&gt; FFmpeg 大量使用 &lt;code&gt;0&lt;/code&gt; 或 &lt;code&gt;-1&lt;/code&gt; 表示「未知/不可用」。程式定義了 &lt;code&gt;to_u64(i64) -&amp;gt; Option&amp;lt;u64&amp;gt;&lt;/code&gt; 和 &lt;code&gt;to_u32(i32) -&amp;gt; Option&amp;lt;u32&amp;gt;&lt;/code&gt; 兩個轉換幫手，把 0 和負值都變成 &lt;code&gt;None&lt;/code&gt;，對外 API 就能乾淨地用 &lt;code&gt;Option&lt;/code&gt; 表達可選欄位，不用每次都檢查魔法數值。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;EOF 的位元運算。&lt;/strong&gt; FFmpeg 用負數的四字元碼表示 EOF 錯誤（&lt;code&gt;AVERROR_EOF = -((&#39;E&#39; | &#39;O&#39;&amp;lt;&amp;lt;8 | &#39;F&#39;&amp;lt;&amp;lt;16 | &#39; &#39;&amp;lt;&amp;lt;24))&lt;/code&gt;）。Rust 端重建這個常數的方式和 C 端一樣，不依賴外部匯入的常數，讓 EOF 和真正的讀取錯誤可以明確區分。第一次看到這個寫法還楞了一下，仔細想才明白這是 FFmpeg 的 FOURCC 慣例。&lt;/p&gt;
+&lt;p&gt;整體而言，這個專案把「實用工具」和「教學示範」結合得很好——&lt;code&gt;media-metadata-explorer&lt;/code&gt; 本身就是個可以日常使用的媒體檔案檢視器，而 &lt;code&gt;libavformat-ffi&lt;/code&gt; companion crate 則是學習 Rust FFI 的絕佳參考資料。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/</link>
+      <pubDate>Sat, 14 Feb 2026 10:00:00 &#43;0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;每次要把橫幅風景照發 Instagram，都得打開 Lightroom 手動裁切——調整裁切框、對齊、最後再匯出。於是我就寫了 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/tilesplit&#34;&gt;&lt;code&gt;tilesplit&lt;/code&gt;&lt;/a&gt;，一個用 Rust 打造的小工具，專門在分割圖片的同時保留 Ultra HDR 資訊。這篇文章來聊聊 Ultra HDR 是什麼，以及這個工具背後的技術細節。&lt;/p&gt;
+&lt;h2 id=&#34;為什麼需要-tilesplit&#34;&gt;為什麼需要 TileSplit？&lt;/h2&gt;
+&lt;p&gt;我最主要的使用情境是&lt;strong&gt;把 3:2 的橫幅風景照發到 Instagram 上&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;雖然 Instagram 現在允許以原始比例上傳照片，但橫幅照片在動態牆上顯示得比直幅照片小很多，視覺衝擊力大打折扣。所以現在 IG 很流行「無縫滑動」的發法：把一張橫幅照片切成兩張（或更多）直幅圖，使用者左右滑的時候會有連續的視覺體驗，同時每張圖在動態牆上都能佔滿版面。但如果這張照片是 Ultra HDR 格式，用一般工具切完，HDR 就沒了——原本在 HDR 螢幕上那種亮眼的層次感，瞬間變得平淡。&lt;/p&gt;
+&lt;p&gt;原因很簡單：&lt;strong&gt;大多數工具在處理圖片時，根本不知道 Gain Map 的存在&lt;/strong&gt;。它們只保留了 SDR 的部分，Gain Map 直接被丟掉了。&lt;/p&gt;
+&lt;h2 id=&#34;什麼是-ultra-hdr&#34;&gt;什麼是 Ultra HDR？&lt;/h2&gt;
+&lt;p&gt;Ultra HDR 是 Google 在 Android 14 引入的圖片格式，本質上還是 JPEG，但多藏了一些東西。它最厲害的地方在於&lt;strong&gt;向後兼容&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;傳統的 HDR 圖片（像 10-bit HEIF 或 AVIF）在舊手機或不支援 HDR 的螢幕上，常常會顏色怪怪的或是過暗。Ultra HDR 用了一個很聰明的方法解決這個問題：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;SDR 基礎圖片&lt;/strong&gt;：本質上就是一張普通的 JPEG，任何軟體都能打開、正常顯示。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Gain Map（增益圖）&lt;/strong&gt;：在 JPEG 裡面偷偷塞了一張「變亮地圖」——告訴系統每個區域可以變多亮。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;HDR 重建&lt;/strong&gt;：在支援 HDR 的螢幕上，系統把 SDR 圖片和 Gain Map 合在一起算，就能還原出更亮的高光和更豐富的細節。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;同一張圖片，舊手機上正常顯示，新手機上閃閃發光。&lt;/p&gt;
+&lt;h2 id=&#34;tilesplit-是如何工作的&#34;&gt;TileSplit 是如何工作的？&lt;/h2&gt;
+&lt;p&gt;核心目標很單純：切圖的同時，把 Ultra HDR 的資料完整保留下來。整個流程大概分四步：&lt;/p&gt;
+&lt;h3 id=&#34;1-偵測與解析&#34;&gt;1. 偵測與解析&lt;/h3&gt;
+&lt;p&gt;程式先用 &lt;code&gt;jpegli&lt;/code&gt; 去讀輸入檔案，檢查 JPEG 裡有沒有 XMP Metadata 和 Gain Map。如果 &lt;code&gt;jpegli&lt;/code&gt; 讀不出來（不同手機產生的 Ultra HDR 格式會有差異），就退回去用 Google 原生的 &lt;code&gt;ultrahdr&lt;/code&gt; 解碼器做更深入的解析。&lt;/p&gt;
+&lt;h3 id=&#34;2-雙層解碼&#34;&gt;2. 雙層解碼&lt;/h3&gt;
+&lt;p&gt;確認是 Ultra HDR 之後，程式會把圖片拆成兩層：&lt;strong&gt;SDR 主圖&lt;/strong&gt;（標準 RGB 像素）和 &lt;strong&gt;Gain Map&lt;/strong&gt;（亮度增益資料）。同時提取 Metadata（像 &lt;code&gt;hdrgm:GainMapMin&lt;/code&gt;、&lt;code&gt;hdrgm:Gamma&lt;/code&gt; 等），這些參數決定了 SDR 和 Gain Map 怎麼合成 HDR。&lt;/p&gt;
+&lt;p&gt;來看看程式碼長什麼樣子（省略了 debug logging）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;try_extract_ultrahdr_with_jpegli&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_bytes: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    debug: &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;(ultrahdr::GainMapMetadata, RawImage, GainMap, Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 用 catch_unwind 保護 jpegli 解碼——某些損壞的 JPEG 會造成 panic
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; decoded &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; catch_unwind_quiet(AssertUnwindSafe(&lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        JpegDecoder::new()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .preserve(PreserveConfig::default())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .output_format(JpegPixelFormat::Rgb)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            .decode(source_bytes)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    })) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(Ok(image)) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; image,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; None,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 從 JPEG extras 裡挖出 XMP metadata 和 Gain Map
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; extras &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; decoded.extras()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; xmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extras.xmp()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (metadata, _) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ultrahdr::metadata::xmp::parse_xmp(xmp).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; extras.gainmap() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Some(gainmap) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; gainmap.to_vec(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// extras 裡找不到的話，試試 MPF（Multi-Picture Format）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        None &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; extract_gainmap_jpeg_from_mpf(source_bytes, debug)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 有些手機的 XMP metadata 不完整，嘗試從 Gain Map 本身的 XMP 補齊
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; metadata &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; metadata_looks_default_or_incomplete(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;metadata) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        extract_metadata_from_gainmap_xmp(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap, debug).unwrap_or(metadata)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        metadata
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; icc_profile &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extras.icc_profile().map(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;icc&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; icc.to_vec());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 把像素資料包成 RawImage 結構
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sdr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; RawImage::from_data(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        decoded.width, decoded.height,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgb8, ColorGamut::Bt709, ColorTransfer::Srgb,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        decoded.data,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Gain Map 的 JPEG 也需要解碼成像素資料
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; decode_gainmap_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap, ColorGamut::Bt709).ok()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Some((metadata, sdr, gainmap, icc_profile))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;幾個值得注意的設計：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;catch_unwind_quiet&lt;/code&gt;&lt;/strong&gt;：jpegli 是 C 庫的封裝，遇到格式損壞可能會 panic，用 &lt;code&gt;catch_unwind&lt;/code&gt; 接住避免整個程式崩潰&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;MPF fallback&lt;/strong&gt;：有些手機（特別是早期支援 Ultra HDR 的機型）把 Gain Map 存在 JPEG 的 Multi-Picture Format 區段而非 Extras 裡，需要額外處理&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Metadata 補齊&lt;/strong&gt;：某些裝置產生的 XMP metadata 不完整，程式會嘗試從 Gain Map 自身的 XMP 中提取更完整的參數&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;3-幾何映射與分割&#34;&gt;3. 幾何映射與分割&lt;/h3&gt;
+&lt;p&gt;根據使用者要的比例（像 4:5 for Instagram），程式算出 SDR 主圖的裁剪區域。&lt;/p&gt;
+&lt;p&gt;這裡有個坑：&lt;strong&gt;Gain Map 的解析度通常比主圖小&lt;/strong&gt;（常見是 1/4 大小），所以不能直接拿主圖的座標去切 Gain Map。需要根據兩者的比例做精確映射，不然切出來的 HDR 重建會位置偏移，高光對不準。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;map_rect_to_gainmap&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    rect: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rect&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_width: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_height: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Rect&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 用整數運算避免浮點誤差
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; x0 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (rect.x &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; source_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; y0 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (rect.y &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; source_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; right_edge &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rect.x.saturating_add(rect.width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bottom_edge &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rect.y.saturating_add(rect.height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 右下角用 ceiling division，確保不會少切到像素
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; div_ceil_u64(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        right_edge &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        source_width &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; div_ceil_u64(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        bottom_edge &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; gainmap_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        source_height &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 邊界保護
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; x1.clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, gainmap_width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; y1.clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, gainmap_height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; x1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; x0 {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (x0 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;).min(gainmap_width);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; y1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; y0 {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (y0 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;).min(gainmap_height);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Rect {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x: &lt;span style=&#34;color:#a6e22e&#34;&gt;x0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y: &lt;span style=&#34;color:#a6e22e&#34;&gt;y0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        width: &lt;span style=&#34;color:#a6e22e&#34;&gt;x1&lt;/span&gt;.saturating_sub(x0),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        height: &lt;span style=&#34;color:#a6e22e&#34;&gt;y1&lt;/span&gt;.saturating_sub(y0),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;4-編碼與重組&#34;&gt;4. 編碼與重組&lt;/h3&gt;
+&lt;p&gt;最後一步是把切好的東西重新包裝成合法的 Ultra HDR JPEG。流程是：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;把裁剪後的 Gain Map 編碼成獨立的 JPEG，並嵌入 XMP metadata&lt;/li&gt;
+&lt;li&gt;用 &lt;code&gt;jpegli&lt;/code&gt; 編碼 SDR 主圖，保留 ICC Color Profile&lt;/li&gt;
+&lt;li&gt;手動組裝 Ultra HDR 容器：插入 XMP APP1 和 MPF APP2，再接上 Gain Map JPEG&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;為什麼不用 &lt;code&gt;jpegli&lt;/code&gt; 的 &lt;code&gt;.add_gainmap()&lt;/code&gt; 一行搞定？因為它生成的 MPF 偏移量是錯的（用了絕對偏移而非 MPF 規格要求的相對偏移），導致 viewer 找不到 Gain Map，HDR 就失效了。所以得自己手動組裝容器。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;encode_ultrahdr_tile&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sdr_tile: &lt;span style=&#34;color:#a6e22e&#34;&gt;RawImage&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    gainmap_tile: &lt;span style=&#34;color:#a6e22e&#34;&gt;GainMap&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    metadata: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;ultrahdr&lt;/span&gt;::GainMapMetadata,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    source_icc_profile: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. Gain Map 編碼成 JPEG，同時嵌入 XMP metadata
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; gainmap_jpeg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; encode_gainmap_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_tile, metadata)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 編碼 SDR 主圖（不含 Gain Map，容器組裝交給 assemble_ultrahdr_jpeg）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; config &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; EncoderConfig::ycbcr(&lt;span style=&#34;color:#66d9ef&#34;&gt;SDR_TILE_JPEG_QUALITY&lt;/span&gt;, ChromaSubsampling::None);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(icc_profile) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; source_icc_profile
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;icc_profile.is_empty()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        config &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; config.icc_profile(icc_profile.to_vec());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (pixel_layout, pixel_data) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; sdr_tile.format {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgb8 &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; (PixelLayout::Rgb8Srgb, Cow::Borrowed(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_tile.data)),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        PixelFormat::Rgba8 &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#75715e&#34;&gt;/* RGBA → RGB 轉換 */&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; Err(&lt;span style=&#34;color:#66d9ef&#34;&gt;EXIT_IO_ERROR&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sdr_jpeg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;/* jpegli encode */&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 手動組裝 Ultra HDR 容器
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assemble_ultrahdr_jpeg(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;sdr_jpeg, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gainmap_jpeg, metadata)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;assemble_ultrahdr_jpeg&lt;/code&gt; 做的事：把 XMP APP1 和 MPF APP2 插到主圖裡，再把 Gain Map JPEG 接在主圖後面。MPF header 裡的偏移量必須&lt;strong&gt;相對於 TIFF header&lt;/strong&gt;（&lt;code&gt;mpf_marker_offset + 8&lt;/code&gt;），這個細節後面的「踩坑」章節會詳細說明。&lt;/p&gt;
+&lt;p&gt;這樣輸出的每一張切片都是完整的 Ultra HDR 檔案，可以在支援的設備上獨立顯示 HDR 效果。&lt;/p&gt;
+&lt;h2 id=&#34;關於重新編碼與畫質&#34;&gt;關於重新編碼與畫質&lt;/h2&gt;
+&lt;p&gt;你可能會問：「重新編碼會不會讓照片變糟？」&lt;/p&gt;
+&lt;p&gt;會。但可以把損失降到很低。&lt;/p&gt;
+&lt;p&gt;JPEG 每次重新編碼都會因為 DCT 量化而失去一些細節。為了盡量保住畫質，&lt;code&gt;tilesplit&lt;/code&gt; 做了幾件事：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;用 Jpegli 編碼器&lt;/strong&gt;：Google 開源的 &lt;code&gt;jpegli&lt;/code&gt; 在同樣檔案大小下，畫質比傳統 &lt;code&gt;libjpeg&lt;/code&gt; 好不少&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;高畫質設定&lt;/strong&gt;：預設 Quality 100，在 Instagram 上基本看不出和原圖的差異&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;避免不必要的轉換&lt;/strong&gt;：直接操作解碼後的原始像素，不做多餘的格式轉換&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;技術上不是「絕對無損」——要做到無損得用 &lt;code&gt;jpegtran&lt;/code&gt; 那種直接操作 DCT 係數的方式，但那要同時處理 Ultra HDR 的 Metadata 封裝會極其困難。實際用起來，&lt;code&gt;tilesplit&lt;/code&gt; 產出的畫質對攝影愛好者來說完全夠用。&lt;/p&gt;
+&lt;h2 id=&#34;關鍵相依庫&#34;&gt;關鍵相依庫&lt;/h2&gt;
+&lt;p&gt;&lt;code&gt;tilesplit&lt;/code&gt; 主要靠這三個 Rust crate：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/image&#34;&gt;&lt;code&gt;image&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Rust 生態系最常用的圖像處理庫，負責基礎的裁剪、格式轉換和非 HDR 圖片的處理。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/jpegli-rs&#34;&gt;&lt;code&gt;jpegli-rs&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Google &lt;code&gt;jpegli&lt;/code&gt; 的 Rust 封裝，壓縮率比 &lt;code&gt;libjpeg&lt;/code&gt; 好，而且支援 JPEG Extras——可以讀寫嵌在 JPEG 裡的 XMP Metadata 和 Gain Map。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://crates.io/crates/ultrahdr-rs&#34;&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt;&lt;/a&gt;&lt;/strong&gt;：Google &lt;code&gt;libultrahdr&lt;/code&gt; 的封裝，包含 Ultra HDR 的核心邏輯（Metadata 解析、SDR/HDR 轉換公式等）。遇到格式比較特殊的圖片時，靠它來兜底。它的純 Rust 子 crate &lt;code&gt;ultrahdr-core&lt;/code&gt; 也用來生成 XMP APP1 marker。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;為什麼選擇-rust&#34;&gt;為什麼選擇 Rust？&lt;/h2&gt;
+&lt;p&gt;Rust 剛好適合這種場景：記憶體安全（不用擔心 segfault）、執行效率接近 C++、而且 FFI 很方便——&lt;code&gt;libultrahdr&lt;/code&gt; 和 &lt;code&gt;jpegli&lt;/code&gt; 都是 C/C++ 的庫，Rust 可以直接呼叫再包一層安全介面。加上 &lt;code&gt;Result&lt;/code&gt; 型別強制處理所有錯誤情況，遇到檔案損壞或 metadata 缺失，不會直接 crash，而是給出有意義的錯誤訊息。&lt;/p&gt;
+&lt;h2 id=&#34;安裝與使用&#34;&gt;安裝與使用&lt;/h2&gt;
+&lt;p&gt;如果你也有類似需求，可以直接從 GitHub 安裝：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo install --git https://github.com/p47t/rust-52-projects --branch tilesplit&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;用法很簡單：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 基本用法，自動生成 photo-left.jpg 和 photo-right.jpg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tilesplit --input photo.jpg
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 指定輸出路徑&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tilesplit --input photo.jpg --left-output left.jpg --right-output right.jpg&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;原始碼在 &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/tilesplit&#34;&gt;rust-52-projects/tilesplit&lt;/a&gt; 上。&lt;/p&gt;
+&lt;h2 id=&#34;踩過的坑亮度為什麼不對&#34;&gt;踩過的坑：亮度為什麼不對？&lt;/h2&gt;
+&lt;p&gt;做完初版後，切出來的圖在 HDR 螢幕上看起來比原圖暗很多。花了不少時間 debug 才搞清楚，「把 Gain Map 塞進去」跟「讓 viewer 正確解讀」是兩回事。以下是踩過的幾個主要坑：&lt;/p&gt;
+&lt;h3 id=&#34;mpf-偏移量的基準點&#34;&gt;MPF 偏移量的基準點&lt;/h3&gt;
+&lt;p&gt;Ultra HDR JPEG 是兩張圖接在一起——主圖和 Gain Map。MPF (Multi-Picture Format) APP2 marker 裡有個 TIFF IFD 結構，記錄 Gain Map 的位置。關鍵是：&lt;strong&gt;偏移量是相對於 MPF 裡的 TIFF header&lt;/strong&gt;，不是檔案開頭。&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;MPF APP2 的二進制結構：
+FF E2          ← marker (2 bytes)
+xx xx          ← length (2 bytes)
+4D 50 46 00    ← &amp;#34;MPF\0&amp;#34; (4 bytes)
+4D 4D 00 2A    ← TIFF header ← 偏移量從這裡算起&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;TIFF header 在 MPF marker 起始位置 +8 bytes 的地方。一開始用了 &lt;code&gt;jpegli&lt;/code&gt; 的 &lt;code&gt;.add_gainmap()&lt;/code&gt; API，發現它寫入的是絕對偏移而非相對偏移，viewer 根本找不到 Gain Map。改成手動組裝容器才修好。&lt;/p&gt;
+&lt;h3 id=&#34;主圖和-gain-map-都要有-xmp&#34;&gt;主圖和 Gain Map 都要有 XMP&lt;/h3&gt;
+&lt;p&gt;原本以為只要主圖的 XMP 有完整參數就行。結果拿 Lightroom 匯出的 Ultra HDR 對比——&lt;strong&gt;主圖的 XMP 只有 &lt;code&gt;hdrgm:Version=&amp;quot;1.0&amp;quot;&lt;/code&gt;，完整的 &lt;code&gt;GainMapMin&lt;/code&gt;、&lt;code&gt;GainMapMax&lt;/code&gt;、&lt;code&gt;Gamma&lt;/code&gt; 等參數全在 Gain Map JPEG 自己的 XMP 裡&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;這表示很多 viewer（包括 Android 的 Photos 和 Chrome）是優先從 Gain Map 的 XMP 讀取參數的。Gain Map JPEG 如果沒嵌入 XMP，viewer 可能拿不到正確的 boost 參數，畫面就是暗的。&lt;/p&gt;
+&lt;h3 id=&#34;rdfseq-才是標準格式&#34;&gt;rdf:Seq 才是標準格式&lt;/h3&gt;
+&lt;p&gt;Gain Map 參數是 per-channel 的（RGB 各通道可以不同），在 XMP 裡有兩種表達方式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-xml&#34; data-lang=&#34;xml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- 逗號分隔（有些 viewer 不認） --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:Description&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;hdrgm:GainMapMax=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-0.699, -0.615, -0.603&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- rdf:Seq（標準，所有 viewer 都認） --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;hdrgm:GainMapMax&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:Seq&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.699220&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.614892&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;rdf:li&amp;gt;&lt;/span&gt;-0.603440&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:li&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/rdf:Seq&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;/hdrgm:GainMapMax&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;ultrahdr-rs&lt;/code&gt; crate 的 &lt;code&gt;generate_xmp()&lt;/code&gt; 用的是逗號分隔格式，實測某些 viewer 會 fallback 到預設值。改成 &lt;code&gt;rdf:Seq&lt;/code&gt; 格式後就正常了。&lt;/p&gt;
+&lt;h3 id=&#34;gain-map-品質不能省&#34;&gt;Gain Map 品質不能省&lt;/h3&gt;
+&lt;p&gt;Gain Map 每個像素代表 HDR boost 強度，套用公式大致是 &lt;code&gt;boost = max_boost^(pixel/255)&lt;/code&gt;。因為是&lt;strong&gt;指數關係&lt;/strong&gt;，JPEG 壓縮的量化誤差會被指數放大——pixel 值差個 5，亮度可能差 5% 以上。所以 Gain Map 一律用 quality 100 編碼，不管使用者設的 SDR 品質是多少。&lt;/p&gt;
+&lt;h3 id=&#34;教訓&#34;&gt;教訓&lt;/h3&gt;
+&lt;p&gt;Ultra HDR 的正確性散落在 MPF 規格、XMP schema、和各家 viewer 的實作細節裡。光看 &lt;a href=&#34;https://www.iso.org/standard/81379.html&#34;&gt;ISO 21496-1&lt;/a&gt; 不夠，得拿 Lightroom、Google Photos 等軟體的實際輸出做二進制比對，才能確認哪些欄位是必要的、viewer 怎麼解析。&lt;/p&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;HDR 螢幕越來越普及，Ultra HDR 這種格式以後只會更常見。現有的圖像處理工具大多還沒跟上，&lt;code&gt;tilesplit&lt;/code&gt; 算是填補了這個小空白。如果你也有保留 HDR 切圖的需求，希望這個工具能幫到你。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

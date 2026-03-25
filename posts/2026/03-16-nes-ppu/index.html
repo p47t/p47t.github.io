@@ -1,0 +1,1049 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/"/>
+  <meta property="og:title" content="NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-03-16 12:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="emulator"/>
+  
+  <meta property="og:article:tag" content="nes"/>
+  
+  <meta property="og:article:tag" content="ppu"/>
+  
+  <meta property="og:article:tag" content="graphics"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/ai">ai <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/ai-assisted">ai-assisted <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/blog">blog <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/claude-code">claude-code <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">52</span></a></li>
+          
+            <li><a href="/categories/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/game">game <span class="badge">3</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">213</span></a></li>
+          
+            <li><a href="/categories/rust">rust <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+            <li><a href="/categories/%e7%a1%ac%e9%ab%94">硬體 <span class="badge">1</span></a></li>
+          
+            <li><a href="/categories/%e9%96%8b%e7%99%bc%e5%b7%a5%e5%85%b7">開發工具 <span class="badge">1</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/6502">6502 <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/agent">agent <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/agile">agile <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/ai">ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">21</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/apu">apu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/async">async <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/audio">audio <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/bank-switching">bank-switching <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/bevy">bevy <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ble">ble <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/build">build <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/build-tools">build-tools <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/builder">builder <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/cargo-apk">cargo-apk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude">claude <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/claude-code">claude-code <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/cli">cli <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/cloud">cloud <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/codex">codex <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/cpu">cpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/crack">crack <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/derive">derive <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/design-patterns">design-patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/dsp">dsp <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ecs">ecs <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/engineer">engineer <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/ffi">ffi <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ffmpeg">ffmpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/font">font <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/fuchsia">fuchsia <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/futures">futures <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/game">game <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/game-engine">game-engine <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/gpu">gpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gpui">gpui <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/gradle">gradle <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/graphics">graphics <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/hdr">hdr <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/iced">iced <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/image-processing">image-processing <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/input">input <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ios">ios <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/joypad">joypad <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jpeg">jpeg <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/jupyter">jupyter <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/keyboard">keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/kotlin">kotlin <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/kuso">kuso <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/management">management <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/mapper">mapper <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/markdown">markdown <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/mechanical-keyboard">mechanical-keyboard <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">14</span></a></li>
+          
+            <li><a href="/tags/ndk">ndk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/nes">nes <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/observability">observability <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/octopress">octopress <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/opentelemetry">opentelemetry <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ortholinear">ortholinear <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/osx">osx <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/parser">parser <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/patterns">patterns <span class="badge">4</span></a></li>
+          
+            <li><a href="/tags/peacock">peacock <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ppu">ppu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/proc-macro">proc-macro <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/process">process <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/productivity">productivity <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/prometheus">prometheus <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/qmk">qmk <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">33</span></a></li>
+          
+            <li><a href="/tags/scala">scala <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/shader">shader <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/slint">slint <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/spaced-repetition">spaced-repetition <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/startup">startup <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/swift">swift <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/trait-object">trait-object <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/traits">traits <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/tui">tui <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/ultrahdr">ultrahdr <span class="badge">2</span></a></li>
+          
+            <li><a href="/tags/vcs">vcs <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/vibe-coding">vibe-coding <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/vscode">vscode <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/wasm">wasm <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webassembly">webassembly <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/webgpu">webgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/webkit">webkit <span class="badge">3</span></a></li>
+          
+            <li><a href="/tags/wgpu">wgpu <span class="badge">1</span></a></li>
+          
+            <li><a href="/tags/windows">windows <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">19</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">
+            NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</h2>
+      <div class="post-meta">
+        <span class="post-date">March 16, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/emulator"><span class="label label-primary">emulator</span></a>
+        
+        <a href="/tags/nes"><span class="label label-primary">nes</span></a>
+        
+        <a href="/tags/ppu"><span class="label label-primary">ppu</span></a>
+        
+        <a href="/tags/graphics"><span class="label label-primary">graphics</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        <img src="/posts/2026/03-16-nes-ppu/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p><a href="/posts/2026/03-16-nes-cpu/">上一篇</a>我們寫了 NES 的 CPU——一顆 cycle-accurate 的 6502 模擬器。但 CPU 只是 NES 的一半。真正讓畫面動起來的是 <strong>PPU（Picture Processing Unit）</strong>——一顆跑在 CPU 3 倍速度的圖形處理器，每秒畫 60 幀、每幀 256×240 像素。</p>
+<p>PPU 的難度不在「畫像素」，而在<strong>時序</strong>。CPU 和 PPU 的時鐘比是 1:3，任何一個 cycle 的偏差都可能讓畫面撕裂、NMI 中斷丟失、或觸發只有在特定 cycle 才會出現的硬體競態條件。這個專案的目標是通過 <a href="https://www.nesdev.org/wiki/Emulator_tests">blargg 的 ppu_vbl_nmi 測試套件</a>——NES 模擬器界最刁鑽的 VBlank/NMI 時序驗證。</p>
+<h3 id="專案結構">專案結構</h3>
+
+  <pre tabindex="0"><code>nes-ppu/
+├── Cargo.toml
+└── src/
+    ├── lib.rs            # 模組匯出
+    ├── ppu.rs            # PPU 核心：暫存器、渲染管線、NMI 邊緣偵測（1056 行）
+    ├── bus_io.rs          # CPU↔PPU 橋接：catch-up ticking（80 行）
+    ├── system.rs          # System：CPU/PPU 協調器（156 行）
+    ├── main.rs            # blargg 測試 harness（97 行）
+    └── demos/
+        └── render/main.rs # 即時渲染視窗（minifb）</code></pre>
+
+<p>依賴：<code>nes-cpu</code>（CPU 模擬器）、<code>nes-mapper</code>（卡匣 mapper）、<code>anyhow</code>、optional <code>minifb</code>（渲染 demo）。</p>
+<h3 id="nes-畫面是怎麼生出來的">NES 畫面是怎麼生出來的</h3>
+<p>PPU 用 <strong>scanline</strong> 逐行畫面：</p>
+
+  <pre tabindex="0"><code>Scanline 0-239:   可見畫面（256 像素/行）
+Scanline 240:     idle
+Scanline 241:     VBlank 開始 → NMI 中斷 → 遊戲邏輯更新
+Scanline 242-260: VBlank 持續
+Scanline 261:     Pre-render → 清除 flags、準備下一幀</code></pre>
+
+<p>每條 scanline 有 341 個 dot（PPU cycle）。整幀 = 262 scanlines × 341 dots = 89,342 個 PPU cycle。因為 PPU 跑 CPU 的 3 倍速，一幀大約等於 ~29,781 個 CPU cycle。</p>
+<p>VBlank 期間（scanline 241-260）PPU 不畫東西，遊戲程式趁這段空檔更新 VRAM——這就是為什麼 NMI 中斷對遊戲來說如此重要。</p>
+<h3 id="1-ppu-狀態一堆暫存器和-shift-register">1. PPU 狀態：一堆暫存器和 Shift Register</h3>
+<p>PPU 的狀態比 CPU 複雜很多：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Ppu</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 控制暫存器
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ctrl: <span style="color:#66d9ef">u8</span>,    <span style="color:#75715e">// $2000: NMI enable, sprite size, pattern table...
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> mask: <span style="color:#66d9ef">u8</span>,    <span style="color:#75715e">// $2001: background/sprite enable, color emphasis
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> status: <span style="color:#66d9ef">u8</span>,  <span style="color:#75715e">// $2002: VBlank, sprite 0 hit, overflow
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Loopy scroll 暫存器
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> v: <span style="color:#66d9ef">u16</span>,      <span style="color:#75715e">// 當前 VRAM 位址 (15-bit)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> t: <span style="color:#66d9ef">u16</span>,      <span style="color:#75715e">// 暫存 VRAM 位址 (15-bit)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> fine_x: <span style="color:#66d9ef">u8</span>,  <span style="color:#75715e">// X fine scroll (0-7 pixels)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> addr_latch: <span style="color:#66d9ef">bool</span>, <span style="color:#75715e">// 寫入對切換
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 記憶體
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> vram: [<span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">2048</span>],    <span style="color:#75715e">// 2 個 nametable
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> palette: [<span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">32</span>],   <span style="color:#75715e">// 調色盤
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> oam: [<span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">256</span>],      <span style="color:#75715e">// Sprite 記憶體 (64 sprites × 4 bytes)
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 時序
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> scanline: <span style="color:#66d9ef">i16</span>,  <span style="color:#75715e">// 0-261
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> dot: <span style="color:#66d9ef">u16</span>,       <span style="color:#75715e">// 0-340
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> odd_frame: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// NMI（edge-triggered）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_output: <span style="color:#66d9ef">bool</span>,      <span style="color:#75715e">// $2000 bit 7
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_occurred: <span style="color:#66d9ef">bool</span>,    <span style="color:#75715e">// VBlank flag
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_pending: <span style="color:#66d9ef">bool</span>,     <span style="color:#75715e">// Edge-detected NMI
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_line: <span style="color:#66d9ef">bool</span>,        <span style="color:#75715e">// 前一次 NMI line 狀態
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_pending_age: <span style="color:#66d9ef">u16</span>,  <span style="color:#75715e">// NMI 設定後經過的 PPU ticks
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> nmi_write_delay: <span style="color:#66d9ef">u8</span>,   <span style="color:#75715e">// Register-write 觸發的延遲
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 背景 shift registers
+</span></span></span><span style="display:flex;"><span>    bg_pattern_lo: <span style="color:#66d9ef">u16</span>,
+</span></span><span style="display:flex;"><span>    bg_pattern_hi: <span style="color:#66d9ef">u16</span>,
+</span></span><span style="display:flex;"><span>    bg_attr_lo: <span style="color:#66d9ef">u16</span>,
+</span></span><span style="display:flex;"><span>    bg_attr_hi: <span style="color:#66d9ef">u16</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 渲染輸出
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> framebuffer: Box<span style="color:#f92672">&lt;</span>[<span style="color:#66d9ef">u32</span>; <span style="color:#ae81ff">256</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">240</span>]<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>其中最微妙的是 NMI 相關的 5 個欄位——光是「要不要觸發 NMI 中斷」這件事就需要 edge detection、age tracking 和 write delay 三種機制。</p>
+<h3 id="2-cpuppu-同步catch-up-模式">2. CPU/PPU 同步：Catch-Up 模式</h3>
+<p>NES 的 PPU 跑 CPU 的 3 倍速。最直覺的模擬方式是「CPU 跑一步、PPU 跑三步」，但這忽略了一個關鍵問題：<strong>CPU 讀寫 PPU 暫存器時，PPU 需要先追上到正確的時間點</strong>。</p>
+<p>這就是 catch-up ticking。<code>System</code> 用兩個共享計數器追蹤 CPU 和 PPU 的進度：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">System</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> cpu: <span style="color:#a6e22e">Cpu</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> ppu: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>RefCell<span style="color:#f92672">&lt;</span>Ppu<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    cpu_cycles: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>Cell<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u64</span><span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    ppu_cycles: <span style="color:#a6e22e">Rc</span><span style="color:#f92672">&lt;</span>Cell<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u64</span><span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>每一步的流程：</p>
+
+  <div class="mermaid">
+    graph TD
+    A[檢查 NMI pending] -->|是| B[CPU 執行 NMI handler]
+    A -->|否| C[處理 OAM DMA]
+    C --> D[預讀 opcode，設定 cpu_cycles]
+    D --> E[CPU 執行一條指令]
+    E --> F[PPU catch-up<br/>補跑剩餘 dots]
+    F --> G[檢查 mapper IRQ]
+    G --> A
+  </div>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">step</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; <span style="color:#66d9ef">u64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.ppu.borrow_mut().take_nmi() {
+</span></span><span style="display:flex;"><span>        self.cpu.nmi();
+</span></span><span style="display:flex;"><span>        self.cpu_cycles.set(self.cpu.cycles);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> dma_cycles <span style="color:#f92672">=</span> self.handle_dma();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 預讀指令的 base cycle cost，這樣 PPU catch-up
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 在 bus read 時能看到正確的 CPU cycle 數
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> opcode <span style="color:#f92672">=</span> self.cpu.bus.peek(self.cpu.pc);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> instr <span style="color:#f92672">=</span> nes_cpu::opcodes::get_opcodes()[opcode <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> base_cost <span style="color:#f92672">=</span> instr.cycles <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>;
+</span></span><span style="display:flex;"><span>    self.cpu_cycles.set(self.cpu.cycles <span style="color:#f92672">+</span> base_cost);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> prev_cycles <span style="color:#f92672">=</span> self.cpu.cycles;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> _ <span style="color:#f92672">=</span> self.cpu.step();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> elapsed <span style="color:#f92672">=</span> self.cpu.cycles <span style="color:#f92672">-</span> prev_cycles;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    self.cpu_cycles.set(self.cpu.cycles);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 補跑 PPU 尚未 tick 的部分
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> target_ppu <span style="color:#f92672">=</span> self.cpu.cycles <span style="color:#f92672">*</span> <span style="color:#ae81ff">3</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> current_ppu <span style="color:#f92672">=</span> self.ppu_cycles.get();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> target_ppu <span style="color:#f92672">&gt;</span> current_ppu {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> remaining <span style="color:#f92672">=</span> target_ppu <span style="color:#f92672">-</span> current_ppu;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> ppu <span style="color:#f92672">=</span> self.ppu.borrow_mut();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>remaining {
+</span></span><span style="display:flex;"><span>            ppu.tick();
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        self.ppu_cycles.set(target_ppu);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    elapsed <span style="color:#f92672">+</span> dma_cycles
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵在 <strong><code>cpu_cycles</code> 的預設值</strong>：在 CPU 執行指令之前就設定為 <code>cycles + base_cost</code>。這樣如果指令中途讀寫 PPU 暫存器（透過 bus），PPU 的 catch-up 就能看到正確的時間點。</p>
+<h3 id="3-2002-讀取vblank-競態條件">3. $2002 讀取：VBlank 競態條件</h3>
+<p>PPU 最刁鑽的硬體行為之一：如果 CPU <strong>剛好在 VBlank 被設定的前一個 cycle</strong> 讀 <code>$2002</code>，VBlank flag 就不會被設定——整幀都不會。</p>
+<p>這個 race condition 在 <code>bus_io.rs</code> 裡用 <strong>split catch-up</strong> 實作：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> BusIo <span style="color:#66d9ef">for</span> PpuBusIo {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, addr: <span style="color:#66d9ef">u16</span>) -&gt; <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> target <span style="color:#f92672">=</span> self.cpu_cycles.get() <span style="color:#f92672">*</span> <span style="color:#ae81ff">3</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> addr <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x2002</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 先 catch-up 到 target-1
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> split_target <span style="color:#f92672">=</span> target.saturating_sub(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>            self.catch_up_to(split_target);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> ppu <span style="color:#f92672">=</span> self.ppu.borrow_mut();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 如果 PPU 現在在 (241, 0)，下一個 tick 就要設 VBlank
+</span></span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 此時讀 $2002 會抑制 VBlank
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> ppu.scanline <span style="color:#f92672">==</span> timing::<span style="color:#66d9ef">VBLANK_LINE</span> <span style="color:#f92672">&amp;&amp;</span> ppu.dot <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>                ppu.suppress_vbl <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> val <span style="color:#f92672">=</span> ppu.read_register(addr);
+</span></span><span style="display:flex;"><span>            ppu.tick(); <span style="color:#75715e">// 最後一個 tick
+</span></span></span><span style="display:flex;"><span>            self.ppu_cycles.set(target);
+</span></span><span style="display:flex;"><span>            val
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>            self.catch_up_to(target);
+</span></span><span style="display:flex;"><span>            self.ppu.borrow_mut().read_register(addr)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>為什麼要「分兩段」catch-up？因為我們需要<strong>在最後一個 PPU tick 之前</strong>檢查 PPU 是否正好站在 VBlank 即將觸發的位置 (scanline 241, dot 0)。如果是的話，設定 <code>suppress_vbl</code> flag，讓下一個 tick 跳過 VBlank 設定。</p>
+<p>在 <code>tick()</code> 裡是這樣檢查的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> self.scanline <span style="color:#f92672">==</span> timing::<span style="color:#66d9ef">VBLANK_LINE</span> <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">==</span> timing::<span style="color:#66d9ef">EVENT_DOT</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.suppress_vbl {
+</span></span><span style="display:flex;"><span>        self.suppress_vbl <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>; <span style="color:#75715e">// 消費 flag，不設 VBlank
+</span></span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        self.status <span style="color:#f92672">|=</span> status::<span style="color:#66d9ef">VBLANK</span>;
+</span></span><span style="display:flex;"><span>        self.nmi_occurred <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>        self.update_nmi(<span style="color:#66d9ef">true</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="4-nmi-edge-detection不是-level-triggered">4. NMI Edge Detection：不是 Level-Triggered</h3>
+<p>6502 的 NMI 是 <strong>edge-triggered</strong>，不是 level-triggered——只有在 <code>/NMI</code> 線從高到低的瞬間才會觸發，持續為低不會重複觸發。這在模擬器裡代表你必須追蹤 NMI 線的前後狀態：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">update_nmi</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, from_tick: <span style="color:#66d9ef">bool</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> active <span style="color:#f92672">=</span> self.nmi_output <span style="color:#f92672">&amp;&amp;</span> self.nmi_occurred;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> active <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>self.nmi_line {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Rising edge: NMI 線剛從 inactive → active
+</span></span></span><span style="display:flex;"><span>        self.nmi_pending <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>        self.nmi_pending_age <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>active <span style="color:#f92672">&amp;&amp;</span> self.nmi_line {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Falling edge: 只有 tick 產生的才能取消 pending NMI
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> from_tick <span style="color:#f92672">&amp;&amp;</span> self.nmi_write_delay <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>            self.nmi_pending <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    self.nmi_line <span style="color:#f92672">=</span> active;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡的 <code>from_tick</code> 參數區分了兩種 NMI 狀態變化的來源：</p>
+<ul>
+<li><strong>PPU tick 產生的</strong>（如 pre-render 清 VBlank）：可以取消 pending NMI</li>
+<li><strong>暫存器寫入產生的</strong>（如 <code>$2000</code> 關閉 NMI enable）：不能取消已經被 CPU latch 的 NMI</li>
+</ul>
+<p>CPU 何時「看到」NMI？<code>take_nmi()</code> 有一個 age-based 的機制：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">take_nmi</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; <span style="color:#66d9ef">bool</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.nmi_write_delay <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>        self.nmi_write_delay <span style="color:#f92672">-=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> self.nmi_write_delay <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">&amp;&amp;</span> self.nmi_pending {
+</span></span><span style="display:flex;"><span>            self.nmi_pending <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// NMI 必須存在夠久（≥3 PPU ticks），CPU 才能在
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// penultimate cycle 偵測到
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> self.nmi_pending <span style="color:#f92672">&amp;&amp;</span> self.nmi_pending_age <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">3</span> {
+</span></span><span style="display:flex;"><span>        self.nmi_pending <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>3 PPU ticks = 1 CPU cycle——剛好是 CPU 在指令的倒數第二個 cycle 做 NMI polling 的時間。如果 NMI 在最後一刻被設定又馬上被取消（不到 3 PPU ticks），CPU 就「來不及看到」。</p>
+<h3 id="5-背景渲染管線">5. 背景渲染管線</h3>
+<p>PPU 每 8 個 dot 取一個 tile 的資料，透過一連串精確時序的 fetch：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (self.dot <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">256</span>) <span style="color:#f92672">||</span> (self.dot <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">321</span> <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">336</span>) {
+</span></span><span style="display:flex;"><span>    self.update_bg_shifters();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> self.dot <span style="color:#f92672">%</span> <span style="color:#ae81ff">8</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">1</span> <span style="color:#f92672">=&gt;</span> self.fetch_nametable_byte(),   <span style="color:#75715e">// Tile ID
+</span></span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">3</span> <span style="color:#f92672">=&gt;</span> self.fetch_attribute_byte(),   <span style="color:#75715e">// 調色盤 bits
+</span></span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">5</span> <span style="color:#f92672">=&gt;</span> self.fetch_pattern_lo(),       <span style="color:#75715e">// Pattern bitplane 0
+</span></span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">7</span> <span style="color:#f92672">=&gt;</span> self.fetch_pattern_hi(),       <span style="color:#75715e">// Pattern bitplane 1
+</span></span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">0</span> <span style="color:#f92672">=&gt;</span> self.load_bg_shifters(),       <span style="color:#75715e">// 載入 16-bit shift register
+</span></span></span><span style="display:flex;"><span>        _ <span style="color:#f92672">=&gt;</span> {}
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>每個像素從 16-bit shift register 取出，用 <code>fine_x</code> 選擇位移量實現 pixel-level 捲動：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">render_pixel</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> (self.dot <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> y <span style="color:#f92672">=</span> self.scanline <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (bg_pixel, bg_palette) <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> self.mask <span style="color:#f92672">&amp;</span> mask::<span style="color:#66d9ef">SHOW_BG</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> bit_select <span style="color:#f92672">=</span> <span style="color:#ae81ff">15</span> <span style="color:#f92672">-</span> self.fine_x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u16</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> lo <span style="color:#f92672">=</span> (self.bg_pattern_lo <span style="color:#f92672">&gt;&gt;</span> bit_select) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> hi <span style="color:#f92672">=</span> (self.bg_pattern_hi <span style="color:#f92672">&gt;&gt;</span> bit_select) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> pixel <span style="color:#f92672">=</span> ((hi <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">|</span> lo) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> attr_lo <span style="color:#f92672">=</span> (self.bg_attr_lo <span style="color:#f92672">&gt;&gt;</span> bit_select) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> attr_hi <span style="color:#f92672">=</span> (self.bg_attr_hi <span style="color:#f92672">&gt;&gt;</span> bit_select) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> palette <span style="color:#f92672">=</span> ((attr_hi <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">|</span> attr_lo) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u8</span>;
+</span></span><span style="display:flex;"><span>        (pixel, palette)
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        (<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Sprite compositing + priority multiplexer...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>16-bit shift register 同時持有<strong>兩個 tile</strong> 的資料，每個 dot 左移一位。這讓 PPU 能在不同 tile 邊界之間平滑捲動——<code>fine_x</code> 決定從哪一個 bit 開始取。</p>
+<h3 id="6-loopy-scroll-register">6. Loopy Scroll Register</h3>
+<p>NES PPU 的捲動機制用了一對 15-bit 暫存器 <code>v</code>（current）和 <code>t</code>（temporary），被稱為 <a href="https://www.nesdev.org/wiki/PPU_scrolling">Loopy registers</a>：</p>
+
+  <pre tabindex="0"><code>yyy NN YYYYY XXXXX
+│││ ││ │││││ │││││
+│││ ││ │││││ └────── Coarse X (0-31) tile column
+│││ ││ └─────────── Coarse Y (0-29) tile row
+│││ └────────────── Nametable select (0-3)
+└────────────────── Fine Y (0-7) pixel row within tile</code></pre>
+
+<p>捲動邏輯分散在渲染的不同時間點：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// Dot 256: 增加 fine Y → coarse Y（換到下一行）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> self.dot <span style="color:#f92672">==</span> <span style="color:#ae81ff">256</span> {
+</span></span><span style="display:flex;"><span>    self.increment_scroll_y();
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Dot 257: 從 t 複製水平捲動位元到 v
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> self.dot <span style="color:#f92672">==</span> <span style="color:#ae81ff">257</span> {
+</span></span><span style="display:flex;"><span>    self.copy_horizontal_bits();
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Pre-render scanline, dots 280-304: 從 t 複製垂直捲動位元到 v
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> prerender <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">280</span> <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">304</span> {
+</span></span><span style="display:flex;"><span>    self.copy_vertical_bits();
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>increment_scroll_y()</code> 特別有趣——Y 到 29 就 wrap 到 0 並切換 nametable（因為 NES 的 nametable 是 30 rows × 32 columns），但 Y=31 只是 wrap 到 0 而不切換（允許遊戲利用這個行為做特殊效果）。</p>
+<h3 id="7-sprite-系統">7. Sprite 系統</h3>
+<p>PPU 支援 64 個 sprite，每個 4 bytes（Y, tile index, attributes, X）。每條 scanline 最多顯示 8 個：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">evaluate_sprites</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sprite_height: <span style="color:#66d9ef">i16</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> self.ctrl <span style="color:#f92672">&amp;</span> ctrl::<span style="color:#66d9ef">SPRITE_SIZE</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span> { <span style="color:#ae81ff">16</span> } <span style="color:#66d9ef">else</span> { <span style="color:#ae81ff">8</span> };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    self.sprite_count <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    self.sprite_zero_on_line <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#ae81ff">64</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> y <span style="color:#f92672">=</span> self.oam[i <span style="color:#f92672">*</span> <span style="color:#ae81ff">4</span>] <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i16</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> diff <span style="color:#f92672">=</span> self.scanline <span style="color:#f92672">-</span> y;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> diff <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">||</span> diff <span style="color:#f92672">&gt;=</span> sprite_height { <span style="color:#66d9ef">continue</span>; }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> self.sprite_count <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">8</span> {
+</span></span><span style="display:flex;"><span>            self.status <span style="color:#f92672">|=</span> status::<span style="color:#66d9ef">SPRITE_OVERFLOW</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 載入 tile pattern，處理垂直/水平翻轉
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> flip_v <span style="color:#f92672">=</span> attr <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x80</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> flip_h <span style="color:#f92672">=</span> attr <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x40</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// ...取 pattern bitplane、reverse_bits() 做水平翻轉
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> i <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> { self.sprite_zero_on_line <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>; }
+</span></span><span style="display:flex;"><span>        self.sprite_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>Sprite 0 Hit</strong> 是很多遊戲用來做 split-screen 的技巧——當 sprite 0 的非透明像素和背景的非透明像素重疊時設定 flag，遊戲可以 poll 這個 flag 來判斷「畫到哪一行了」。</p>
+<p>渲染時的 priority multiplexer 決定最終顏色：</p>
+<table>
+  <thead>
+      <tr>
+          <th style="text-align: center">Background</th>
+          <th style="text-align: center">Sprite</th>
+          <th style="text-align: center">Priority bit</th>
+          <th style="text-align: center">顯示</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td style="text-align: center">透明</td>
+          <td style="text-align: center">透明</td>
+          <td style="text-align: center">-</td>
+          <td style="text-align: center">背景色</td>
+      </tr>
+      <tr>
+          <td style="text-align: center">透明</td>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">-</td>
+          <td style="text-align: center">Sprite</td>
+      </tr>
+      <tr>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">透明</td>
+          <td style="text-align: center">-</td>
+          <td style="text-align: center">Background</td>
+      </tr>
+      <tr>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">0（前景）</td>
+          <td style="text-align: center">Sprite</td>
+      </tr>
+      <tr>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">非透明</td>
+          <td style="text-align: center">1（後景）</td>
+          <td style="text-align: center">Background</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="8-blargg-測試套件">8. blargg 測試套件</h3>
+<p>blargg 的 ppu_vbl_nmi 測試是一組 10 個 ROM，每個測試針對不同的 VBlank/NMI 邊界行為。測試用一個簡單的記憶體協定回報結果：</p>
+
+  <pre tabindex="0"><code>$6000    = status: $80=running, $00=pass, $01+=failure code
+$6001-03 = signature: $DE $B0 $61 (表示結果有效)
+$6004+   = null-terminated 結果訊息</code></pre>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>    total_cycles <span style="color:#f92672">+=</span> sys.step();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sig0 <span style="color:#f92672">=</span> sys.cpu.bus.read(<span style="color:#ae81ff">0x6001</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sig1 <span style="color:#f92672">=</span> sys.cpu.bus.read(<span style="color:#ae81ff">0x6002</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sig2 <span style="color:#f92672">=</span> sys.cpu.bus.read(<span style="color:#ae81ff">0x6003</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> sig0 <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xDE</span> <span style="color:#f92672">&amp;&amp;</span> sig1 <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xB0</span> <span style="color:#f92672">&amp;&amp;</span> sig2 <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x61</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> status <span style="color:#f92672">=</span> sys.cpu.bus.read(<span style="color:#ae81ff">0x6000</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> status <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0x80</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> message <span style="color:#f92672">=</span> read_result_message(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> sys);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> status <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x00</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;PASS&#34;</span>);
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;FAIL: </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, message);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>10 個測試覆蓋的場景：</p>
+<table>
+  <thead>
+      <tr>
+          <th>測試</th>
+          <th>驗證內容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>01</td>
+          <td>基本 VBlank 時序</td>
+      </tr>
+      <tr>
+          <td>02</td>
+          <td>$2002 讀取抑制 VBlank</td>
+      </tr>
+      <tr>
+          <td>03</td>
+          <td>基本 NMI 時序</td>
+      </tr>
+      <tr>
+          <td>04</td>
+          <td>NMI + 抑制時序</td>
+      </tr>
+      <tr>
+          <td>05</td>
+          <td>NMI 狀態轉換精確偏移</td>
+      </tr>
+      <tr>
+          <td>06</td>
+          <td>完整 VBlank 抑制 pattern</td>
+      </tr>
+      <tr>
+          <td>07</td>
+          <td>VBlank 期間啟用 NMI 的時序</td>
+      </tr>
+      <tr>
+          <td>08</td>
+          <td>VBlank 期間關閉 NMI 的時序</td>
+      </tr>
+      <tr>
+          <td>09</td>
+          <td>奇偶幀基本行為</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>Pre-render 結束時的奇偶幀時序</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="9-odd-frame-skip">9. Odd-Frame Skip</h3>
+<p>NES PPU 有一個小巧的優化：在奇數幀，pre-render scanline 會<strong>跳過一個 dot</strong>，讓畫面更新稍微提前。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> self.scanline <span style="color:#f92672">==</span> timing::<span style="color:#66d9ef">PRERENDER_LINE</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;&amp;</span> self.dot <span style="color:#f92672">==</span> timing::<span style="color:#66d9ef">ODD_SKIP_DOT</span>  <span style="color:#75715e">// dot 339
+</span></span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;&amp;</span> self.odd_frame
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;&amp;</span> self.rendering_enabled()
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    self.dot <span style="color:#f92672">=</span> timing::<span style="color:#66d9ef">LAST_DOT</span>; <span style="color:#75715e">// 跳到 340
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 下一個 tick 會增到 341，觸發 scanline wrap
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個行為只在 rendering enabled 時發生。實際效果是奇數幀比偶數幀少一個 PPU cycle（89,341 vs 89,342），這讓 NTSC 的畫面更新率精確到 60.0988 Hz。</p>
+<h3 id="10-即時渲染-demo">10. 即時渲染 Demo</h3>
+<p>專案包含一個用 <code>minifb</code> 寫的即時渲染器，可以實際載入 NES ROM 看到畫面：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> sys <span style="color:#f92672">=</span> System::from_rom(rom)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>window.set_target_fps(<span style="color:#ae81ff">60</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> window.is_open() <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>window.is_key_down(Key::Escape) {
+</span></span><span style="display:flex;"><span>    sys.run_until_frame();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> ppu <span style="color:#f92672">=</span> sys.ppu.borrow();
+</span></span><span style="display:flex;"><span>    window.update_with_buffer(<span style="color:#f92672">&amp;*</span>ppu.framebuffer, <span style="color:#66d9ef">WIDTH</span>, <span style="color:#66d9ef">HEIGHT</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>run_until_frame()</code> 反覆呼叫 <code>step()</code> 直到 PPU 設定 <code>frame_ready</code>（VBlank 開始），然後把 framebuffer 丟給視窗。256×240 的 NES 畫面用 3 倍 scale 顯示。</p>
+<h3 id="總結">總結</h3>
+<table>
+  <thead>
+      <tr>
+          <th>模組</th>
+          <th>行數</th>
+          <th>角色</th>
+          <th>核心 Pattern</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>ppu.rs</code></td>
+          <td>~1056</td>
+          <td>PPU 核心：暫存器、渲染、NMI</td>
+          <td><code>tick()</code> state machine + edge detection</td>
+      </tr>
+      <tr>
+          <td><code>bus_io.rs</code></td>
+          <td>~80</td>
+          <td>CPU↔PPU 橋接</td>
+          <td>Split catch-up for $2002 race</td>
+      </tr>
+      <tr>
+          <td><code>system.rs</code></td>
+          <td>~156</td>
+          <td>CPU/PPU 協調器</td>
+          <td>Shared <code>Rc&lt;Cell&lt;u64&gt;&gt;</code> cycle counters</td>
+      </tr>
+      <tr>
+          <td><code>main.rs</code></td>
+          <td>~97</td>
+          <td>blargg 測試 harness</td>
+          <td>Memory-mapped test protocol</td>
+      </tr>
+      <tr>
+          <td><code>demos/render</code></td>
+          <td>~55</td>
+          <td>即時渲染視窗</td>
+          <td><code>run_until_frame()</code> + minifb</td>
+      </tr>
+  </tbody>
+</table>
+<p>PPU 模擬的核心挑戰不在渲染演算法（那部分其實很直覺），而在 <strong>CPU/PPU 同步的精確時序</strong>。VBlank 抑制、NMI edge detection、age-based cancellation——這些都是真實硬體上 CPU 和 PPU 之間電氣信號傳播時間造成的行為，要在軟體裡精確重現這些 race condition，比畫像素難多了。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://www.nesdev.org/wiki/PPU">nesdev.org PPU Wiki</a> — PPU 的完整技術文件</li>
+<li><a href="https://www.nesdev.org/wiki/PPU_scrolling">PPU Scrolling (Loopy)</a> — Loopy register 的詳細解說</li>
+<li><a href="https://www.nesdev.org/wiki/Emulator_tests">blargg&rsquo;s PPU Tests</a> — ppu_vbl_nmi 測試套件</li>
+<li><a href="https://www.nesdev.org/wiki/PPU_rendering">PPU Rendering</a> — 渲染管線時序圖</li>
+</ul>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,357 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/game-engine/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-03-21 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</title>
+      <link>https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/</link>
+      <pubDate>Sat, 21 Mar 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/</guid>
+      <description>&lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;寫完 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/&#34;&gt;NES 模擬器&lt;/a&gt;之後，我一直在想一件事：Bevy 用起來跟我過去用過的任何遊戲引擎都不一樣。不是 API 風格的差異——是思考方式根本不同。&lt;/p&gt;
+&lt;p&gt;用 Unity 寫 C#，你把腳本掛到 GameObject 上，裡面 &lt;code&gt;GetComponent&amp;lt;T&amp;gt;()&lt;/code&gt; 隨便抓、隨便改。用 Godot 寫 GDScript，一切都是 Node 樹，&lt;code&gt;$Child.property = value&lt;/code&gt; 直覺到不行。但 Bevy？你連「把兩個系統同時存取同一個資源」都得在型別層面交代清楚，不然編譯器直接擋下來。&lt;/p&gt;
+&lt;p&gt;這不是 Bevy 故意刁難你。是 Rust 的所有權系統逼著 Bevy 必須這樣設計——而這個「被逼的」結果，意外地產出了一個非常乾淨的架構。&lt;/p&gt;
+&lt;p&gt;這篇文章用 NES 模擬器前端（~2600 行 Rust）作為實例，聊聊 Rust 的所有權、借用和型別系統是怎麼一路影響 Bevy 的 ECS 設計，以及在實際專案裡會碰到哪些有趣的 pattern。&lt;/p&gt;
+&lt;h2 id=&#34;ecs-不只是-pattern是-rust-的必然&#34;&gt;ECS 不只是 Pattern，是 Rust 的必然&lt;/h2&gt;
+&lt;h3 id=&#34;傳統-oop-遊戲引擎的痛&#34;&gt;傳統 OOP 遊戲引擎的痛&lt;/h3&gt;
+&lt;p&gt;在傳統 OOP 引擎裡，物件之間到處互相引用：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;Player → Weapon → Inventory → Player (循環引用)
+Enemy → Player (觀察目標)
+GameManager → Player, Enemy, UI, ... (上帝物件)&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;C# 和 Java 有 GC 幫你收拾，循環引用不是問題。但 Rust 沒有 GC，&lt;code&gt;Player&lt;/code&gt; 不能隨便持有 &lt;code&gt;&amp;amp;mut Weapon&lt;/code&gt; 的引用——因為 Rust 的借用規則說：&lt;strong&gt;同一時間只能有一個可變引用&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;所以你如果在 Rust 裡用 OOP 寫遊戲引擎，馬上就會遇到一堆 lifetime 地獄：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Player&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;&amp;#39;a&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    weapon: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;&amp;#39;a&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; Weapon,  &lt;span style=&#34;color:#75715e&#34;&gt;// ← lifetime 要標
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;World&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;&amp;#39;a&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    player: &lt;span style=&#34;color:#a6e22e&#34;&gt;Player&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;&amp;#39;a&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    weapons: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Weapon&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,     &lt;span style=&#34;color:#75715e&#34;&gt;// ← player.weapon 借自這裡？
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 🔴 weapons 和 player 不能同時存在於 World 裡
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;ECS 的出現剛好解決了這個問題——不是因為它是什麼偉大的設計理念，而是因為&lt;strong&gt;它天然地符合 Rust 的所有權模型&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;ecs-如何繞開所有權地獄&#34;&gt;ECS 如何繞開所有權地獄&lt;/h3&gt;
+&lt;p&gt;ECS 的資料佈局長這樣：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;World
+├── 實體表 (Entity): [0, 1, 2, ...]
+├── 元件儲存 (Components):
+│   ├── Position:  [Some(pos0), None, Some(pos2), ...]
+│   ├── Velocity:  [Some(vel0), None, None, ...]
+│   └── Health:    [None, Some(hp1), Some(hp2), ...]
+└── 資源 (Resources):
+    ├── Time
+    ├── InputState
+    └── ...&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;每種元件是一個&lt;strong&gt;獨立的陣列&lt;/strong&gt;。系統（System）透過 Query 宣告它需要哪些元件的存取權限：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;movement_system&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; query: &lt;span style=&#34;color:#a6e22e&#34;&gt;Query&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Position, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;Velocity)&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; pos, vel) &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; query {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        pos.x &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; vel.x;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        pos.y &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; vel.y;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;對 Rust 來說，這個 Query 等於是說「我要可變借用 Position 陣列，同時不可變借用 Velocity 陣列」——沒有重疊，沒有衝突，borrow checker 開心，世界和平。&lt;/p&gt;
+&lt;p&gt;Bevy 的排程器利用這些 Query 的存取宣告來&lt;strong&gt;自動判斷哪些系統可以平行執行&lt;/strong&gt;。如果系統 A 只讀 Position，系統 B 只寫 Velocity，它們不衝突，可以丟到不同執行緒上跑。&lt;/p&gt;
+&lt;p&gt;這就是 Rust 的所有權模型帶來的&lt;strong&gt;附加價值&lt;/strong&gt;：你為了滿足編譯器而寫的型別宣告，同時也成了排程器的平行化依據。&lt;/p&gt;
+&lt;h2 id=&#34;當所有權撞上硬體模擬&#34;&gt;當所有權撞上硬體模擬&lt;/h2&gt;
+&lt;p&gt;NES 的硬體元件之間有大量的共享狀態——CPU 要讀寫 PPU 的暫存器、APU 的暫存器、Joypad 的暫存器，PPU 和 CPU 共用同一個 Mapper（卡匣晶片）。&lt;/p&gt;
+&lt;p&gt;用 OOP 的思維畫出來大概是：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    graph LR
+    CPU --&gt;|讀寫暫存器| PPU
+    CPU --&gt;|讀寫暫存器| APU
+    CPU --&gt;|讀寫暫存器| JOY[Joypad]
+    CPU --&gt;|讀寫 ROM/RAM| MAP[Mapper]
+    PPU --&gt;|讀取 CHR| MAP
+    APU --&gt;|DMC 取樣| CPU
+  &lt;/div&gt;
+
+&lt;p&gt;在 C/C++ 的模擬器裡，這種關係用指標隨便串就好。但在 Rust 裡？CPU 不能同時持有 PPU、APU、Mapper 的 &lt;code&gt;&amp;amp;mut&lt;/code&gt; 引用——因為它們都被 &lt;code&gt;System&lt;/code&gt; struct 擁有，而 Rust 不允許對同一個 struct 的多個欄位同時取得可變引用（透過方法呼叫時）。&lt;/p&gt;
+&lt;h3 id=&#34;rcrefcell單執行緒的共享擁有權&#34;&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;：單執行緒的共享擁有權&lt;/h3&gt;
+&lt;p&gt;解法是 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;——Rust 標準庫提供的「引用計數 + 執行期借用檢查」組合：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;System&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; cpu: &lt;span style=&#34;color:#a6e22e&#34;&gt;Cpu&lt;/span&gt;,                           &lt;span style=&#34;color:#75715e&#34;&gt;// CPU 獨佔擁有
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; ppu: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;RefCell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Ppu&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,              &lt;span style=&#34;color:#75715e&#34;&gt;// 共享擁有
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; apu: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;RefCell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Apu&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,              &lt;span style=&#34;color:#75715e&#34;&gt;// 共享擁有
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; joypad1: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;RefCell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Joypad&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,       &lt;span style=&#34;color:#75715e&#34;&gt;// 共享擁有
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    cpu_cycles: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Cell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,              &lt;span style=&#34;color:#75715e&#34;&gt;// 共享計數器
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ppu_cycles: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Cell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,              &lt;span style=&#34;color:#75715e&#34;&gt;// 共享計數器
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;為什麼 CPU 是直接擁有，其他都是 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;？因為 CPU 的 Bus（記憶體匯流排）裡面也需要持有 PPU、APU 的引用——當 CPU 執行 &lt;code&gt;STA $2000&lt;/code&gt; 這種指令時，Bus 要把資料轉發給 PPU 暫存器。所以 PPU 同時被 System &lt;em&gt;和&lt;/em&gt; Bus 持有——這就是共享擁有權：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;System ──owns──→ Rc&amp;lt;RefCell&amp;lt;Ppu&amp;gt;&amp;gt; ←──clone────┐
+                                              │
+CPU ──owns──→ Bus ──owns──→ PpuBusIo ────owns─┘&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;code&gt;Rc::clone()&lt;/code&gt; 不複製資料，只增加引用計數。&lt;code&gt;RefCell&lt;/code&gt; 在你 &lt;code&gt;borrow_mut()&lt;/code&gt; 時做執行期檢查——如果已經有人借了，直接 panic。&lt;/p&gt;
+&lt;h3 id=&#34;drop-and-reborrow和借用檢查器跳舞&#34;&gt;Drop-and-Reborrow：和借用檢查器跳舞&lt;/h3&gt;
+&lt;p&gt;最精彩的 pattern 出現在 APU 的 DMC（Delta Modulation Channel）。DMC 播放聲音時需要從 CPU 的記憶體匯流排讀取 sample data——但此時 APU 已經被借用了：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;step&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ... 執行 CPU 指令 ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 借用 APU 來 tick
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; apu &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.apu.borrow_mut();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; _ &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;total_cpu_cycles {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        apu.tick();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// DMC 需要從 CPU bus 讀資料
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(addr) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; apu.dmc_sample_request() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        drop(apu);  &lt;span style=&#34;color:#75715e&#34;&gt;// ← 先還回去！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.cpu.bus.read(addr);  &lt;span style=&#34;color:#75715e&#34;&gt;// 現在可以用 Bus 了
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; apu &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.apu.borrow_mut();  &lt;span style=&#34;color:#75715e&#34;&gt;// 重新借
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        apu.dmc_load_sample(val);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;看到那個 &lt;code&gt;drop(apu)&lt;/code&gt; 了嗎？如果不手動 drop，&lt;code&gt;apu&lt;/code&gt; 的可變借用還活著，而 &lt;code&gt;self.cpu.bus.read(addr)&lt;/code&gt; 裡面 Bus 的 &lt;code&gt;ApuCompositeBusIo&lt;/code&gt; 也會嘗試 &lt;code&gt;borrow_mut()&lt;/code&gt; APU——兩個可變借用同時存在，RefCell 直接 panic。&lt;/p&gt;
+&lt;p&gt;這種「先還再借」的模式在 C++ 裡完全不需要——你隨時都能透過指標存取任何東西。但 Rust 強迫你&lt;strong&gt;明確管理每一段借用的生命週期&lt;/strong&gt;，結果是每個存取路徑都清清楚楚，不會有「誰在什麼時候改了什麼」的幽靈 bug。&lt;/p&gt;
+&lt;h3 id=&#34;cell-vs-refcellcopy-型別的捷徑&#34;&gt;Cell vs RefCell：Copy 型別的捷徑&lt;/h3&gt;
+&lt;p&gt;注意 cycle counter 用的是 &lt;code&gt;Rc&amp;lt;Cell&amp;lt;u64&amp;gt;&amp;gt;&lt;/code&gt; 而不是 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;u64&amp;gt;&amp;gt;&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Cell — 直接 get/set，沒有借用追蹤
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;self.cpu_cycles.set(self.cpu.cycles);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ppu_cycles &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.ppu_cycles.get();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// RefCell — 需要 borrow/borrow_mut，有執行期開銷
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; ppu &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.ppu.borrow_mut();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ppu.tick();&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;Cell&amp;lt;T&amp;gt;&lt;/code&gt; 只能用在實作 &lt;code&gt;Copy&lt;/code&gt; 的型別上（數字、bool 等），但好處是&lt;strong&gt;完全沒有借用追蹤的開銷&lt;/strong&gt;——直接覆寫值。在每 CPU cycle 都要更新的計數器上，這個小優化累積起來是有意義的。&lt;/p&gt;
+&lt;h2 id=&#34;bevy-的型別系統魔法&#34;&gt;Bevy 的型別系統魔法&lt;/h2&gt;
+&lt;h3 id=&#34;nonsendmut我知道我不安全&#34;&gt;NonSendMut：「我知道我不安全」&lt;/h3&gt;
+&lt;p&gt;NES 模擬器核心用了 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;，而 Rc 不是 &lt;code&gt;Send&lt;/code&gt;（不能安全地跨執行緒傳遞）。Bevy 預設會在多執行緒上排程系統——所以直接把 &lt;code&gt;NesSystem&lt;/code&gt; 塞進 &lt;code&gt;Res&amp;lt;&amp;gt;&lt;/code&gt; 會編譯失敗：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 🔴 編譯錯誤：NesSystem 不是 Send
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;my_system&lt;/span&gt;(nes: &lt;span style=&#34;color:#a6e22e&#34;&gt;ResMut&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;NesSystem&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;) { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;解法是 &lt;code&gt;NonSendMut&lt;/code&gt;——Bevy 提供的特殊存取器，告訴排程器「這個系統只能在主執行緒上跑」：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 編譯通過：Bevy 保證只在主執行緒執行
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run_emulation_frame&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; nes: &lt;span style=&#34;color:#a6e22e&#34;&gt;NonSendMut&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;NesSystem&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    nes_input: &lt;span style=&#34;color:#a6e22e&#34;&gt;Res&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;NesInput&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    audio_buf: &lt;span style=&#34;color:#a6e22e&#34;&gt;Res&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;AudioBuffer&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    nes.sys.joypad1.borrow_mut().set_buttons(nes_input.&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    nes.sys.run_until_frame();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這是 Rust 型別系統最美妙的地方之一：&lt;strong&gt;限制不是用文件或約定來表達，而是用型別&lt;/strong&gt;。你不需要在 README 寫「注意：這個函式只能在主執行緒呼叫」——如果有人把它改成 &lt;code&gt;Res&amp;lt;NesSystem&amp;gt;&lt;/code&gt;，編譯器就會阻止。&lt;/p&gt;
+&lt;h3 id=&#34;跨執行緒的音訊arcmutex&#34;&gt;跨執行緒的音訊：Arc&amp;lt;Mutex&amp;lt;&amp;gt;&amp;gt;&lt;/h3&gt;
+&lt;p&gt;音訊 buffer 需要在模擬執行緒（producer）和 cpal 音訊執行緒（consumer）之間共享。這裡不能用 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;——必須用跨執行緒安全的 &lt;code&gt;Arc&amp;lt;Mutex&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Resource, Clone)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;AudioBuffer&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; buffer: &lt;span style=&#34;color:#a6e22e&#34;&gt;Arc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Mutex&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;VecDeque&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Rust 不會讓你把 &lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt; 傳給另一個執行緒——如果你試著這樣做，編譯器會直接告訴你「Rc 不是 Send」。所以你&lt;strong&gt;被迫&lt;/strong&gt;根據使用情境選擇正確的共享方式：&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;場景&lt;/th&gt;
+          &lt;th&gt;型別&lt;/th&gt;
+          &lt;th&gt;原因&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;NES 核心（單執行緒）&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;不需要原子操作的開銷&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;音訊 buffer（跨執行緒）&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;Arc&amp;lt;Mutex&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;需要 Send + 互斥鎖&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;cycle 計數器（單執行緒、Copy）&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;Rc&amp;lt;Cell&amp;lt;&amp;gt;&amp;gt;&lt;/code&gt;&lt;/td&gt;
+          &lt;td&gt;最低開銷&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;在 C++ 裡，你可能會「為了安全」統一用 &lt;code&gt;std::shared_ptr&lt;/code&gt; + &lt;code&gt;std::mutex&lt;/code&gt;，但代價是不需要鎖的地方也付了鎖的成本。Rust 的型別系統讓你精確地只在需要的地方付出代價。&lt;/p&gt;
+&lt;h3 id=&#34;exclusive-system獨佔整個世界&#34;&gt;Exclusive System：獨佔整個世界&lt;/h3&gt;
+&lt;p&gt;初始化模擬器時，我們需要把 &lt;code&gt;NesSystem&lt;/code&gt;（非 Send）插入 Bevy 的 World——這需要直接存取 World：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;setup_emulation&lt;/span&gt;(world: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; World) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; rom_path &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; world.resource::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;RomPath&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; rom &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std::fs::read(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;rom_path.&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;).expect(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Failed to read ROM&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sys &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; System::new(rom, sample_rate);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    world.insert_non_send_resource(NesSystem {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sys,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        paused: &lt;span style=&#34;color:#a6e22e&#34;&gt;false&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        accumulator: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;&amp;amp;mut World&lt;/code&gt; 是一個 exclusive system——它獨佔整個 World 的存取權限，不能和其他系統平行跑。Bevy 用這個來處理「需要完全控制權」的初始化邏輯。&lt;/p&gt;
+&lt;p&gt;在函式簽名裡你就能看出意圖：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;world: &amp;amp;mut World&lt;/code&gt; → 「我要獨佔一切，請讓所有人都先停下來」&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;nes: NonSendMut&amp;lt;NesSystem&amp;gt;&lt;/code&gt; → 「我只要這一個資源，但我只能在主執行緒」&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;input: Res&amp;lt;NesInput&amp;gt;&lt;/code&gt; → 「我只讀這個資源，隨便誰跟我同時跑都行」&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;型別本身就是系統的平行化說明書。&lt;/p&gt;
+&lt;h2 id=&#34;plugin模組化的秘密武器&#34;&gt;Plugin：模組化的秘密武器&lt;/h2&gt;
+&lt;p&gt;Bevy 的 Plugin trait 讓你把相關的系統、資源、事件打包成一個模組：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CrtPlugin&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Plugin &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; CrtPlugin {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;build&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self, app: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; App) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;load_internal_asset!&lt;/span&gt;(app, &lt;span style=&#34;color:#66d9ef&#34;&gt;CRT_SHADER_HANDLE&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;../assets/shaders/crt.wgsl&amp;#34;&lt;/span&gt;, Shader::from_wgsl);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        app.add_plugins(Material2dPlugin::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;CrtMaterial&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;::default());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;NES 模擬器的 &lt;code&gt;main.rs&lt;/code&gt; 只有 58 行，因為每個功能都是一個獨立的 Plugin 或系統，各自負責自己的資源和生命週期：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    App::new()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .add_plugins(DefaultPlugins.set(WindowPlugin { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. }))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .add_plugins(CrtPlugin)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .add_plugins(DebugUiPlugin)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .insert_resource(AudioBuffer { &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. })
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .insert_resource(NesInput(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;))
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .add_systems(Startup, (setup_emulation, setup_video, setup_audio).chain())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .add_systems(Update, (read_input, run_emulation_frame).chain())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .run();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;.chain()&lt;/code&gt; 保證系統依序執行（先讀輸入，再跑模擬），沒有 chain 的系統 Bevy 會自動判斷是否可以平行。&lt;/p&gt;
+&lt;p&gt;這種聲明式的架構跟 React 的理念很像——你描述「什麼東西存在」和「它們之間的關係」，框架負責排程和執行。差別在於 Bevy 的描述是&lt;strong&gt;用 Rust 的型別系統寫的&lt;/strong&gt;，所以所有約束都在編譯期就被驗證了。&lt;/p&gt;
+&lt;h2 id=&#34;asbindgroup用-derive-macro-寫-shader&#34;&gt;AsBindGroup：用 Derive Macro 寫 Shader&lt;/h2&gt;
+&lt;p&gt;CRT 效果的 shader 材質用 Bevy 的 &lt;code&gt;AsBindGroup&lt;/code&gt; derive macro 自動生成 GPU bind group：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CrtMaterial&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[uniform(0)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; params: &lt;span style=&#34;color:#a6e22e&#34;&gt;LinearRgba&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[texture(1)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[sampler(2)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; source_texture: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Handle&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Image&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Material2d &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; CrtMaterial {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;fragment_shader&lt;/span&gt;() -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ShaderRef&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;CRT_SHADER_HANDLE&lt;/span&gt;.into()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;#[uniform(0)]&lt;/code&gt;、&lt;code&gt;#[texture(1)]&lt;/code&gt;、&lt;code&gt;#[sampler(2)]&lt;/code&gt; 這些 attribute 對應到 WGSL shader 裡的 binding：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-wgsl&#34; data-lang=&#34;wgsl&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;uniform&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; params: vec4&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;f32&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; source_texture: texture_2d&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;f32&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@group&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;@binding&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; source_sampler: sampler;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Rust 端改了 struct 欄位，WGSL 端沒改？你會在執行期看到明確的錯誤訊息。雖然不是完美的編譯期驗證，但比起手寫 bind group layout 再偷偷打錯一個 binding index，好太多了。&lt;/p&gt;
+&lt;h2 id=&#34;busio-traitrust-的-trait-如何取代-virtual-function-table&#34;&gt;BusIo Trait：Rust 的 Trait 如何取代 Virtual Function Table&lt;/h2&gt;
+&lt;p&gt;NES 的 CPU 透過記憶體映射 I/O 跟各個硬體元件溝通——寫入 &lt;code&gt;$2000&lt;/code&gt; 是 PPU 控制暫存器，寫入 &lt;code&gt;$4015&lt;/code&gt; 是 APU 狀態暫存器。在 C++ 裡你可能用 virtual function：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;BusDevice&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;virtual&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt; read(&lt;span style=&#34;color:#66d9ef&#34;&gt;uint16_t&lt;/span&gt; addr) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;virtual&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;uint16_t&lt;/span&gt; addr, &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt; val) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在 Rust 裡用 trait：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; BusIo {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;read&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, addr: &lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, addr: &lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;, val: &lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;然後用組合模式把各個設備串起來：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;ApuCompositeBusIo&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; inner: &lt;span style=&#34;color:#a6e22e&#34;&gt;CompositeBusIo&lt;/span&gt;,       &lt;span style=&#34;color:#75715e&#34;&gt;// PPU + Joypad
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; apu: &lt;span style=&#34;color:#a6e22e&#34;&gt;Rc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;RefCell&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Apu&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; BusIo &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; ApuCompositeBusIo {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;read&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, addr: &lt;span style=&#34;color:#66d9ef&#34;&gt;u16&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; addr {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#ae81ff&#34;&gt;0x4015&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; self.apu.borrow_mut().read_register(addr),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; self.inner.read(addr),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;跟 C++ 的 virtual dispatch 不同，Rust 的 trait 實作在編譯期就被確定了（除非你用 &lt;code&gt;dyn Trait&lt;/code&gt;）。在模擬器這種每 cycle 都要呼叫的 hot path 上，靜態分派比動態分派快不少——因為編譯器可以 inline 整個呼叫鏈。&lt;/p&gt;
+&lt;h2 id=&#34;回顧rust-的限制帶來了什麼&#34;&gt;回顧：Rust 的限制帶來了什麼？&lt;/h2&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Rust 的限制&lt;/th&gt;
+          &lt;th&gt;被逼出來的設計&lt;/th&gt;
+          &lt;th&gt;意外的好處&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;沒有 GC，所有權唯一&lt;/td&gt;
+          &lt;td&gt;ECS 架構（元件分離儲存）&lt;/td&gt;
+          &lt;td&gt;自動平行化排程&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;同時只有一個 &amp;amp;mut&lt;/td&gt;
+          &lt;td&gt;Rc&amp;lt;RefCell&amp;lt;&amp;gt;&amp;gt; 共享擁有權&lt;/td&gt;
+          &lt;td&gt;每個借用明確可追蹤&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Send/Sync trait bound&lt;/td&gt;
+          &lt;td&gt;NonSendMut 標記主執行緒資源&lt;/td&gt;
+          &lt;td&gt;執行緒安全在編譯期驗證&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;沒有繼承&lt;/td&gt;
+          &lt;td&gt;Trait + 組合模式（BusIo）&lt;/td&gt;
+          &lt;td&gt;靜態分派、可 inline&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;嚴格的型別系統&lt;/td&gt;
+          &lt;td&gt;系統參數即存取宣告&lt;/td&gt;
+          &lt;td&gt;排程器自動推導依賴&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Bevy 不是「剛好用 Rust 寫的遊戲引擎」——它是一個&lt;strong&gt;被 Rust 的型別系統塑造出來的&lt;/strong&gt;遊戲引擎。每個 API 設計都能追溯到某個 Rust 的語言特性或限制。&lt;/p&gt;
+&lt;p&gt;寫 NES 模擬器前端的過程讓我深刻體會到這一點：當你和借用檢查器搏鬥的時候，其實是在和它&lt;strong&gt;合作&lt;/strong&gt;設計一個更清晰的架構。那些讓你抓狂的編譯錯誤，往往指向的是你的設計裡真正模糊的地方——誰擁有什麼、誰能改什麼、什麼時候能改。&lt;/p&gt;
+&lt;p&gt;把這些問題在編譯期就解決掉，比在凌晨三點 debug 一個跨執行緒的 race condition 好太多了。&lt;/p&gt;
+&lt;h2 id=&#34;參考資源&#34;&gt;參考資源&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://bevyengine.org/&#34;&gt;Bevy Engine&lt;/a&gt; — Data-driven Rust 遊戲引擎&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://bevyengine.org/learn/quick-start/getting-started/ecs/&#34;&gt;Bevy ECS 設計文件&lt;/a&gt; — 官方 ECS 教學&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/&#34;&gt;NES 模擬器前端&lt;/a&gt; — 本文使用的實例專案&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html&#34;&gt;Rust 所有權系統&lt;/a&gt; — The Rust Book&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://doc.rust-lang.org/book/ch15-05-interior-mutability.html&#34;&gt;Interior Mutability&lt;/a&gt; — RefCell 與 Cell 的解釋&lt;/li&gt;
+&lt;/ul&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

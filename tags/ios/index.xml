@@ -1,0 +1,449 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/ios/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-02-05 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Vibe Coding 實戰：打造 AlphaGPS</title>
+      <link>https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/</link>
+      <pubDate>Thu, 05 Feb 2026 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/02-05-vibe-coding-alphagps/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;最近「Vibe Coding」這個詞在開發者社群中掀起熱議——與其逐行敲鍵盤，不如用自然語言描述你想要的功能，讓 AI 幫你實現。聽起來很美好，但真的能用來開發生產級別的應用嗎？&lt;/p&gt;
+&lt;p&gt;我決定用 Claude Code 和 Claude 4.5 Opus 來驗證這個想法，從零開始打造一款完整的 iOS 應用程式：&lt;strong&gt;AlphaGPS&lt;/strong&gt;——一個透過藍牙低功耗（BLE）將 iPhone GPS 資料同步到 Sony 相機的工具。&lt;/p&gt;
+&lt;p&gt;值得一提的是：&lt;strong&gt;我從來沒有寫過任何 Swift 程式&lt;/strong&gt;。雖然我有 Objective-C 的 iOS 開發經驗，但 Swift 和現代 iOS 開發框架對我來說是全新的領域——SwiftUI、Combine 框架、async/await 語法、Live Activity，這些我都是第一次接觸。&lt;/p&gt;
+&lt;p&gt;這不是一個簡單的 Hello World 專案。它涉及 BLE 硬體協議、iOS 背景執行限制、複雜的狀態管理，以及 Live Activity 整合。最終成果？約 4,100 行 Swift 程式碼、30 個檔案、90 個 commits，以及一個真正能用的產品。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;為什麼選擇這個專案&#34;&gt;為什麼選擇這個專案？&lt;/h2&gt;
+&lt;p&gt;作為攝影愛好者，我一直希望照片能自動記錄拍攝地點。雖然 Sony 有官方的 Creators App，但它的背景同步體驗並不理想——經常需要手動重新連線，而且會中斷其他藍牙連接。&lt;/p&gt;
+&lt;p&gt;我想要的是：打開相機就自動連線、App 在背景時持續同步、完全不需要人工干預。&lt;/p&gt;
+&lt;p&gt;這個需求恰好涵蓋了許多有趣的技術挑戰，非常適合測試 AI 輔助開發的極限。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;vibe-coding-的實際體驗&#34;&gt;Vibe Coding 的實際體驗&lt;/h2&gt;
+&lt;h3 id=&#34;第一天111從協議規格到基礎架構&#34;&gt;第一天（1/11）：從協議規格到基礎架構&lt;/h3&gt;
+&lt;p&gt;第一個 commit 是 &lt;code&gt;Initial commit with Sony GPS protocol spec&lt;/code&gt;——我先把逆向工程得到的 Sony 藍牙 GPS 協議文件放進去，然後告訴 Claude：「根據這份協議規格，幫我設計一個 iOS App。」&lt;/p&gt;
+&lt;p&gt;接下來的兩個 commits 分別是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;feat(phase1): implement iOS app foundation for Sony camera GPS sync&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;feat(phase2): implement BLE foundation and GPS encoding&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Claude 建議使用 Multi-Manager Singleton 模式搭配 Combine 響應式框架：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「你的 App 需要協調多個系統：藍牙掃描、GPS 定位、相機連線狀態。
+建議使用獨立的 Manager 單例，各自管理 @Published 狀態，
+透過 Combine 讓 UI 自動響應變化。」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這不是 Claude 隨意生成的建議——它是基於 iOS 開發的最佳實踐，考慮到 CoreBluetooth 的 Delegate 模式和 SwiftUI 的響應式特性。&lt;/p&gt;
+&lt;h3 id=&#34;第二到第三天112-113攻克背景執行&#34;&gt;第二到第三天（1/12-1/13）：攻克背景執行&lt;/h3&gt;
+&lt;p&gt;iOS 對背景執行有嚴格限制。大多數 App 在進入背景後很快就會被系統終止。但我需要的是：即使 App 被殺掉，當相機重新開機時也能自動重連。&lt;/p&gt;
+&lt;p&gt;這部分的開發歷程可以從 commit 歷史看出挑戰有多大：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;feat(phase4): implement background lifecycle and persistence&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Implement iOS background BLE state preservation and cleanup code&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Start scanning in background when cameras exist but none connected&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Start scanning when last connected camera disconnects in background&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Abort connecting cameras when app enters background&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Stop scanning when camera connects in background&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這就是 iOS Core Bluetooth State Preservation 登場的時候。我向 Claude 解釋了需求：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「我需要相機關機後再開機時自動重連，
+即使使用者已經完全關閉 App。」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Claude 不只給了程式碼，還解釋了整個機制：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;用 &lt;code&gt;CBCentralManagerOptionRestoreIdentifierKey&lt;/code&gt; 初始化藍牙管理器&lt;/li&gt;
+&lt;li&gt;iOS 會在背景記住連線意圖&lt;/li&gt;
+&lt;li&gt;當藍牙事件發生時，iOS 會喚醒 App 並呼叫 &lt;code&gt;willRestoreState&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;App 需要在這個回調中重建狀態並恢復連線&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;最困難的是處理邊界情況：藍牙 UUID 可能改變、相機可能同時連線多台、恢復可能在位置權限授權之前發生。Claude 幫我逐一考慮這些情況，最終實現了真正的「零操作」體驗。&lt;/p&gt;
+&lt;h3 id=&#34;sony-的-ble-協議&#34;&gt;Sony 的 BLE 協議&lt;/h3&gt;
+&lt;p&gt;Sony 沒有公開他們的藍牙 GPS 同步協議。幸運的是，我在網路上找到了其他開發者的逆向工程成果（特別是 &lt;a href=&#34;https://github.com/nicjansma/camera-gps-link&#34;&gt;camera-gps-link&lt;/a&gt; 專案），他們已經分析出協議的細節。我把整理後的協議規格放在 &lt;code&gt;docs/sony-gps-protocol-spec.md&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;協議的關鍵：寫入 GPS 資料需要一個三步驟的「解鎖」序列：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;寫入解鎖指令到 DD30 characteristic&lt;/li&gt;
+&lt;li&gt;寫入鎖定指令到 DD31 characteristic&lt;/li&gt;
+&lt;li&gt;寫入 GPS 封包到 DD11 characteristic（91 或 95 bytes）&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;跳過任何一步，相機會靜默忽略資料——沒有錯誤回報。&lt;/p&gt;
+&lt;p&gt;當我把這個發現告訴 Claude 時，它立刻理解了非同步寫入的挑戰：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-swift&#34; data-lang=&#34;swift&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Claude 建議的解決方案&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; unlockWriteComplete = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; lockWriteComplete = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 只有在兩個階段都完成後才發送 GPS&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;checkAndWriteLocation&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;guard&lt;/span&gt; unlockWriteComplete, lockWriteComplete &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 發送 GPS 封包...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這種狀態追蹤模式解決了 BLE 寫入回調可能亂序或遺失的問題。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;印象深刻的地方&#34;&gt;印象深刻的地方&lt;/h2&gt;
+&lt;h3 id=&#34;1-理解上下文的能力&#34;&gt;1. 理解上下文的能力&lt;/h3&gt;
+&lt;p&gt;1/13 那天，我花了不少時間實作 Live Activity。Commit 歷史反映了這段旅程：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Implement Live Activity for camera connection status&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix iOS availability checks for Live Activity API&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix Widget Extension bundle configuration&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Fix ActivityViewContext build error by inlining Live Activity view&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;後來在 1/16，我發現「這個 Live Activity 在斷線時沒有正確結束」。Claude 不只是搜尋關鍵字，它追蹤了整個程式碼流程，發現問題出在狀態轉換的時序：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;didConnect → 狀態設為 .connected → 啟動 Live Activity
+    ↓
+handleConnection → 狀態改為 .connecting（進行服務發現）
+    ↓
+didDisconnect → wasConnected 檢查回傳 false → Live Activity 沒有結束！&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;修復結果就是 &lt;code&gt;fix(ble): always end Live Activity on disconnect&lt;/code&gt; 這個 commit。有這種程度的理解，除錯快了很多。&lt;/p&gt;
+&lt;h3 id=&#34;2-主動考慮邊界情況&#34;&gt;2. 主動考慮邊界情況&lt;/h3&gt;
+&lt;p&gt;在實作電池優化時，Claude 主動提出：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;「你需要考慮這些情況：
+- App 在背景但沒有相機連線 → 應該暫停 GPS
+- 相機在背景連線 → 立即恢復 GPS
+- 使用者關閉背景同步設定 → 停止所有更新」&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;這最終成為 &lt;code&gt;feat(location): stop GPS updates when no cameras connected in background&lt;/code&gt; 這個 commit。這些不是我明確要求的，但對產品品質至關重要。&lt;/p&gt;
+&lt;h3 id=&#34;3-架構一致性&#34;&gt;3. 架構一致性&lt;/h3&gt;
+&lt;p&gt;隨著專案成長到 30 個 Swift 檔案，Claude 始終記得我們建立的模式：Manager 單例、原子性狀態更新、Combine 訂閱管理。它不會突然建議一個風格完全不同的實作。&lt;/p&gt;
+&lt;p&gt;看看這些 refactor commits，Claude 幫我持續改進架構而不破壞一致性：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Refactor to single camera list and state-based architecture&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Consolidate Camera discovering and connecting states&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Refactor autoConnect to separate field from connection state&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Consolidate connected and syncing states into single connected state&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;refactor: simplify connecting state by removing retryCount&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;不完美的地方&#34;&gt;不完美的地方&lt;/h2&gt;
+&lt;p&gt;坦白說，Vibe Coding 不是萬能的。從 90 個 commits 中可以看到很多 fix commits：&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Bug fixes 佔了很大比例&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): clear peripheral when aborting connection&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): cancel connection timeout on disconnect&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): fix critical disconnect handling issues&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix(ble): clear stale peripheral on background disconnect&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這些都是在實機測試時發現的問題。Claude 可以寫出結構良好的程式碼，但 BLE 和 iOS 背景執行的邊界情況太多，只有實際測試才能發現。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;需要明確指示&lt;/strong&gt;：Claude 有時會過度工程化。我必須明確說「保持簡單，不要加額外功能」。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;測試依然困難&lt;/strong&gt;：BLE 和 Live Activity 無法在模擬器中測試。我仍然需要在實體裝置上手動測試每個功能。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;領域知識必要&lt;/strong&gt;：雖然 Claude 幫我寫程式碼，但理解 Sony 協議、iOS 背景限制、BLE 特性——這些需要我自己研究。AI 是超強的副駕駛，但你還是需要知道要去哪裡。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;成果總覽&#34;&gt;成果總覽&lt;/h2&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;指標&lt;/th&gt;
+          &lt;th&gt;數值&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;程式碼行數&lt;/td&gt;
+          &lt;td&gt;~4,100 行&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Swift 檔案數量&lt;/td&gt;
+          &lt;td&gt;30&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Git commits&lt;/td&gt;
+          &lt;td&gt;90&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;開發時間&lt;/td&gt;
+          &lt;td&gt;6 天（兼職，1/11 - 1/16）&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;手動寫的程式碼&lt;/td&gt;
+          &lt;td&gt;&amp;lt; 5%&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;功能清單：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;自動掃描和連接 Sony 相機&lt;/li&gt;
+&lt;li&gt;背景 GPS 同步（App 在背景時持續運作）&lt;/li&gt;
+&lt;li&gt;Live Activity 即時顯示同步狀態&lt;/li&gt;
+&lt;li&gt;相機斷線自動重連&lt;/li&gt;
+&lt;li&gt;電池優化的智慧掃描&lt;/li&gt;
+&lt;li&gt;支援 iOS 15.0+，完整功能需 iOS 16.1+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;我學到的事&#34;&gt;我學到的事&lt;/h2&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Vibe Coding 是真的&lt;/strong&gt;：對於有經驗的開發者，AI 可以將生產力提升 5-10 倍。關鍵是你要能驗證和引導它的輸出。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;對話品質決定結果&lt;/strong&gt;：模糊的指示得到模糊的程式碼。具體描述需求、約束和邊界情況，Claude 就能給出專業級的解決方案。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Claude 4.5 Opus 的差異&lt;/strong&gt;：相比之前的模型，Opus 4.5 在理解複雜系統、保持上下文一致性、主動考慮邊界情況方面有明顯提升。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;這不是取代學習&lt;/strong&gt;：AI 讓你更快實現想法，但你還是需要理解底層技術。否則你無法判斷 AI 的建議是否正確。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;寫在最後&#34;&gt;寫在最後&lt;/h2&gt;
+&lt;p&gt;AlphaGPS 現在是我日常使用的工具。每次出門拍照，相機開機就自動連接、照片自動標記位置、全程不需要碰手機。&lt;/p&gt;
+&lt;p&gt;回頭看這個專案，最有意思的不是程式碼本身，而是這種新的開發方式：我專注於「想要什麼」和「為什麼」，Claude 幫我處理「怎麼做」的細節。&lt;/p&gt;
+&lt;p&gt;這就是 Vibe Coding 的精髓——不是讓 AI 取代你，而是讓你把精力放在真正重要的事情上。&lt;/p&gt;
+&lt;p&gt;如果你也想嘗試，我的建議是：找一個你真正想解決的問題，然後跟 Claude 聊聊。你可能會驚訝於它能帶你走多遠。&lt;/p&gt;
+&lt;hr&gt;
+&lt;p&gt;&lt;em&gt;這篇文章本身也是用 Claude 協助撰寫的——用 AI 寫一篇關於 AI 開發的文章，似乎也是剛好而已。&lt;/em&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>RubyMotion v.s. Xcode &#43; Objective-C</title>
+      <link>https://blog.simplypatrick.com/posts/2014/03-27-rubymotion-vs-xcode-objective-c/</link>
+      <pubDate>Thu, 27 Mar 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/03-27-rubymotion-vs-xcode-objective-c/</guid>
+      <description>&lt;h3 id=&#34;優點&#34;&gt;優點&lt;/h3&gt;
+&lt;p&gt;RubyMotion 的優點說穿了就是儘量讓你不會碰到 Objective-C, Xcode, 及 iOS API 的摧殘：&lt;/p&gt;
+&lt;h4 id=&#34;使用-ruby-語法&#34;&gt;使用 Ruby 語法&lt;/h4&gt;
+&lt;p&gt;應該不是只有我覺得 Objective-C 的語法&lt;a href=&#34;http://amplicate.com/hate/objective-c&#34;&gt;很醜&lt;/a&gt;，Cocoa/iOS 的 API 也都是囉嗦的長，
+但相對地 Ruby 就有漂亮易讀的語法及好用的內建 library。&lt;/p&gt;
+&lt;p&gt;與其要寫：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-objectivec&#34; data-lang=&#34;objectivec&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;NSMutableArray &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;array &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [NSMutableArray arrayWithObjects: &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;one&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;two&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;three&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;four&amp;#34;&lt;/span&gt;, nil];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;NSArray &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;newAdditions &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [NSArray arrayWithObjects: &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;a&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;@&amp;#34;b&amp;#34;&lt;/span&gt;, nil];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;NSIndexSet &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;indexes &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;,newAdditions.count)];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[array insertObjects:newAdditions atIndexes:indexes];&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;我更喜歡寫：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;array &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;%w{one two three four}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;newAdditions &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;%w{a b}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;array&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;insert(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;newAdditions)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;可利用-rubymotion-gems&#34;&gt;可利用 RubyMotion gems&lt;/h4&gt;
+&lt;p&gt;在 &lt;a href=&#34;http://rubymotion-wrappers.com/&#34;&gt;RubyMotion Wrappers&lt;/a&gt; 可以找到許多專爲 RubyMotion 設計的 gem，通常是把 iOS API 或是有名
+的 library (例如 AFNetworking 或 Cocos2D) 包裝成 Ruby 的慣用方式，例如 &lt;a href=&#34;https://github.com/rubymotion/sugarcube&#34;&gt;SugarCube&lt;/a&gt;
+可以把：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;UIApplication&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;sharedApplication&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;openURL(&lt;span style=&#34;color:#66d9ef&#34;&gt;NSURL&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;URLWithString(url))&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;簡化成：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;url&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;nsurl&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;open&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;簡潔好維護的-dsl&#34;&gt;簡潔好維護的 DSL&lt;/h4&gt;
+&lt;p&gt;例如 &lt;a href=&#34;https://github.com/rubymotion/teacup&#34;&gt;Teacup&lt;/a&gt; 可以取代用 XIB 來拉 UI：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Teacup&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Stylesheet&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;new(&lt;span style=&#34;color:#e6db74&#34;&gt;:menu&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  style &lt;span style=&#34;color:#e6db74&#34;&gt;:root&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;gradient&lt;/span&gt;: {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;colors&lt;/span&gt;: &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;#7a7a7a&amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;uicolor, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;#414141&amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;uicolor&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  style &lt;span style=&#34;color:#e6db74&#34;&gt;:header&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;backgroundColor&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;background-menu-header.png&amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;uiimage&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;uicolor,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;constraints&lt;/span&gt;: &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;:top_left&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;:full_width&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            constrain_height(&lt;span style=&#34;color:#ae81ff&#34;&gt;59&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  style &lt;span style=&#34;color:#e6db74&#34;&gt;:title&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;backgroundColor&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;UIColor&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;clearColor,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;frame&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;CGRectMake&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;12&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;190&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;color&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;UIColor&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;whiteColor,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;font&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;UIFont&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;boldSystemFontOfSize(&lt;span style=&#34;color:#ae81ff&#34;&gt;18&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;baselineAdjustment&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;UIBaselineAdjustmentAlignCenters&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;rakefile&#34;&gt;Rakefile&lt;/h4&gt;
+&lt;p&gt;採用 Rakefile 比起用 xcodeproject 更有彈性且好維護，例如我一個 app 有分付費及免費兩個版本，建置時可以用環境變數來切換，Rakefile 可以加入程式邏輯來判斷處理：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Motion&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Project&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;App&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;setup &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;app&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;APP&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;when&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;taoyuan&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;name &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;TaoyuanAirport&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;identifier &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;com.simplypatrick.taoyuanairport.paid&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;when&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;taoyuan-free&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;name &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;TaoyuanAirport-Free&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;identifier &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;com.simplypatrick.taoyuanairport&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;deployment_target &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;6.0&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;version &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;info_plist&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;CFBundleShortVersionString&amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;1.5.7&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;files &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;Dir&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;glob(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./config/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;APP&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;/*.rb&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  app&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;resources_dirs &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./config/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;APP&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;/resources&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;# ...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;缺點&#34;&gt;缺點&lt;/h3&gt;
+&lt;p&gt;反面列一些我覺得是缺點的地方：&lt;/p&gt;
+&lt;h4 id=&#34;額外的-ruby-學習成本&#34;&gt;額外的 Ruby 學習成本&lt;/h4&gt;
+&lt;p&gt;之前說過，只懂 Ruby 是無法用 RubyMotion 開發 iOS App 的，必須先懂 Objective-C 及 Xcode 後再捨棄它們，對於非 Ruby 愛好者這是比較難接受的。&lt;/p&gt;
+&lt;h4 id=&#34;價格&#34;&gt;價格&lt;/h4&gt;
+&lt;p&gt;RubyMotion 並不是免費軟體，第一次購買要 $199 USD，之後每年需要再付 $99 USD 的更新及支持費用，對於只是想嘗試用 Ruby 寫 iOS app 的開發者是個門檻。&lt;/p&gt;
+&lt;h4 id=&#34;app-的大小&#34;&gt;App 的大小&lt;/h4&gt;
+&lt;p&gt;RubyMotion 雖然是編譯成 native code，比起用純 Objective-C 開發，層層包裝後產生的 IPA 檔還是大了不少，但我覺得還可以是還可以接受的程度。&lt;/p&gt;
+&lt;h3 id=&#34;結論&#34;&gt;結論&lt;/h3&gt;
+&lt;p&gt;如果是熟悉 Ruby 或是想學習 Ruby 的開發者我會蠻推薦 RubyMotion。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>RubyMotion</title>
+      <link>https://blog.simplypatrick.com/posts/2014/03-16-rubymotion/</link>
+      <pubDate>Sun, 16 Mar 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/03-16-rubymotion/</guid>
+      <description>&lt;p&gt;使用 RubyMotion 來撰寫 iOS app 已經有一年多的時間，&lt;del&gt;踩了不少坑後&lt;/del&gt;有了一些小心得可以分享，目前想到的題目有：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;相較於用 Xcode 開發的優缺點&lt;/li&gt;
+&lt;li&gt;RubyMotion Rakefile 的使用&lt;/li&gt;
+&lt;li&gt;與 Xcode 搭配的方法&lt;/li&gt;
+&lt;li&gt;開發環境的設定&lt;/li&gt;
+&lt;li&gt;推薦閱讀的書&lt;/li&gt;
+&lt;li&gt;用 Ruby 風格來架構 app&lt;/li&gt;
+&lt;li&gt;Crash report 的機制&lt;/li&gt;
+&lt;li&gt;推薦使用的 gem&lt;/li&gt;
+&lt;li&gt;其他推薦閱讀&amp;hellip;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;有一個需要先釐清的是：使用 RubyMotion 不表示你可以不用懂 Objective-C 及 Cocoa Touch，
+相反地，學習原生 iOS 開發的方法對於有效駕馭 RubyMotion 是必要的。&lt;/p&gt;
+&lt;p&gt;有興趣的人可以先聽聽 &lt;a href=&#34;http://www.techtalk.tw/2013/01/episode-14-rubymotion.html&#34;&gt;Joseph Ku 在 TechTalk@TW&lt;/a&gt; 的專訪。另外也可以看 &lt;a href=&#34;http://en.wikipedia.org/wiki/Jim_Weirich&#34;&gt;Jim Weirich&lt;/a&gt; 在 CincyCocoaDev 對 RubyMotion 的介紹：&lt;/p&gt;
+&lt;iframe width=&#34;560&#34; height=&#34;315&#34; src=&#34;//www.youtube.com/embed/z7E1zx9j31M&#34; frameborder=&#34;0&#34; allowfullscreen&gt;&lt;/iframe&gt;</description>
+    </item>
+    
+    <item>
+      <title>Build iOS App with rake</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-24-build-ios-app-with-rake/</link>
+      <pubDate>Sat, 24 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-24-build-ios-app-with-rake/</guid>
+      <description>&lt;p&gt;上次說到 rake 是幫忙 iOS App 本地化的好用工具，但其實幾乎所有要自動化的事情都能請它幫忙，
+例如寫 game 的人需要做的 sprite sheet 也能請 rake &lt;a href=&#34;http://whatupdave.com/post/5729378739/automate-your-ios-projects-with-rake&#34;&gt;自動產生&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;除此之外，準備各種不同的 build 也是頗煩人的事，如果你也用 rake 的話就可以用 &lt;a href=&#34;http://rubygems.org/gems/wox&#34;&gt;wox&lt;/a&gt; 這個 gem
+來幫忙，下面的範例是 &lt;a href=&#34;http://rubydoc.info/gems/wox/0.0.8/frames&#34;&gt;wox 文檔&lt;/a&gt;建議的方式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# Rakefile&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Wox&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Tasks&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;create &lt;span style=&#34;color:#e6db74&#34;&gt;:info_plist&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Resources/Info.plist&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:sdk&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;iphoneos&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:configuration&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Release&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  build &lt;span style=&#34;color:#e6db74&#34;&gt;:debug&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:configuration&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Debug&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  build &lt;span style=&#34;color:#e6db74&#34;&gt;:release&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:developer_certificate&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;iPhone Developer: Dangerous Dave (9GZ84DL0DZ)&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ipa &lt;span style=&#34;color:#e6db74&#34;&gt;:app_store&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:provisioning_profile&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;App Store&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ipa &lt;span style=&#34;color:#e6db74&#34;&gt;:adhoc&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:provisioning_profile&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Team Provisioning Profile&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      testflight &lt;span style=&#34;color:#e6db74&#34;&gt;:publish&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:api_token&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;nphsZ6nVXMl0brDEsevLY0wRfU6iP0NLaQH3nqoh8jG&amp;#39;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:team_token&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Qfom2HnGGJnXrUVnOKAxKAmpNO3wdQ9panhtqcA&amp;#39;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:notes&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; proc { &lt;span style=&#34;color:#66d9ef&#34;&gt;File&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;read(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CHANGELOG&amp;#34;&lt;/span&gt;) },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:distribution_lists&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;%w[Internal QA]&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:notify&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;使用 wox 的優點是不同 task 的 configuration 是可以繼承的，例如 ipa:app_store 套用的就是上一層
+build:release 的設定，但用的是上傳 App Store 用的 provisioning profile。同樣道理 ipa:adhoc 用的是
+Team Provisioning Profile。而如果你有用 &lt;a href=&#34;http://testflightapp.com&#34;&gt;TestFlight&lt;/a&gt; 的話，就可以繼承 ipa:adhoc 把做出來
+的 ipa 檔直接上傳到 TestFlight。&lt;/p&gt;
+&lt;p&gt;關於 TestFlight，可以參考 &lt;a href=&#34;http://thepolydice.com/2011/01/27/%E4%BD%BF%E7%94%A8testflight%E6%8F%90%E4%BE%9B%E6%9C%80%E5%A5%BD%E7%9A%84%E6%B8%AC%E8%A9%A6%E9%AB%94%E9%A9%97/&#34;&gt;Polydice 的介紹&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>iOS App Localization using rake</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-24-ios-app-localization-using-rake/</link>
+      <pubDate>Sat, 24 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-24-ios-app-localization-using-rake/</guid>
+      <description>&lt;p&gt;一般要幫 iOS App 本地化，其中比較繁瑣的就是翻譯 xib 檔案中的字串，通常是需要下面三個步驟
+(可參考 &lt;a href=&#34;http://www.icanlocalize.com/site/tutorials/iphone-applications-localization-guide/&#34;&gt;ICanLocalize 的教學&lt;/a&gt;)：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 ibtool 把字串從 xib 中抓出來&lt;/li&gt;
+&lt;li&gt;找人翻譯字串&lt;/li&gt;
+&lt;li&gt;使用 ibtool 再把翻譯好的字串放到 xib 中&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;不過我是不能忍受這些工作要手動進行的，所以最好的方式是用 rake 來自動化這些事情：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;DEF_LPROJ&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;en.lproj&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;REGIONS&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;Dir&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;*.lproj&amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;].&lt;/span&gt;delete_if {&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;p&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; p &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;DEF_LPROJ&lt;/span&gt;}&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;map {&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;p&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;File&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;basename(p, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;.lproj&amp;#39;&lt;/span&gt;)}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;XIBS&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;Dir&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;DEF_LPROJ&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;/*.xib&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;].&lt;/span&gt;map {&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;x&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;File&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;basename(x)}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;namespace &lt;span style=&#34;color:#e6db74&#34;&gt;:l10n&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  task &lt;span style=&#34;color:#e6db74&#34;&gt;:regions&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;REGIONS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each {&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;region&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; puts region}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  task &lt;span style=&#34;color:#e6db74&#34;&gt;:xibs&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;XIBS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each {&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;xib&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; puts xib}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  desc &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Generate strings file for XIB&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  task &lt;span style=&#34;color:#e6db74&#34;&gt;:genstrings&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;REGIONS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;r&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#66d9ef&#34;&gt;XIBS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;xib&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sh &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;ibtool --generate-strings-file &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;r&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;.lproj/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;xib&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;.strings &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;DEF_LPROJ&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;xib&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  desc &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Apply strings files to XIB&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  task &lt;span style=&#34;color:#e6db74&#34;&gt;:usestrings&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;REGIONS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;r&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#66d9ef&#34;&gt;XIBS&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;each &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;xib&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sh &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;ibtool --strings-file &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;r&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;.lproj/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;xib&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;.strings &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;DEF_LPROJ&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;xib&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt; --write &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;r&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;.lproj/&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;#{&lt;/span&gt;xib&lt;span style=&#34;color:#e6db74&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;首先請 rake 幫忙把字串檔都產生出來：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ rake l10n:genstrings&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;翻譯完這些字串檔後，再請 rake 幫你放進去：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-shell&#34; data-lang=&#34;shell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;$ rake l10n:usestings&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;不管你有幾個語言或是幾個 xib 檔都是一樣的步驟。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>AppCode: Make you a happier iOS developer</title>
+      <link>https://blog.simplypatrick.com/posts/2011/10-29-appcode-make-you-a-happier-ios-developer/</link>
+      <pubDate>Sat, 29 Oct 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/10-29-appcode-make-you-a-happier-ios-developer/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&amp;ldquo;XCode doesn&amp;rsquo;t look like a software tool that&amp;rsquo;s developed by Apple at all. It is clear Steve Jobs was not involved creating this tool.&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;我完全同意這句話，從 XCode 3.2 用到現在 4.2 版還是覺得不順手。寫程式最怕的就是被其他事干擾而分心，IDE 如果有什麼地方讓我工作效率不彰，我通常很快就會受不了然後分心去解決效率問題先，因為不能馬上解決會一直困擾我，而 XCode 就是個會讓我一直要傷腦筋的工具，但是為了要在相對精美的 iOS 及 iPhone 上開發程式，XCode 是唯一的選擇。&lt;/p&gt;
+&lt;p&gt;&lt;a href=&#34;http://blog.dutchworks.nl/author/tom/&#34;&gt;Tom van Zummeren&lt;/a&gt; 在 &lt;a href=&#34;http://blog.dutchworks.nl/2011/07/06/appcode-intellij-for-objective-c/&#34;&gt;AppCode: IntelliJ for Objective C!&lt;/a&gt; 裡把 &lt;a href=&#34;http://www.jetbrains.com/objc/&#34;&gt;AppCode&lt;/a&gt; 比 XCode 還好的地方都整理出來了。我自己試用 AppCode 後也覺得 JetBrains 是有備而來的，用起來跟 &lt;a href=&#34;http://www.jetbrains.com/idea/&#34;&gt;IntelliJ IDEA&lt;/a&gt; 一樣地流暢，讓寫 Objective C 也能是個愉快的過程。&lt;/p&gt;
+&lt;p&gt;AppCode 主要贏在程式編輯功能，但偵錯功能感覺弱了一點，例如:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;我找不到 NSLog 輸出的訊息會跑到那裡&lt;/li&gt;
+&lt;li&gt;Debug 時輸出的訊息沒有 XCode 完整&lt;/li&gt;
+&lt;li&gt;不會自動停在 first-chance exception&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;所以實際開發時還是要 AppCode 及 XCode 同時開啟，買個大螢幕會比較好：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;appcode-and-xcode-together.png&#34; alt=&#34;AppCode and XCode together&#34;&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
