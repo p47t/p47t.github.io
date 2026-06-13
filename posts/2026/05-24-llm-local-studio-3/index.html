@@ -1,0 +1,592 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/"/>
+  <meta property="og:title" content="用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-05-24 02:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="web"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-openai-api/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            本地 LLM 工作站：用 Python、Node.js、Rust 輕鬆串接 OpenAI 相容 API
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">
+            理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</h2>
+      <div class="post-meta">
+        <span class="post-date">May 24, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/web"><span class="label label-primary">web</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架：tiny-llm-runner 與 candle 的架構對照</a></li>
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama：從 GGUF 到 Token 的零 C 依賴推論引擎</a></li>
+  
+    <li>May 25, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站：用 Python、Node.js、Rust 輕鬆串接 OpenAI 相容 API</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)：Axum 串流與 OpenAI 相容 API 的實現</a></li>
+  
+    <li>May 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</a></li>
+  
+    <li>May 20, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</a></li>
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/05-24-llm-local-studio-3/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Antigravity）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p>在之前的系列文章中，我們逐步建立起本機推論引擎的核心：</p>
+<ol>
+<li><strong><a href="/posts/2026/05-21-llm-local-studio">第一篇：基礎架構與 C FFI 整合</a></strong>：實現了模型註冊表、Hugging Face 下載管理，並直接透過 FFI 呼叫 <code>llama.cpp</code> 原生函式庫。</li>
+<li><strong><a href="/posts/2026/05-24-llm-local-studio-2">第二篇：非同步 Web API 伺服器</a></strong>：使用 Axum 搭建 HTTP 伺服器，設計了非同步與同步（FFI 執行緒）邊界的解耦架構，並實現相容於 OpenAI 規範的 SSE 令牌串流。</li>
+<li><strong><a href="/posts/2026/05-24-llm-local-studio-openai-api">API 串接篇：多語言 SDK 實戰</a></strong>：介紹了如何用 Python、Node.js、Rust 及 VS Code 外掛（Continue）無縫對接我們本地的服務。</li>
+</ol>
+<p>不過走到這裡，我們的專案說穿了還是一個純粹的「後端 API 服務」。功能是夠用啦，但對那些不想自己動手寫程式串接、只想安靜跟本地模型聊天的人來說，少了一個開箱即用的圖形介面（GUI）實在是有點可惜。</p>
+<p>所以這次我想把它補齊。在最新的 <a href="https://github.com/p47t/rust-52-projects/tree/master/llm-local-studio-3"><code>llm-local-studio-3</code></a> 裡，我做了一個還算精緻的單頁網頁應用（SPA）聊天介面，並把它<strong>直接編譯、嵌入到 Rust 二進位檔案裡</strong>。</p>
+<p>這樣一來，你不用下載一堆前端依賴，不用跑 <code>npm run dev</code>，更不用跟惱人的跨來源資源共用（CORS）問題搏鬥——只要跑一個編譯好的 Rust 執行檔，瀏覽器一開，馬上就有一個功能完整、看起來也挺有質感的本地 LLM 聊天室囉。</p>
+<p>這篇就來拆解幾個重點：怎麼用 <code>rust-embed</code> 把靜態網頁打包進 Rust 執行檔、怎麼在 Axum 裡實作 SPA 路由重導向（Fallback Routing），以及前端怎麼純用 Vanilla JS 串接 SSE 串流，順便做出一個頗有質感的毛玻璃（Glassmorphism）暗黑風格介面。</p>
+<h3 id="為什麼選擇嵌入式-web-ui">為什麼選擇「嵌入式 Web UI」？</h3>
+<p>常見的 Web App 開發架構裡，前端跟後端通常是分開跑的。前端透過 Vite 之類的開發伺服器跑在 <code>http://localhost:5173</code>，後端 API 則跑在 <code>http://localhost:8080</code>。</p>
+<p>這種架構在開發時很方便，這點我不否認。只是一旦要部署、發布給一般使用者，痛點就一個接一個冒出來：</p>
+<ol>
+<li><strong>依賴環境複雜</strong>：使用者電腦必須安裝 Node.js 才能運行前端，對非網頁開發者門檻過高。</li>
+<li><strong>CORS 跨網域阻擋</strong>：因為連接埠（Port）不同，瀏覽器會因為安全性考量阻擋請求，後端伺服器必須配置特別的 CORS 允許規則。</li>
+<li><strong>多檔案分發麻煩</strong>：你需要同時打包前端編譯產出的 <code>dist</code> 資料夾與後端的執行檔，一旦路徑出錯就無法運行。</li>
+</ol>
+<p>而把網頁靜態資源**打包嵌入（Embedded）**到 Rust 二進位檔裡，好處我想是壓倒性的：</p>
+<ul>
+<li><strong>單一執行檔（Zero Dependencies）</strong>：打包編譯後只產生一個執行檔（如 <code>llm-local-studio.exe</code>），所有網頁圖示、HTML、CSS、JS 程式碼全部都存在於這個二進位檔的唯讀資料段（ReadOnly Data Segment）中。</li>
+<li><strong>同源政策（Same-Origin）</strong>：因為網頁和 API 都是由同一個監聽連接埠（例如 <code>8080</code>）的 Axum 服務提供，瀏覽器視其為同源，完全不需要擔心 CORS 問題。</li>
+<li><strong>極佳的部署體驗</strong>：使用者只需下載該執行檔，下達一條指令，點開網址就能直接使用。</li>
+</ul>
+<h3 id="技術關鍵一使用-rust-embed-封裝靜態資源">技術關鍵一：使用 <code>rust-embed</code> 封裝靜態資源</h3>
+<p>在 Rust 裡要把整個資料夾嵌進二進位檔，最順手的工具大概就是 <a href="https://crates.io/crates/rust-embed"><code>rust-embed</code></a> 了。</p>
+<p>它的用法直覺到我第一次看到還愣了一下——只要定義一個結構體，掛上 <code>RustEmbed</code> 的屬性巨集（Attribute Macro），指定前端打包輸出的目錄就好：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> rust_embed::RustEmbed;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(RustEmbed)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[folder = </span><span style="color:#e6db74">&#34;ui/dist/&#34;</span><span style="color:#75715e">]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Asset</span>;</span></span></code></pre></div>
+
+<p>在編譯期，Rust 編譯器會掃描 <code>ui/dist/</code> 目錄下的所有檔案，把它們的二進位內容讀進來，當成靜態陣列嵌進二進位檔裡。</p>
+<h4 id="兼顧開發效率的雙重模式">兼顧開發效率的「雙重模式」</h4>
+<p>你可能會擔心：「每改一次網頁的 CSS 或 JS 就得重編一次 Rust 專案，那開發效率不就慘到不能看了嗎？」</p>
+<p>我一開始也是這樣想的，後來才發現這正是 <code>rust-embed</code> 設計巧妙的地方。</p>
+<ul>
+<li><strong>偵錯模式（Debug Mode）</strong>：跑 <code>cargo run</code> 或 <code>cargo build</code> 時，它<strong>不會</strong>真的去嵌入檔案，而是在執行時動態讀取你硬碟上的 <code>ui/dist/</code> 目錄。所以你只要在前端資料夾跑 Vite 編譯，Rust 這端馬上就看得到更新，連重啟服務都免了。</li>
+<li><strong>發布模式（Release Mode）</strong>：只有跑 <code>cargo build --release</code> 時，它才會把檔案真正寫死進二進位檔，做到零外部依賴。</li>
+</ul>
+<h3 id="技術關鍵二axum-中的-spa-fallback-路由與-mime-處理">技術關鍵二：Axum 中的 SPA Fallback 路由與 MIME 處理</h3>
+<p>嵌入資源之後，接下來得讓 Axum 伺服器知道怎麼讀這些檔案、再回傳給瀏覽器。</p>
+<p>現代前端單頁應用（SPA）的路由是由前端 JS（像是瀏覽器的 History API）控制的。問題來了：當使用者在網址列輸入 <code>http://localhost:8080/settings</code> 然後按重新整理，後端會收到一個對 <code>/settings</code> 的請求——而後端要是沒設定對應的路由，就只能回你一個 404 囉。</p>
+<p>所以後端得實作 <strong>SPA Fallback 機制</strong>：只要請求的路徑不是已註冊的 API 端點（像 <code>/v1/chat/completions</code>、<code>/health</code>），就一律把 <code>ui/dist/index.html</code> 丟回給瀏覽器，剩下的路由渲染交給前端 JS 接手。</p>
+<p>這個資源處理器我寫在 <code>src/api/assets.rs</code> 裡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> axum::{
+</span></span><span style="display:flex;"><span>    http::{header, StatusCode, Uri},
+</span></span><span style="display:flex;"><span>    response::IntoResponse,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">use</span> rust_embed::RustEmbed;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(RustEmbed)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[folder = </span><span style="color:#e6db74">&#34;ui/dist/&#34;</span><span style="color:#75715e">]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Asset</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">static_handler</span>(uri: <span style="color:#a6e22e">Uri</span>) -&gt; <span style="color:#a6e22e">impl</span> IntoResponse {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 去除請求路徑開頭的斜線，符合 rust-embed 的鍵值格式
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> path <span style="color:#f92672">=</span> uri.path().trim_start_matches(<span style="color:#e6db74">&#39;/&#39;</span>).to_string();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 如果是首頁請求，預設尋找 index.html
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> path.is_empty() {
+</span></span><span style="display:flex;"><span>        path <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;index.html&#34;</span>.to_string();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 嘗試從嵌入資源中取得檔案
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> Asset::get(path.as_str()) {
+</span></span><span style="display:flex;"><span>        Some(content) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 使用 mime_guess 根據副檔名判斷正確的 Content-Type (例如 text/css, application/javascript)
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> mime <span style="color:#f92672">=</span> mime_guess::from_path(path).first_or_octet_stream();
+</span></span><span style="display:flex;"><span>            (
+</span></span><span style="display:flex;"><span>                [(header::<span style="color:#66d9ef">CONTENT_TYPE</span>, mime.as_ref())],
+</span></span><span style="display:flex;"><span>                content.data.into_owned(),
+</span></span><span style="display:flex;"><span>            )
+</span></span><span style="display:flex;"><span>                .into_response()
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        None <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 4. 找不到檔案時，Fallback 回傳 index.html（讓前端 SPA 處理路由）
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(index_content) <span style="color:#f92672">=</span> Asset::get(<span style="color:#e6db74">&#34;index.html&#34;</span>) {
+</span></span><span style="display:flex;"><span>                (
+</span></span><span style="display:flex;"><span>                    [(header::<span style="color:#66d9ef">CONTENT_TYPE</span>, <span style="color:#e6db74">&#34;text/html&#34;</span>)],
+</span></span><span style="display:flex;"><span>                    index_content.data.into_owned(),
+</span></span><span style="display:flex;"><span>                )
+</span></span><span style="display:flex;"><span>                    .into_response()
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// 如果連 index.html 都沒有（例如忘記先 build 前端），則回傳 404
+</span></span></span><span style="display:flex;"><span>                (StatusCode::<span style="color:#66d9ef">NOT_FOUND</span>, <span style="color:#e6db74">&#34;404 Not Found&#34;</span>).into_response()
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>接著在 <code>src/api/mod.rs</code> 裡，透過 <code>.fallback()</code> 把這個 handler 掛到 Axum 路由表的最後面：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> app <span style="color:#f92672">=</span> Router::new()
+</span></span><span style="display:flex;"><span>    .route(<span style="color:#e6db74">&#34;/health&#34;</span>, get(routes::health))
+</span></span><span style="display:flex;"><span>    .route(<span style="color:#e6db74">&#34;/v1/models&#34;</span>, get(routes::list_models))
+</span></span><span style="display:flex;"><span>    .route(<span style="color:#e6db74">&#34;/v1/chat/completions&#34;</span>, post(routes::chat_completions))
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 當以上路由都沒配對成功時，交給靜態資源處理器
+</span></span></span><span style="display:flex;"><span>    .fallback(get(assets::static_handler))
+</span></span><span style="display:flex;"><span>    .layer(cors)
+</span></span><span style="display:flex;"><span>    .with_state(engine);</span></span></code></pre></div>
+
+<p>這樣一來，伺服器就同時具備了 serving 靜態資源、以及引導 SPA 路由的能力，一氣呵成。</p>
+<h3 id="前端介面設計極簡暗黑毛玻璃美學">前端介面設計：極簡暗黑毛玻璃美學</h3>
+<p>UI 這塊，我實在不想做出那種陽春到讓人提不起勁的畫面。所以我從極簡主義出發，挑了一組頗有質感的深色色系：</p>
+<ul>
+<li><strong>背景與版面</strong>：採用極深色漸層底色（<code>#0f1115</code> 到 <code>#171923</code>），避免純黑帶來的死板感。</li>
+<li><strong>側邊欄 (Sidebar)</strong>：使用半透明的白色背景，結合 <code>backdrop-filter: blur(12px)</code> 實現高質感的毛玻璃（Glassmorphism）視覺效果，並用細緻的半透明邊框細線畫出分界。</li>
+<li><strong>狀態指示燈</strong>：在側邊欄上方顯示「Connected」連線狀態，並利用 CSS 關鍵影格（<code>@keyframes</code>）製作綠色光暈的呼吸燈脈衝動畫（Pulse Animation），讓介面顯得栩栩如生。</li>
+<li><strong>聊天對話框</strong>：使用帶有漸層藍紫色的氣泡背景（<code>linear-gradient(135deg, #3b82f6, #4f46e5)</code>）代表使用者訊息，並加上柔和的陰影；AI 訊息則使用低調的半透明灰，形成強烈的視覺對比與易讀性。</li>
+<li><strong>自適應輸入框</strong>：對話輸入框會監聽輸入字數，動態調整輸入框高度（最大 150px），並客製化了滾動條（Scrollbar）樣式。</li>
+</ul>
+<blockquote>
+「好的軟體不只功能要強大，外觀也必須讓人賞心悅目。」
+</blockquote>
+
+<h3 id="原生-javascript-sse-令牌串流串接">原生 JavaScript SSE 令牌串流串接</h3>
+<p>為了讓整個應用保持輕巧又快，我沒有引入 React 或 Vue 這類重型框架，而是直接用 vanilla JavaScript 把互動邏輯寫出來。對這種規模的東西來說，搬個框架進來反而是殺雞用牛刀吧。</p>
+<p>前端最核心的一招，就是用網頁的 <code>ReadableStream</code> 讀取、即時解析後端回傳的 SSE（Server-Sent Events）事件流，做出「打字機」效果：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-javascript" data-lang="javascript"><span style="display:flex;"><span><span style="color:#75715e">// 建立一個空的 AI 訊息元素，並附加閃爍的輸入游標 (cursor-blink)
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">msgEl</span> <span style="color:#f92672">=</span> document.<span style="color:#a6e22e">createElement</span>(<span style="color:#e6db74">&#39;div&#39;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">msgEl</span>.<span style="color:#a6e22e">className</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;message ai&#39;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">contentEl</span> <span style="color:#f92672">=</span> document.<span style="color:#a6e22e">createElement</span>(<span style="color:#e6db74">&#39;div&#39;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">contentEl</span>.<span style="color:#a6e22e">className</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;message-content&#39;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cursor</span> <span style="color:#f92672">=</span> document.<span style="color:#a6e22e">createElement</span>(<span style="color:#e6db74">&#39;span&#39;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">cursor</span>.<span style="color:#a6e22e">className</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;cursor-blink&#39;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">msgEl</span>.<span style="color:#a6e22e">appendChild</span>(<span style="color:#a6e22e">contentEl</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">msgEl</span>.<span style="color:#a6e22e">appendChild</span>(<span style="color:#a6e22e">cursor</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">chatHistory</span>.<span style="color:#a6e22e">appendChild</span>(<span style="color:#a6e22e">msgEl</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#a6e22e">aiContent</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;&#39;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 發送請求並讀取串流
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fetch</span>(<span style="color:#e6db74">&#39;/v1/chat/completions&#39;</span>, {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">method</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;POST&#39;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">headers</span><span style="color:#f92672">:</span> { <span style="color:#e6db74">&#39;Content-Type&#39;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;application/json&#39;</span> },
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">body</span><span style="color:#f92672">:</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>({
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">model</span><span style="color:#f92672">:</span> <span style="color:#a6e22e">selectedModel</span> <span style="color:#f92672">||</span> <span style="color:#e6db74">&#39;default&#39;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">messages</span><span style="color:#f92672">:</span> <span style="color:#a6e22e">messages</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">stream</span><span style="color:#f92672">:</span> <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">max_tokens</span><span style="color:#f92672">:</span> <span style="color:#ae81ff">512</span>
+</span></span><span style="display:flex;"><span>  })
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">reader</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">body</span>.<span style="color:#a6e22e">getReader</span>();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">decoder</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">TextDecoder</span>(<span style="color:#e6db74">&#39;utf-8&#39;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (<span style="color:#66d9ef">true</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">done</span>, <span style="color:#a6e22e">value</span> } <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">reader</span>.<span style="color:#a6e22e">read</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">done</span>) <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 解碼串流 byte 資料為文字
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">chunk</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">decoder</span>.<span style="color:#a6e22e">decode</span>(<span style="color:#a6e22e">value</span>, { <span style="color:#a6e22e">stream</span><span style="color:#f92672">:</span> <span style="color:#66d9ef">true</span> });
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">lines</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">chunk</span>.<span style="color:#a6e22e">split</span>(<span style="color:#e6db74">&#39;\n&#39;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">line</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">lines</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">line</span>.<span style="color:#a6e22e">startsWith</span>(<span style="color:#e6db74">&#39;data: &#39;</span>)) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">dataStr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">line</span>.<span style="color:#a6e22e">replace</span>(<span style="color:#e6db74">&#39;data: &#39;</span>, <span style="color:#e6db74">&#39;&#39;</span>).<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">dataStr</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;[DONE]&#39;</span>) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">dataStr</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">data</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">parse</span>(<span style="color:#a6e22e">dataStr</span>);
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">choices</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">choices</span>[<span style="color:#ae81ff">0</span>].<span style="color:#a6e22e">delta</span>.<span style="color:#a6e22e">content</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 累加 token 片段並即時渲染到介面
+</span></span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">aiContent</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">choices</span>[<span style="color:#ae81ff">0</span>].<span style="color:#a6e22e">delta</span>.<span style="color:#a6e22e">content</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">contentEl</span>.<span style="color:#a6e22e">textContent</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">aiContent</span>; <span style="color:#75715e">// 使用 textContent 防範 XSS 攻擊
+</span></span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">chatHistory</span>.<span style="color:#a6e22e">scrollTop</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">chatHistory</span>.<span style="color:#a6e22e">scrollHeight</span>; <span style="color:#75715e">// 自動滾動到底部
+</span></span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">e</span>) {
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#39;Error parsing SSE JSON:&#39;</span>, <span style="color:#a6e22e">e</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 結束後移除閃爍游標
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">cursor</span>.<span style="color:#a6e22e">remove</span>();
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">messages</span>.<span style="color:#a6e22e">push</span>({ <span style="color:#a6e22e">role</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;assistant&#39;</span>, <span style="color:#a6e22e">content</span><span style="color:#f92672">:</span> <span style="color:#a6e22e">aiContent</span> });</span></span></code></pre></div>
+
+<p>這段 vanilla JS 真是把 SSE 協議的輕巧展現得淋漓盡致。不到 50 行程式碼，就把 ChatGPT 那種打字的流暢感複製出來了，甚至還帶了一個復古的終端機閃爍游標，我自己是還滿喜歡的 :-)</p>
+<h3 id="如何構建與運行">如何構建與運行？</h3>
+<p>想親手玩玩這個完全整合的本地 LLM Studio，編譯跟啟動的流程其實比你想像中簡單不少。</p>
+<p>因為在 <code>llm-local-studio-3</code> 裡，我寫了一個 <code>build.rs</code> 構建指令碼（Build Script）。當你跑 <code>cargo build</code> 或 <code>cargo run</code> 時，Rust 的編譯系統會<strong>自動</strong>檢查前端 <code>ui</code> 目錄，順手把 <code>npm install</code> 跟 <code>npm run build</code> 都跑完。</p>
+<p>它還用 <code>cargo:rerun-if-changed</code> 盯著前端的檔案變更。你一改 HTML、CSS 或 JS，Cargo 就會自動重新觸發前端打包跟 Rust 編譯整合，整個開發體驗滑順得很。</p>
+<h4 id="一鍵編譯與啟動">一鍵編譯與啟動</h4>
+<p>所以你不用自己鑽進 <code>ui</code> 目錄去敲 npm 指令。只要確認電腦裝了 Node.js / npm，直接在專案根目錄下 Cargo 啟動命令，把你已下載或掃描註冊的模型識別名稱傳進去就行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 直接啟動服務（Rust 會自動接管 npm 前端編譯打包）</span>
+</span></span><span style="display:flex;"><span>cargo run -- serve gemma-4-E4B-it --port <span style="color:#ae81ff">8080</span></span></span></code></pre></div>
+
+<div class="markdown-alert markdown-alert-tip">
+  <div class="markdown-alert-title"><i class="fa fa-lightbulb-o"></i><span>&nbsp;Tip</span>
+  </div>
+  <div class="markdown-alert-content"><p>如果你想手動編譯前端，也可以在 <code>ui</code> 目錄下執行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cd ui
+</span></span><span style="display:flex;"><span>npm install
+</span></span><span style="display:flex;"><span>npm run build</span></span></code></pre></div>
+
+<p>這會在 <code>ui/dist</code> 下生成靜態網頁檔案。而 Cargo 在編譯時，無論是自動還是手動，最終都會藉由 <code>rust-embed</code> 將該目錄的內容編譯並嵌入到最終的 Rust 執行檔中。</p></div>
+</div><h4 id="3-打開瀏覽器享受對話">3. 打開瀏覽器享受對話</h4>
+<p>當你在終端機看到：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Starting llm-local-studio server (axum)...
+</span></span><span style="display:flex;"><span>  Base URL: http://127.0.0.1:8080
+</span></span><span style="display:flex;"><span>  Endpoints:
+</span></span><span style="display:flex;"><span>    GET  /health
+</span></span><span style="display:flex;"><span>    GET  /v1/models
+</span></span><span style="display:flex;"><span>    POST /v1/chat/completions
+</span></span><span style="display:flex;"><span>    GET  / (Web UI)</span></span></code></pre></div>
+
+<p>就直接打開瀏覽器連到：
+👉 <strong><code>http://localhost:8080</code></strong></p>
+<p>那個暗黑毛玻璃介面就會出現在你眼前了。在左側挑一個已載入的模型，馬上就能開始一場完全跑在本機、又安全又快的 LLM 對談。</p>
+<h3 id="總結與展望">總結與展望</h3>
+<p>就這樣，<code>llm-local-studio-3</code> 把原本一團亂的 LLM 本地部署流程，收斂到只剩<strong>一個 Rust 執行檔</strong>就能搞定。我想這大概就是這次最讓我有成就感的地方。</p>
+<p>回頭看這三篇，我們從最底層的 GGUF 檔案解析、Rust FFI 直呼 llama.cpp，一路寫到 Axum 多執行緒非同步 Web API，最後再把嵌入式前端 UI 整合進來。它不只是一個能用的小工具，對我來說更像是一個練 Rust 系統級程式設計、非同步 Web 開發跟跨語言整合的絕佳練功場。</p>
+<p><code>llm-local-studio-3</code> 的完整原始碼都收在我的 Rust 52 Projects 挑戰計畫裡。如果你也對本地 AI 的隱私、效能跟 Rust 這套技術有興趣，歡迎到專案倉庫點個 Star，順便抓下來自己編編看。</p>
+<p>我們下一篇 Rust 挑戰再見囉！</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+
+</body>
+</html>

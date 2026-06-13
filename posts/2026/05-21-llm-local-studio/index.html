@@ -1,0 +1,847 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/"/>
+  <meta property="og:title" content="用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-05-21 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-2/">
+            用 Rust 打造本地 LLM 工作站 (二)：Axum 串流與 OpenAI 相容 API 的實現
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</h2>
+      <div class="post-meta">
+        <span class="post-date">May 21, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架：tiny-llm-runner 與 candle 的架構對照</a></li>
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama：從 GGUF 到 Token 的零 C 依賴推論引擎</a></li>
+  
+    <li>May 25, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站：用 Python、Node.js、Rust 輕鬆串接 OpenAI 相容 API</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)：Axum 串流與 OpenAI 相容 API 的實現</a></li>
+  
+    <li>May 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</a></li>
+  
+    <li>May 20, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</a></li>
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/05-21-llm-local-studio/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Claude）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p>上一篇我們聊了怎麼用 Rust 手寫 <a href="/posts/2026/05-20-llm-gguf-parser">GGUF 解析器</a>，把模型的二進位結構拆解得清清楚楚。不過光會「讀」模型檔還不夠——<strong>你還要能「搜」模型、「下載」模型、最後「跑」模型</strong>，這樣才算是一個完整的工作流程吧。</p>
+<p>這次我做了 <a href="https://github.com/p47t/rust-52-projects/tree/master/llm-local-studio"><code>llm-local-studio</code></a>，一個學習導向的本地 LLM app shell。它的目標很明確：<strong>不靠 Ollama 或 LM Studio 那種外部服務，直接在 Rust 裡呼叫 llama.cpp 做推理</strong>，順便把 Hugging Face 的模型搜尋和下載流程也串起來。</p>
+<p>這篇就來聊聊幾個關鍵的設計決定：怎麼架構 CLI、怎麼跟 Hugging Face API 溝通、怎麼安全地下載模型，以及最重要的——怎麼讓 llama.cpp 變成你 Rust 程式的一部分，而不是一個外掛的子進程。</p>
+<h3 id="整體架構四層分離">整體架構：四層分離</h3>
+<p>這個專案的核心精神是<strong>邊界清楚</strong>。整個 app 分成四層，每層有明確的職責：</p>
+
+  <div class="mermaid">
+    graph TD
+    AppShell[App Shell<br/>CLI — 未來 Desktop/Web UI]
+    AppServices[Application Services<br/>Model Registry · HF Catalog · Settings]
+    InferenceInterface[Inference Engine Interface<br/>load · unload · chat · health]
+    LlamaCppAdapter[llama.cpp Native Adapter<br/>Rust FFI → llama.cpp / ggml]
+
+    AppShell --> AppServices
+    AppServices --> InferenceInterface
+    InferenceInterface --> LlamaCppAdapter
+  </div>
+
+<p>為什麼要分這麼多層？因為<strong>依賴方向必須是單向的</strong>。App 層只仰賴「推理引擎介面」，不直接碰 llama.cpp 的 C API 符號。哪天想換成別的推理引擎（例如 ONNX Runtime 或 candle），只要 implement 同一個 trait 就好，上面的程式碼一行都不用動——這種「換引擎不換車身」的彈性，我覺得是分層最划算的回報。</p>
+<h3 id="cli-設計用-clap-derive-模式打造四個指令">CLI 設計：用 clap Derive 模式打造四個指令</h3>
+<p>CLI 是 Phase 1 的主要入口，用 <code>clap</code> 的 derive 模式定義：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Subcommand)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Command</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 掃描本地資料夾裡的 GGUF 檔案
+</span></span></span><span style="display:flex;"><span>    Scan { dir: <span style="color:#a6e22e">PathBuf</span> },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 搜尋 Hugging Face 上的 GGUF 模型
+</span></span></span><span style="display:flex;"><span>    HfSearch { query: String, limit: <span style="color:#66d9ef">usize</span> },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 從 Hugging Face 下載 GGUF 模型
+</span></span></span><span style="display:flex;"><span>    HfDownload { name: String, filename: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>, <span style="color:#f92672">..</span>. },
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// 用 llama.cpp 跑本地模型推理
+</span></span></span><span style="display:flex;"><span>    Run { model: String, prompt: String, <span style="color:#f92672">..</span>. },
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>四個指令對應四個核心功能：<strong>掃描、搜尋、下載、推理</strong>。每個指令都是一個獨立的函式，從 <code>Command::run()</code> 分派出去：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Command {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run</span>(self) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> self {
+</span></span><span style="display:flex;"><span>            Self::Scan { dir } <span style="color:#f92672">=&gt;</span> scan_models(dir),
+</span></span><span style="display:flex;"><span>            Self::HfSearch { query, limit } <span style="color:#f92672">=&gt;</span> search_hugging_face(query, limit),
+</span></span><span style="display:flex;"><span>            Self::HfDownload { <span style="color:#f92672">..</span> } <span style="color:#f92672">=&gt;</span> download_hugging_face_model(<span style="color:#f92672">..</span>),
+</span></span><span style="display:flex;"><span>            Self::Run { <span style="color:#f92672">..</span> } <span style="color:#f92672">=&gt;</span> run_model(<span style="color:#f92672">..</span>),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>為什麼用 derive 而不是 builder？因為我們的指令結構很穩定，不需要動態組合。derive 模式還有個甜頭：每個欄位的 <code>///</code> 註解會自動變成 <code>--help</code> 說明文字，等於寫程式的同時順便把文件也寫了，我實在是很喜歡這種一魚兩吃。</p>
+<p>而 <code>Run</code> 指令最有趣的地方在於 <code>model</code> 參數——它不只接受檔案路徑，還能接受<strong>模型名稱</strong>。背後的 <code>resolve_model_path()</code> 會先檢查是不是直接路徑，不是的話就去 registry 裡模糊搜尋：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">resolve_model_path</span>(model: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>, dir: <span style="color:#a6e22e">PathBuf</span>) -&gt; Result<span style="color:#f92672">&lt;</span>PathBuf<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> direct_path <span style="color:#f92672">=</span> PathBuf::from(model);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> direct_path.try_exists()<span style="color:#f92672">?</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ok(direct_path);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> registry <span style="color:#f92672">=</span> ModelRegistry::scan_dir(<span style="color:#f92672">&amp;</span>dir)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    Ok(registry.find(model)<span style="color:#f92672">?</span>.path.clone())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>所以你可以這樣用：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 直接給路徑</span>
+</span></span><span style="display:flex;"><span>llm-local-studio run models/Q4_K_M.gguf -p <span style="color:#e6db74">&#34;Hello&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 或者只給檔名的一部分</span>
+</span></span><span style="display:flex;"><span>llm-local-studio run tinyllama -p <span style="color:#e6db74">&#34;Hello&#34;</span></span></span></code></pre></div>
+
+<h3 id="model-registry遞迴掃描-gguf-模型">Model Registry：遞迴掃描 GGUF 模型</h3>
+<p><code>ModelRegistry</code> 的工作很單純：遞迴掃描一個資料夾，找出所有 <code>.gguf</code> 檔案，建構出 <code>ModelRecord</code> 清單：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, PartialEq, Eq)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">ModelRecord</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> id: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> path: <span style="color:#a6e22e">PathBuf</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> size_bytes: <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> source: <span style="color:#a6e22e">ModelSource</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> status: <span style="color:#a6e22e">ModelLoadStatus</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>掃描的核心是 <code>scan_dir_recursive()</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">scan_dir_recursive</span>(dir: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>, models: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Vec<span style="color:#f92672">&lt;</span>ModelRecord<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>dir.try_exists()<span style="color:#f92672">?</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ok(());
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> entry <span style="color:#66d9ef">in</span> fs::read_dir(dir)<span style="color:#f92672">?</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> entry <span style="color:#f92672">=</span> entry<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> path <span style="color:#f92672">=</span> entry.path();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> metadata <span style="color:#f92672">=</span> entry.metadata()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> metadata.is_dir() {
+</span></span><span style="display:flex;"><span>            scan_dir_recursive(<span style="color:#f92672">&amp;</span>path, models)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> is_gguf_file(<span style="color:#f92672">&amp;</span>path) {
+</span></span><span style="display:flex;"><span>            models.push(ModelRecord { <span style="color:#f92672">..</span>. });
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡有個小細節值得提一下：用 <code>try_exists()</code> 而不是 <code>exists()</code>。差在哪呢？<code>exists()</code> 遇到權限錯誤時會默默回傳 <code>false</code>（把錯誤吞掉），而 <code>try_exists()</code> 會把真正的錯誤（例如 permission denied）老實往外拋。對一個 CLI 工具來說，<strong>默默吞錯誤實在是最要不得的</strong>——明明沒權限卻跟你說「檔案不存在」，這種誤導比直接報錯還難 debug。</p>
+<p>模型 ID 是從檔名推導出來的——<code>model.gguf</code> → <code>&quot;model&quot;</code>，簡單直接。而 <code>find()</code> 方法支援精確比對和模糊比對的雙層搜尋：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">find</span>(<span style="color:#f92672">&amp;</span>self, query: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;&amp;</span>ModelRecord<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 第一層：精確比對（不分大小寫）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> matches <span style="color:#f92672">=</span> self.models.iter().filter(<span style="color:#f92672">|</span>model<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        model.id.eq_ignore_ascii_case(query)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">||</span> model.path.file_name()<span style="color:#f92672">..</span>.eq_ignore_ascii_case(query)
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(model) <span style="color:#f92672">=</span> matches.next() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ok(model);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 第二層：部分比對（contains）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> partial_matches <span style="color:#f92672">=</span> self.models.iter().filter(<span style="color:#f92672">|</span>model<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>        model.id.to_lowercase().contains(<span style="color:#f92672">&amp;</span>query_lower)
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">||</span> model.path<span style="color:#f92672">..</span>.to_lowercase().contains(<span style="color:#f92672">&amp;</span>query_lower)
+</span></span><span style="display:flex;"><span>    }).collect::<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>_<span style="color:#f92672">&gt;&gt;</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">match</span> partial_matches.as_slice() {
+</span></span><span style="display:flex;"><span>        [model] <span style="color:#f92672">=&gt;</span> Ok(model),       <span style="color:#75715e">// 唯一命中
+</span></span></span><span style="display:flex;"><span>        [] <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;no local model matched {query:?}&#34;</span>),
+</span></span><span style="display:flex;"><span>        matches <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;model name {query:?} is ambiguous; matches: {ids}&#34;</span>),
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>模糊比對的歧義處理我覺得頗貼心——萬一多個模型都符合，它不會自作主張隨便挑一個，而是<strong>把所有命中的模型 ID 列出來讓你自己選</strong>。這就避免了「我明明說 A，你卻默默跑了 B」那種讓人一頭霧水的狀況。</p>
+<h3 id="hugging-face-整合從搜尋到下載的完整流程">Hugging Face 整合：從搜尋到下載的完整流程</h3>
+<h4 id="三步下載流程">三步下載流程</h4>
+<p>下載一個 Hugging Face 模型，可不是「給個 URL 就抓」這麼簡單，我刻意讓它走過<strong>規劃→確認→執行</strong>三個步驟：</p>
+
+  <div class="mermaid">
+    graph LR
+    A[解析模型名稱<br/>resolve_model] --> B[列出 GGUF 檔案<br/>list_gguf_files]
+    B --> C[選擇檔案<br/>choose_gguf_file]
+    C --> D[計算本地路徑<br/>local_model_path]
+    D --> E[執行下載<br/>download_gguf]
+  </div>
+
+<p>這個設計的關鍵在於 <code>plan_download()</code>——它把所有決策都先想清楚，但不會真的動手下載。你可以先用 <code>--print-url</code> 瞄一眼 URL 對不對：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 先看下載 URL，不下載</span>
+</span></span><span style="display:flex;"><span>llm-local-studio hf-download TheBloke/TinyLlama-1.1B-GGUF --print-url
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 確認無誤後再下載</span>
+</span></span><span style="display:flex;"><span>llm-local-studio hf-download TheBloke/TinyLlama-1.1B-GGUF</span></span></code></pre></div>
+
+<h4 id="智慧量化選擇">智慧量化選擇</h4>
+<p>Hugging Face 上同一個模型通常會有一大堆量化版本（Q4_K_M、Q5_K_S、Q8_0……），到底該下哪個呢？<code>choose_gguf_file()</code> 用一個偏好清單來幫你自動判斷：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">PREFERRED_QUANTS</span>: <span style="color:#66d9ef">&amp;</span>[<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">str</span>] <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>[<span style="color:#e6db74">&#34;Q4_K_M&#34;</span>, <span style="color:#e6db74">&#34;Q4_K_S&#34;</span>, <span style="color:#e6db74">&#34;Q5_K_M&#34;</span>, <span style="color:#e6db74">&#34;Q8_0&#34;</span>, <span style="color:#e6db74">&#34;Q4_0&#34;</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">choose_gguf_file</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>    files: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">&#39;a</span> [HuggingFaceFile],
+</span></span><span style="display:flex;"><span>    requested: Option<span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">str</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>) -&gt; Result<span style="color:#f92672">&lt;&amp;</span><span style="color:#a6e22e">&#39;a</span> HuggingFaceFile<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(requested) <span style="color:#f92672">=</span> requested {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> files.iter()
+</span></span><span style="display:flex;"><span>            .find(<span style="color:#f92672">|</span>file<span style="color:#f92672">|</span> file.rfilename <span style="color:#f92672">==</span> requested)
+</span></span><span style="display:flex;"><span>            .with_context(<span style="color:#f92672">||</span> <span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> preferred <span style="color:#66d9ef">in</span> <span style="color:#66d9ef">PREFERRED_QUANTS</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(file) <span style="color:#f92672">=</span> files.iter().find(<span style="color:#f92672">|</span>file<span style="color:#f92672">|</span> file.rfilename.contains(preferred)) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> Ok(file);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    files.first().context(<span style="color:#e6db74">&#34;repository does not contain GGUF files&#34;</span>)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>Q4_K_M</code> 之所以排第一位，是因為它大概是社群公認 C/P 值最高的量化等級，模型品質和檔案大小兼顧得不錯。當然啦，你要是有自己的偏好，也可以用 <code>--filename</code> 手動指定。</p>
+<h4 id="安全下載原子寫入">安全下載：原子寫入</h4>
+<p>下載大檔案最怕什麼？就怕寫到一半斷線，留下一個半殘的損壞檔案。<code>download_gguf()</code> 用了一招簡單但有效的策略——<strong>先寫暫存檔，整個下載完成才改名</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> temp_path <span style="color:#f92672">=</span> plan.destination.with_extension(<span style="color:#e6db74">&#34;gguf.part&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> output <span style="color:#f92672">=</span> fs::File::create(<span style="color:#f92672">&amp;</span>temp_path)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> bytes_written <span style="color:#f92672">=</span> io::copy(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> response, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> output)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>drop(output); <span style="color:#75715e">// 確保 flush
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>fs::rename(<span style="color:#f92672">&amp;</span>temp_path, <span style="color:#f92672">&amp;</span>plan.destination)<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p><code>.gguf.part</code> → <code>.gguf</code> 的 rename 在同一個檔案系統上是<strong>原子操作</strong>——要嘛你看到完整檔案，要嘛只看到暫存檔（下次重跑自動跳過），絕不會出現那種「寫一半的爛檔案」騙你說下載成功。</p>
+<p>防護當然不只這一招。路徑安全也很重要——<code>local_model_path()</code> 會檢查檔名裡有沒有夾帶 <code>..</code> 這種路徑穿越攻擊：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">local_model_path</span>(models_dir: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>, model: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">HuggingFaceModelRef</span>, filename: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;</span>PathBuf<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> filename.is_empty() <span style="color:#f92672">||</span> filename.contains(<span style="color:#e6db74">&#34;..&#34;</span>) {
+</span></span><span style="display:flex;"><span>        anyhow::<span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;invalid Hugging Face filename {filename:?}&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> component <span style="color:#66d9ef">in</span> filename.split(<span style="color:#e6db74">&#39;/&#39;</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> component.is_empty() <span style="color:#f92672">||</span> component <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;.&#34;</span> <span style="color:#f92672">||</span> component <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;..&#34;</span> {
+</span></span><span style="display:flex;"><span>            anyhow::<span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;invalid Hugging Face filename {filename:?}&#34;</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        path.push(component);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    Ok(path)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>你總不會想讓某個心懷不軌的 Hugging Face 上傳者，用 <code>../../etc/passwd</code> 這種檔名把東西寫進你的系統目錄吧？這種事防患於未然總是好的。</p>
+<p>下載後的目錄結構也安排得蠻有條理——照著 <code>models/huggingface/{owner}/{repo}/{filename}.gguf</code> 組織，一目了然：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>models/
+</span></span><span style="display:flex;"><span>  huggingface/
+</span></span><span style="display:flex;"><span>    TheBloke/
+</span></span><span style="display:flex;"><span>      TinyLlama-1.1B-GGUF/
+</span></span><span style="display:flex;"><span>        tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf</span></span></code></pre></div>
+
+<h3 id="llamacpp-原生整合不走子進程直接-ffi">llama.cpp 原生整合：不走子進程，直接 FFI</h3>
+<p>這是整個專案最核心、我自己也覺得最好玩的部分。</p>
+<p>大多數 Rust 專案要用 llama.cpp 時，都是 <code>Command::new(&quot;llama-server&quot;)</code> 開一個子進程，再透過 HTTP API 隔空對話。我們的做法完全相反——<strong>直接在 Rust 進程裡載入 llama.cpp 的 shared library</strong>，用純 Rust API 跑推理。</p>
+<p>這得歸功於 <a href="https://crates.io/crates/llama-cpp-2"><code>llama-cpp-2</code></a> 這個 crate——它把 llama.cpp 的 C API 封裝成了一層安全的 Rust 介面，省了我們自己跟 FFI 搏鬥的功夫。</p>
+<h4 id="inferenceengine-trait定義未來的邊界">InferenceEngine Trait：定義未來的邊界</h4>
+<p>我們先定義了應用層的推理介面：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> InferenceEngine {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">load_model</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, request: <span style="color:#a6e22e">LoadModelRequest</span>) -&gt; Result<span style="color:#f92672">&lt;</span>ModelHandle<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">unload_model</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, model_id: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">health</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#a6e22e">EngineHealth</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>以及對應的狀態型態：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">EngineHealth</span> {
+</span></span><span style="display:flex;"><span>    NotConfigured,
+</span></span><span style="display:flex;"><span>    Ready,
+</span></span><span style="display:flex;"><span>    Loaded { model_id: String },
+</span></span><span style="display:flex;"><span>    Error { message: String },
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>現在是 <code>LlamaCppEngine</code> 實作了這個 trait，哪天想接 ONNX Runtime 或 candle，只要新寫一個 impl 就好——<strong>上面的 CLI 和 registry 一行都不用碰</strong>。</p>
+<h4 id="llamacpprunner一行一行吐出回應">LlamaCppRunner：一行一行吐出回應</h4>
+<p>真正做推理的是 <code>LlamaCppRunner</code>。它的 <code>run()</code> 方法完整展示了用 llama.cpp 跑一次 text completion 的全流程：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> LlamaCppRunner {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run</span>(<span style="color:#f92672">&amp;</span>self, request: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">RunModelRequest</span>) -&gt; Result<span style="color:#f92672">&lt;</span>RunModelOutput<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        suppress_llama_logs();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 1. 初始化 llama.cpp 後端
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> backend <span style="color:#f92672">=</span> LlamaBackend::init()
+</span></span><span style="display:flex;"><span>            .context(<span style="color:#e6db74">&#34;failed to initialize llama.cpp backend&#34;</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 2. 載入 GGUF 模型
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> model <span style="color:#f92672">=</span> LlamaModel::load_from_file(
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&amp;</span>backend, <span style="color:#f92672">&amp;</span>request.model_path, <span style="color:#f92672">&amp;</span>LlamaModelParams::default()
+</span></span><span style="display:flex;"><span>        )<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 3. 建立 context（設定 context window 大小）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> context_size <span style="color:#f92672">=</span> NonZeroU32::new(request.context_size)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> context_params <span style="color:#f92672">=</span> LlamaContextParams::default()
+</span></span><span style="display:flex;"><span>            .with_n_ctx(Some(context_size));
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> context <span style="color:#f92672">=</span> model.new_context(<span style="color:#f92672">&amp;</span>backend, context_params)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 4. Tokenize prompt
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> prompt_tokens <span style="color:#f92672">=</span> model.str_to_token(<span style="color:#f92672">&amp;</span>request.prompt, AddBos::Always)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 5. 檢查 context 容量
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> requested_tokens <span style="color:#f92672">=</span> prompt_tokens.len() <span style="color:#f92672">+</span> request.max_tokens <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> requested_tokens <span style="color:#f92672">&gt;</span> context.n_ctx() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span> {
+</span></span><span style="display:flex;"><span>            anyhow::<span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;prompt plus generated tokens require {requested_tokens} ...&#34;</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 6. 處理 prompt（一次性送入 KV cache）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> batch <span style="color:#f92672">=</span> LlamaBatch::new(<span style="color:#ae81ff">512</span>, <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (position, token) <span style="color:#66d9ef">in</span> (<span style="color:#ae81ff">0_</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">..</span>).zip(prompt_tokens.into_iter()) {
+</span></span><span style="display:flex;"><span>            batch.add(token, position, <span style="color:#f92672">&amp;</span>[<span style="color:#ae81ff">0</span>], position <span style="color:#f92672">==</span> last_prompt_index)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        context.decode(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> batch)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 7. 逐 token 生成（streaming）
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> sampler <span style="color:#f92672">=</span> LlamaSampler::chain_simple([
+</span></span><span style="display:flex;"><span>            LlamaSampler::dist(<span style="color:#ae81ff">1234</span>),
+</span></span><span style="display:flex;"><span>            LlamaSampler::greedy(),
+</span></span><span style="display:flex;"><span>        ]);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> generated_tokens <span style="color:#f92672">&lt;</span> request.max_tokens {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> token <span style="color:#f92672">=</span> sampler.sample(<span style="color:#f92672">&amp;</span>context, batch.n_tokens() <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>            sampler.accept(token);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> model.is_eog_token(token) { <span style="color:#66d9ef">break</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> piece <span style="color:#f92672">=</span> model.token_to_piece(token, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> decoder, <span style="color:#66d9ef">true</span>, None)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">print!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{piece}</span><span style="color:#e6db74">&#34;</span>);        <span style="color:#75715e">// 逐字印出
+</span></span></span><span style="display:flex;"><span>            std::io::stdout().flush()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            batch.clear();
+</span></span><span style="display:flex;"><span>            batch.add(token, position, <span style="color:#f92672">&amp;</span>[<span style="color:#ae81ff">0</span>], <span style="color:#66d9ef">true</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            context.decode(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> batch)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            position <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>            generated_tokens <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        Ok(RunModelOutput { generated_tokens })
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡有幾個值得拿出來說的設計選擇：</p>
+<p><strong>Batch 處理 prompt</strong>：prompt 的所有 token 一口氣塞進 <code>LlamaBatch</code>，只把最後一個 token 標記為「需要 logits」（<code>position == last_prompt_index</code>）。這樣 <code>decode()</code> 一次就把整個 prompt 寫進 KV cache，比一個一個 token 慢慢 decode 快得多。</p>
+<h4 id="什麼是-kv-cache">什麼是 KV Cache？</h4>
+<p>上面提到好幾次 KV cache，但它到底是什麼鬼？為什麼這麼重要呢？</p>
+<p>Transformer 的注意力機制有個特性：<strong>每生成一個新 token，都得回頭看過之前所有的 token</strong>。講得具體一點，每一層的 self-attention 在計算時，都需要每個先前 token 經過 <strong>Key（K）</strong> 和 <strong>Value（V）</strong> 線性投影後的結果。</p>
+<p>要是沒有 KV cache，每生成一個新 token，你就得把整個 prompt 重新跑一遍注意力計算——prompt 有 1000 個 token 的話，每吐一個新字就要重算 1000 次。這不只是慢，根本是<strong>白工</strong>——因為前面那些 token 的 K 和 V 值壓根沒變啊！</p>
+<p>KV cache 的想法其實很直覺：<strong>算過的就先存起來，下次直接拿來用</strong>。</p>
+
+  <div class="mermaid">
+    graph LR
+    subgraph 第一次 Decode
+        P1[Prompt: 1000 tokens] --> K1[Key 投影]
+        P1 --> V1[Value 投影]
+        K1 --> Cache1[寫入 KV Cache]
+        V1 --> Cache1
+    end
+    subgraph 之後每個新 Token
+        NT[新 Token: 1 個] --> KN[只算這 1 個的 K 和 V]
+        KN --> Cache2[追加到 KV Cache]
+        Cache1 -.-> Q[Query 用新 token<br/>對整個 cache 做 attention]
+        Cache2 -.-> Q
+        Q --> Next[預測下一個 token]
+    end
+  </div>
+
+<p>那實際效果有多驚人呢？拿一個 32 層、4096 維度的 LLaMA 模型來說：</p>
+<ul>
+<li><strong>無 KV cache</strong>：每生成 1 個 token，要重新計算整個 prompt 的注意力 → O(n²) 隨 prompt 長度暴增</li>
+<li><strong>有 KV cache</strong>：每生成 1 個 token，只需計算新 token 自己的 K 和 V，然後對 cache 做一次 attention → O(n) 線性增長</li>
+</ul>
+<p>這就是為什麼我們程式碼裡要把整個 prompt 一口氣丟進 <code>context.decode(&amp;mut batch)</code>——這一步就是在<strong>預填 KV cache</strong>（pre-fill）。之後的生成迴圈裡，每次只要把新 token 的 K 和 V 追加到 cache，再讓 Query 對整個 cache 做一次 attention，就能預測下一個 token，省事得很。</p>
+<p>當然，天下沒有白吃的午餐，KV cache 的代價就是<strong>記憶體</strong>。它佔的空間跟「prompt 長度 × 層數 × 維度」成正比，這也是為什麼 <code>context_size</code> 參數這麼關鍵——它決定了 KV cache 最多能裝多少 token。我們程式碼裡那段 context 容量檢查：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> requested_tokens <span style="color:#f92672">&gt;</span> context.n_ctx() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span> {
+</span></span><span style="display:flex;"><span>    anyhow::<span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;prompt plus generated tokens require {requested_tokens} ...&#34;</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>說穿了就是在問一句：<strong>你要塞進 KV cache 的 token 數，有沒有超過預先分配好的容量</strong>。</p>
+<p><strong>Streaming 輸出</strong>：每生成一個 token 就 <code>print!()</code> + <code>flush()</code>，所以你在終端機上會看到模型<strong>一個字一個字慢慢冒出來</strong>，跟用 ChatGPT 的感覺一樣。這比「全部算完再一次噴出來」的體驗好太多了，至少你看著它打字，心裡比較踏實。</p>
+<p><strong>End-of-generation 偵測</strong>：<code>model.is_eog_token(token)</code> 負責檢查有沒有遇到結束符號（<code>&lt;eos&gt;</code>、<code>&lt;|end|&gt;</code> 之類的）。模型自己覺得話講完了就停，不會硬湊到 <code>max_tokens</code> 才肯罷休。</p>
+<p><strong>Sampler 鏈</strong>：<code>LlamaSampler::chain_simple([dist, greedy])</code> 乍看有點怪——先加一個 temperature distribution（seed 1234），再接一個 greedy？這其實是 <code>llama-cpp-2</code> 的 API 設計：<code>dist</code> 負責根據機率分佈抽樣，<code>greedy</code> 則在最後一步保證取最高機率的 token。想要 deterministic 輸出的話，這算是個常見的偷懶組合。</p>
+<p><strong>Context 容量檢查</strong>：開始生成之前，先確認 <code>prompt 長度 + max_tokens</code> 有沒有超過 context window。與其跑到一半 OOM 或吐出一堆亂碼讓你摸不著頭緒，不如一開始就老老實實報錯。</p>
+<h3 id="延伸話題llamacpp-怎麼認出模型架構">延伸話題：llama.cpp 怎麼「認出」模型架構？</h3>
+<p>你可能會好奇：同一個 <code>llama-cli</code> 程式，憑什麼能跑 LLaMA、Mistral、Qwen2、Gemma、Phi-3、DeepSeek 等等幾十種不同的模型？我們在命令列上從來沒特別交代「這是 Mistral 喔」——那 llama.cpp 到底是怎麼知道該用哪種計算圖的呢？</p>
+<p>答案就藏在 GGUF 檔案的 Metadata 裡：<strong><code>general.architecture</code></strong>。</p>
+<h4 id="一個-metadata-key-決定一切">一個 metadata key 決定一切</h4>
+<p>上一篇 GGUF 解析器文章提過，每個 GGUF 檔案都有一組鍵值對形式的 Metadata。其中有一個關鍵的 key：</p>
+
+  <pre tabindex="0"><code>general.architecture → String(&#34;llama&#34;)</code></pre>
+
+<p>這就是模型的「身分證」。llama.cpp 在 <code>llama_model_load()</code> 時，第一件事就是去讀這個值，然後對應到一個內部的 enum：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 概念上等價於 llama.cpp 內部的 e_model enum
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">ModelArch</span> {
+</span></span><span style="display:flex;"><span>    Llama,
+</span></span><span style="display:flex;"><span>    Mistral,
+</span></span><span style="display:flex;"><span>    Gpt2,
+</span></span><span style="display:flex;"><span>    Phi2,
+</span></span><span style="display:flex;"><span>    Qwen2,
+</span></span><span style="display:flex;"><span>    Gemma,
+</span></span><span style="display:flex;"><span>    Mamba,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... 60+ 種架構
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>如果 <code>general.architecture</code> 的值不在支援清單裡，llama.cpp 會二話不說拒絕載入，回傳 <code>&quot;model architecture not supported&quot;</code>——它不亂猜，也不會偷偷 fallback，這點我覺得蠻硬派的。</p>
+<h4 id="架構決定了什麼">架構決定了什麼？</h4>
+<p>選中的架構控制了推理的<strong>一切細節</strong>：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">面向</th>
+					<th style="text-align: left">LLaMA</th>
+					<th style="text-align: left">GPT-2</th>
+					<th style="text-align: left">Mamba</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>注意力機制</strong></td>
+					<td style="text-align: left">GQA + RoPE</td>
+					<td style="text-align: left">MHA + 絕對位置編碼</td>
+					<td style="text-align: left">SSM（不是注意力）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>前饋網路</strong></td>
+					<td style="text-align: left">SwiGLU（gate + up + down）</td>
+					<td style="text-align: left">兩層 MLP</td>
+					<td style="text-align: left">SSM 門控</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>正規化</strong></td>
+					<td style="text-align: left">RMSNorm</td>
+					<td style="text-align: left">LayerNorm</td>
+					<td style="text-align: left">RMSNorm</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>位置編碼</strong></td>
+					<td style="text-align: left">RoPE（旋轉位置編碼）</td>
+					<td style="text-align: left">學習式絕對位置</td>
+					<td style="text-align: left">無需位置編碼</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Tensor 命名</strong></td>
+					<td style="text-align: left"><code>blk.{i}.attn_q.weight</code></td>
+					<td style="text-align: left"><code>transformer.h.{i}.attn.c_attn.weight</code></td>
+					<td style="text-align: left"><code>blk.{i}.ssm_in.weight</code></td>
+			</tr>
+	</tbody>
+</table>
+<p>每一種架構都有自己的一套 tensor 命名慣例、計算圖結構、還有特製的 kernel 實作。llama.cpp 就靠 <code>general.architecture</code> 這個值，把你分派到對應的程式碼路徑。</p>
+<h4 id="metadata-key-的命名慣例">Metadata key 的命名慣例</h4>
+<p>還記得上一篇 GGUF 解析器讀出的 metadata key 嗎？它們有一個很規律的前綴系統：</p>
+
+  <pre tabindex="0"><code># 如果 general.architecture = &#34;llama&#34;
+llama.context_length    → Uint32(2048)
+llama.embedding_length  → Uint32(4096)
+llama.block_count       → Uint32(32)
+
+# 如果 general.architecture = &#34;mistral&#34;
+mistral.context_length  → Uint32(32768)
+mistral.embedding_length → Uint32(4096)</code></pre>
+
+<p><strong>架構名稱本身就是 metadata key 的前綴</strong>。llama.cpp 讀到 <code>general.architecture = &quot;llama&quot;</code> 之後，就只挑 <code>llama.*</code> 開頭的 metadata key 來讀——每種架構自己定義要哪些參數，用不到的就略過。這招很巧妙，讓同一套 GGUF 規範能塞下數十種截然不同的模型架構，彼此還不會打架。</p>
+<h4 id="跟我們的程式碼有什麼關係">跟我們的程式碼有什麼關係？</h4>
+<p>在我們的 <code>LlamaCppRunner::run()</code> 裡，呼叫 <code>LlamaModel::load_from_file()</code> 的那一刻，<code>llama-cpp-2</code> 在底層其實就把上面這整套流程跑完了——讀 GGUF header、抓 <code>general.architecture</code>、挑對應的計算圖、載入 tensor 權重。我們的 Rust 程式碼完全不必知道「這到底是什麼架構」，因為 <strong>GGUF 檔案自己帶了身分聲明</strong>，剩下的交給 llama.cpp 分派就好。</p>
+<p>這也是為什麼同一個 <code>llm-local-studio run</code> 指令能對任何 GGUF 模型通吃——不管是 LLaMA、Mistral 還是 Qwen2，只要 llama.cpp 撐得住那個架構，就能跑起來。</p>
+<h3 id="實際使用示範">實際使用示範</h3>
+<p>把整個流程串起來，從搜尋到推理：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 搜尋 Hugging Face 上的 GGUF 模型</span>
+</span></span><span style="display:flex;"><span>llm-local-studio hf-search <span style="color:#e6db74">&#34;tinyllama gguf&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 下載模型（自動選 Q4_K_M 量化）</span>
+</span></span><span style="display:flex;"><span>llm-local-studio hf-download TheBloke/TinyLlama-1.1B-GGUF
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 掃描本地已有的模型</span>
+</span></span><span style="display:flex;"><span>llm-local-studio scan models
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 4. 跑推理！</span>
+</span></span><span style="display:flex;"><span>llm-local-studio run tinyllama -p <span style="color:#e6db74">&#34;Tell me a joke about Rust&#34;</span></span></span></code></pre></div>
+
+<p>或者一氣呵成：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>llm-local-studio run TheBloke/TinyLlama-1.1B-GGUF <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  -p <span style="color:#e6db74">&#34;Explain ownership in Rust&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  --ctx-size <span style="color:#ae81ff">2048</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  -n <span style="color:#ae81ff">256</span></span></span></code></pre></div>
+
+<h3 id="測試策略">測試策略</h3>
+<p>跟上一篇 GGUF 解析器一樣，Hugging Face 的整合測試也碰到「總不能在 CI 裡真的去打人家 API」的尷尬。所以我把測試分成兩類來處理：</p>
+<p><strong>純邏輯單元測試</strong>（不需要網路）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parses_hugging_face_model_ref</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> model: <span style="color:#a6e22e">HuggingFaceModelRef</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;TheBloke/TinyLlama-1.1B-GGUF&#34;</span>.parse().unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(model.owner, <span style="color:#e6db74">&#34;TheBloke&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(model.repo, <span style="color:#e6db74">&#34;TinyLlama-1.1B-GGUF&#34;</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">chooses_preferred_quant_when_filename_is_not_requested</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> files <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[
+</span></span><span style="display:flex;"><span>        HuggingFaceFile { rfilename: <span style="color:#e6db74">&#34;model.Q8_0.gguf&#34;</span>.into(), size: None },
+</span></span><span style="display:flex;"><span>        HuggingFaceFile { rfilename: <span style="color:#e6db74">&#34;model.Q4_K_M.gguf&#34;</span>.into(), size: None },
+</span></span><span style="display:flex;"><span>    ];
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(
+</span></span><span style="display:flex;"><span>        client.choose_gguf_file(<span style="color:#f92672">&amp;</span>files, None).unwrap().rfilename,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;model.Q4_K_M.gguf&#34;</span>
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">builds_local_hugging_face_model_path</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> model: <span style="color:#a6e22e">HuggingFaceModelRef</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;owner/repo&#34;</span>.parse().unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> path <span style="color:#f92672">=</span> local_model_path(Path::new(<span style="color:#e6db74">&#34;models&#34;</span>), <span style="color:#f92672">&amp;</span>model, <span style="color:#e6db74">&#34;nested/model.gguf&#34;</span>).unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// models/huggingface/owner/repo/nested/model.gguf
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這些測試把 URL 建構、模型名稱解析、量化檔案選擇、本地路徑計算全都驗過一遍——清一色是確定性的純函式，不靠任何外部狀態，跑起來又快又安心。</p>
+<h3 id="結語">結語</h3>
+<p>繞了一大圈，<code>llm-local-studio</code> 其實示範了用 Rust 打造本地 LLM 工具鏈的幾個核心觀念：</p>
+<ul>
+<li><strong>邊界分離</strong>：<code>InferenceEngine</code> trait 讓 app 層不直接依賴 llama.cpp，替換引擎零改動。</li>
+<li><strong>規劃先行</strong>：<code>plan_download()</code> 把所有決策提前做完，下載前可以先確認。</li>
+<li><strong>原子寫入</strong>：<code>.part</code> 暫存檔 + <code>rename()</code> 確保不會出現半殘檔案。</li>
+<li><strong>路徑安全</strong>：<code>..</code> 檢查防止路徑穿越攻擊。</li>
+<li><strong>原生 FFI</strong>：透過 <code>llama-cpp-2</code> 直接在進程內跑推理，不走子進程 HTTP。</li>
+<li><strong>Streaming 體驗</strong>：逐 token 輸出，跟 chat 服務一樣的使用者體驗。</li>
+<li><strong>模糊搜尋</strong>：模型名稱不用背完整路徑，給一部分就能找到。</li>
+</ul>
+<p>整個專案就四個原始檔、大概 400 行核心程式碼，竟然就把「搜尋→下載→推理」整條流程串起來了。當然，它還沒有 chat template 支援、沒有 OpenAI 相容 API、也沒有漂亮的 GUI，不過作為一個學習專案，最重要的骨架算是搭穩了——後續每個 Phase 都是在這個地基上往上疊。</p>
+<p>有興趣的朋友不妨自己抓下來跑跑看，親手體驗一下「在自己的筆電上、用自己寫的程式碼、跑自己的語言模型」那種莫名的成就感吧 :-)</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/llm-local-studio">llm-local-studio 專案原始碼</a></li>
+<li><a href="https://crates.io/crates/llama-cpp-2">llama-cpp-2 crate</a> — llama.cpp 的 Rust 封裝</li>
+<li><a href="https://huggingface.co/docs/hub/api">Hugging Face API 文件</a> — 模型搜尋與下載</li>
+<li><a href="/posts/2026/05-20-llm-gguf-parser">GGUF 解析器文章</a> — 前一篇：手寫 GGUF 二進位解析器</li>
+<li><a href="https://crates.io/crates/clap">clap crate</a> — CLI 參數解析</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+
+</body>
+</html>

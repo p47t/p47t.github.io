@@ -1,0 +1,739 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-06-tiny-llm-deep-dive-6-runner/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-06-tiny-llm-deep-dive-6-runner/"/>
+  <meta property="og:title" content="tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-06-06 12:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/06-05-tiny-llm-deep-dive-5-ops/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            tiny-llm-runner 深入解讀 (5)：ops.rs —— Transformer 的六種樂高積木
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/06-07-tiny-llm-deep-dive-7-tokenizer/">
+            tiny-llm-runner 深入解讀 (7)：tokenizer.rs —— SentencePiece-BPE 與 Byte Fallback
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排</h2>
+      <div class="post-meta">
+        <span class="post-date">June 6, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>tiny-llm-runner-deep-dive</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Jun 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-09-tiny-llm-deep-dive-9-main/">tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能</a></li>
+  
+    <li>Jun 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-08-tiny-llm-deep-dive-8-sampler/">tiny-llm-runner 深入解讀 (8)：sampler.rs —— Greedy、Top-K 與 xorshift PRNG</a></li>
+  
+    <li>Jun 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-07-tiny-llm-deep-dive-7-tokenizer/">tiny-llm-runner 深入解讀 (7)：tokenizer.rs —— SentencePiece-BPE 與 Byte Fallback</a></li>
+  
+    <li>Jun 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-06-tiny-llm-deep-dive-6-runner/">tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排</a></li>
+  
+    <li>Jun 05, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-05-tiny-llm-deep-dive-5-ops/">tiny-llm-runner 深入解讀 (5)：ops.rs —— Transformer 的六種樂高積木</a></li>
+  
+    <li>Jun 04, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-04-tiny-llm-deep-dive-4-model/">tiny-llm-runner 深入解讀 (4)：model.rs —— 把扁平張量組成 Llama 結構</a></li>
+  
+    <li>Jun 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-03-tiny-llm-deep-dive-3-tensor/">tiny-llm-runner 深入解讀 (3)：tensor.rs —— 用生命週期蓋一層薄殼</a></li>
+  
+    <li>Jun 02, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/">tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心</a></li>
+  
+    <li>Jun 01, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-01-tiny-llm-deep-dive-1-config/">tiny-llm-runner 深入解讀 (1)：config.rs —— 把 GGUF metadata 變成 Rust 強型別</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/06-06-tiny-llm-deep-dive-6-runner/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Claude）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p><a href="/posts/2026/06-05-tiny-llm-deep-dive-5-ops">上一篇</a>我們把所有 Transformer 原語都拆過一遍了，這一篇終於要把它們<strong>編排成一次完整的 forward pass</strong>，主角就是核心檔案 <code>runner.rs</code>。</p>
+<p>老實說，整個專案我最推薦讀的就是這個檔案——大約 170 行的 Rust，把 Llama 的整個推論流程攤平在你眼前，每一步在做什麼都看得清清楚楚，實在是很過癮。</p>
+<h3 id="概念一autoregressive-推論的本質">概念一：autoregressive 推論的本質</h3>
+<p>LLM 推論不是「一次處理整段文字」，而是「<strong>一次處理一個 token</strong>」：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>prompt: &#34;The capital of France&#34;
+</span></span><span style="display:flex;"><span>        → token ids [464, 3139, 286, 4881]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>prefill (處理 prompt):
+</span></span><span style="display:flex;"><span>  forward(464)  → logits     (我們不用，但要建 KV cache)
+</span></span><span style="display:flex;"><span>  forward(3139) → logits
+</span></span><span style="display:flex;"><span>  forward(286)  → logits
+</span></span><span style="display:flex;"><span>  forward(4881) → logits     ← 用這個 logits 抽下一個 token
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>decode (生成):
+</span></span><span style="display:flex;"><span>  sampler(logits) → &#34; is&#34;
+</span></span><span style="display:flex;"><span>  forward(&#34; is&#34;)  → logits
+</span></span><span style="display:flex;"><span>  sampler(logits) → &#34; Paris&#34;
+</span></span><span style="display:flex;"><span>  forward(&#34; Paris&#34;) → logits
+</span></span><span style="display:flex;"><span>  ... 一直到 EOS</span></span></code></pre></div>
+
+<p>每次 <code>forward(token)</code> 就是一個 step，step 之間靠 <strong>KV cache</strong> 一路把上下文累積起來。一個字一個字慢慢吐，model 其實沒有你想像中那麼「整段一起讀」。</p>
+<h3 id="概念二kv-cache--為什麼-attention-要-cache-過去">概念二：KV Cache —— 為什麼 attention 要 cache 過去？</h3>
+<p>Attention 的數學是這樣的：</p>
+$$\text{attn}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right) V$$<p>在 autoregressive 推論時，<strong>第 t 個 token 的 Q 只需要跟前 t 個 token 的 K/V 做運算</strong>（因為未來的 token 根本還沒出現嘛）。如果每次 forward 都把所有過去的 K/V 重新算一遍，prefill 階段就是 $O(n^2)$，decode 階段每次又是 $O(n)$ 的重做——這也太浪費了吧。</p>
+<p>KV cache 的想法其實很單純：<strong>某個 position 的 K/V 算過一次就存起來，下次直接拿來用</strong>。這樣每次 forward 只要算當前這個 token 的 Q/K/V 就好，K 和 V 寫進 cache、Q 拿去跟整個 cache 點積。</p>
+<h3 id="概念三context-和-kv-cache-的關係">概念三：Context 和 KV Cache 的關係</h3>
+<p>很多人一聽到「context length 2048」，直覺就想成「模型有個地方存著最近 2048 個 token」。<strong>其實不是這樣喔</strong>——模型存的是這 2048 個 token <strong>被各層 attention 算出來的 K 和 V</strong>，token 本身早就丟掉了。所以 context 的容量上限，講白了就是 KV cache 的容量上限。</p>
+<p>關係可以這樣理解：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>context window = 「我能看見多遠的過去」的能力上限
+</span></span><span style="display:flex;"><span>KV cache       = 這個能力實際的儲存形式
+</span></span><span style="display:flex;"><span>n_ctx          = KV cache 在 position 維度上的大小</span></span></code></pre></div>
+
+<p>當你看到 <code>n_ctx = 2048</code>，背後真正配出來的記憶體就是：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>kcache: [n_layer][n_ctx × kv_dim] f32
+</span></span><span style="display:flex;"><span>vcache: [n_layer][n_ctx × kv_dim] f32</span></span></code></pre></div>
+
+<p>對 TinyLlama (n_layer=22, kv_dim=256) 來說，這是 <code>22 × 2 × 2048 × 256 × 4 = 92 MB</code>。對 Llama-2 7B (n_layer=32, kv_dim=4096) 來說，是 <code>32 × 2 × 2048 × 4096 × 4 = 2 GB</code>——KV cache 居然比模型本身的量化權重還大，是不是有點出乎意料？</p>
+<p>還有一點要記住：<strong>token 一旦進了 cache，就再也撈不回原貌了</strong>。Context window 滿掉之後，要嘛截斷舊 token、要嘛丟掉新 token，沒有第三條路——因為原始 token id 早就在被 attention 投影成 K/V 的那一刻丟掉了。</p>
+<h3 id="概念四為什麼不存-token-本身為什麼不存-embedding為什麼是-kv">概念四：為什麼不存 token 本身？為什麼不存 embedding？為什麼是 K/V？</h3>
+<p>我覺得把這個問題想清楚，就等於把 KV cache 的設計從頭到尾理解了一遍。我們從「最樸素」的方案開始，一步步往下推：</p>
+<h4 id="方案-a只存-token-id">方案 A：只存 token id</h4>
+<p>「我把過去的 token id 都存起來，下次推論時整段重跑就好。」</p>
+<p>問題在於：這樣每次 forward 都得從 token id 開始，重算 embedding、重跑 22 層 transformer。對第 t 個 token 來說是 $O(t \times \text{layers} \times \text{matmul})$ 的工作，整個 prompt 的 prefill 是 $O(n^2)$，decode 累積下來也是 $O(n^2)$。說穿了，<strong>這根本沒在 cache 嘛</strong>。</p>
+<h4 id="方案-b存-embedding每個-token-對應一個-n_embd-向量">方案 B：存 embedding（每個 token 對應一個 n_embd 向量）</h4>
+<p>「那我存 token embedding，這樣可以跳過 embedding lookup。」</p>
+<p>問題是：embedding 只是 forward pass 的<strong>入口</strong>而已。從 embedding 走到「attention 真正吃的東西」，中間還隔著一整層的 RMSNorm + Q/K/V 投影。每層的 attention 看到的，是「自己這層的輸入經過 W_k 和 W_v 投影後的 K/V」，<strong>不是 token embedding</strong>。所以如果只存 token embedding：</p>
+<ul>
+<li>每次 forward 都要重新跑 22 層的 RMSNorm、重新算 K/V 投影。</li>
+<li>但這些工作的結果<strong>和 token 位置 t 無關</strong>——每次重算都會得到同一個 K_t 和 V_t。</li>
+<li>純粹的浪費。</li>
+</ul>
+<p>更麻煩的是：<strong>第 1 層的輸入是 token embedding，可是第 2 層的輸入是「第 1 層的輸出」</strong>。所以你沒辦法拿「token embedding」這一個概念去代表「每一層 attention 需要的東西」。每層之間都隔著 attention + FFN 的非線性轉換，「embedding」這個詞其實只在最開頭那一層才講得通。</p>
+<h4 id="方案-c存每層的-hidden-state每層都有自己的-n_layern_ctxn_embd">方案 C：存每層的 hidden state（每層都有自己的 <code>[n_layer][n_ctx][n_embd]</code>）</h4>
+<p>「那我存每層的輸出 hidden state？」</p>
+<p>問題是：你存了 hidden state，但 attention 真正要的是 <code>K = W_k(hidden_state)</code> 和 <code>V = W_v(hidden_state)</code>。每次 forward 還是得重算 K/V 投影（一個 <code>[n_embd, kv_dim]</code> 的 matvec）。<strong>等於白存，因為投影那一步根本沒省到</strong>。</p>
+<p>而且這個方案吃的記憶體還比 K/V cache 大：hidden state 是 <code>n_embd</code> 寬，K/V 在 GQA 下只有 <code>kv_dim = head_dim × n_head_kv</code> 寬（TinyLlama 是 256，比 n_embd=2048 整整小了 8 倍）。划不來。</p>
+<h4 id="方案-d直接存-k-和-v最終答案">方案 D：直接存 K 和 V（最終答案）</h4>
+<p>繞了一圈，答案其實一直都在公式裡：K 和 V 才是 attention 真正消費的東西。$\text{attn}(Q, K, V)$ 裡頭沒有 hidden state、沒有 embedding、沒有 token id——就只有 Q、K、V。<strong>把過去的 K 和 V 存起來，attention 就齊了</strong>。</p>
+<p>而且 K/V 還有兩個我覺得頗迷人的性質：</p>
+<ol>
+<li><strong>它們和 Q 是解耦的</strong>：K_t 和 V_t 一旦算出來就和「未來會用什麼 Q 來查它」無關。所以可以放心 cache。</li>
+<li><strong>它們不需要被未來修改</strong>：因為 LLM 是 causal——位置 t 的 K/V 只被 position ≥ t 的 Q 查詢，但這些查詢不會回頭改 K_t/V_t。一旦寫進 cache 就是 immutable 的。</li>
+</ol>
+<p>這就是為什麼我會說 KV cache 是 transformer 推論的「最佳化終點」——它<strong>剛剛好存下 attention 需要的最少資訊</strong>，再少一點就破壞語義，再多一點就是浪費。剛剛好，一點都不多。</p>
+<h4 id="從資訊保留鏈看這件事">從「資訊保留鏈」看這件事</h4>
+<p>換個角度想想：模型做 forward pass，其實是一條把「token id」逐步轉成「下一個 token 機率分佈」的資訊流。中途會冒出一大堆中間表示：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>token id → embedding → layer 1 hidden → layer 1 K/V → ...
+</span></span><span style="display:flex;"><span>                                     → layer 2 hidden → layer 2 K/V → ...
+</span></span><span style="display:flex;"><span>                                     ...
+</span></span><span style="display:flex;"><span>                                     → final hidden → logits</span></span></code></pre></div>
+
+<p>每一個中間表示都裝著這個 token 的某種資訊。但對 attention 來說，<strong>這條鏈上唯一一個「跨 token 互動」的點，就是它把 K/V 拿來算內積那一步</strong>。其他每一步（RMSNorm、Q/K/V 投影、FFN…）都是 pure-position 的——只管當前這個 token 自己的資料，跟別人無關。</p>
+<p>所以：</p>
+<ul>
+<li>那些「pure-position」的步驟<strong>不需要 cache</strong>，因為每個 token 的計算和其他 token 無關。</li>
+<li>那個「跨 token 互動」的步驟<strong>必須 cache</strong>，因為它要看到所有過去 token 的資訊。</li>
+</ul>
+<p>而 attention 跨 token 看到的東西，就是 K 和 V。所以該被 cache 的，當然就是它們囉。</p>
+<h4 id="一個簡單的比喻">一個簡單的比喻</h4>
+<p>把 LLM 比喻成一個圖書館：</p>
+<ul>
+<li><strong>Token id</strong> 是書的索書號。</li>
+<li><strong>Embedding</strong> 是書的封面（提供入口）。</li>
+<li><strong>每層 hidden state</strong> 是書頁的內容（給讀者看）。</li>
+<li><strong>K 和 V</strong> 是給其他書「互相引用」用的索引卡。</li>
+</ul>
+<p>Attention 就是書與書之間的對話。書本身（hidden state）很厚，但對話只透過索引卡（K/V）來進行。把用過的卡片留在桌上，下次新書一進來就能直接跟它們對話——不必把整本書重新搬出來翻一遍。我自己覺得這個比喻還滿傳神的。</p>
+<h3 id="概念五為什麼-kv-cache-必須是-per-layer而不只是-per-token">概念五：為什麼 KV cache 必須是 per-layer，而不只是 per-token？</h3>
+<p>注意 <code>Runner</code> 的 cache 是 <code>Vec&lt;Vec&lt;f32&gt;&gt;</code>，<strong>第一個維度是 layer，第二個才是 token position</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>kcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,   <span style="color:#75715e">// [n_layer][n_ctx × kv_dim]
+</span></span></span><span style="display:flex;"><span>vcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,</span></span></code></pre></div>
+
+<p>對 22 層的 TinyLlama 來說，這就是 22 份獨立的 cache。為什麼不能大家共用一份？為什麼一個 token 不是對應一組 K/V，而是硬要對應 <code>n_layer</code> 組？</p>
+<h4 id="因為同一個-token在每一層的-kv-是完全不同的東西">因為「同一個 token」在每一層的 K/V 是完全不同的東西</h4>
+<p>關鍵就藏在 forward pass 的結構裡。我們回頭看看每一層 attention 到底在算什麼：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>layer 1: x¹  = embedding(token)
+</span></span><span style="display:flex;"><span>         k¹  = W_k¹(rmsnorm(x¹))     ← 第 1 層的 K
+</span></span><span style="display:flex;"><span>         v¹  = W_v¹(rmsnorm(x¹))     ← 第 1 層的 V
+</span></span><span style="display:flex;"><span>         x²  = x¹ + attn(...) + ffn(...)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>layer 2: k²  = W_k²(rmsnorm(x²))     ← 第 2 層的 K（input 不同、權重不同）
+</span></span><span style="display:flex;"><span>         v²  = W_v²(rmsnorm(x²))
+</span></span><span style="display:flex;"><span>         x³  = x² + attn(...) + ffn(...)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>layer 3: k³  = W_k³(rmsnorm(x³))     ← 第 3 層的 K
+</span></span><span style="display:flex;"><span>         ...</span></span></code></pre></div>
+
+<p>每一層的 K/V 同時受兩件事決定：</p>
+<ol>
+<li><strong>這一層的 input hidden state</strong> —— 上一層 attention + FFN 完成後傳下來的東西，每層都不同。</li>
+<li><strong>這一層自己的權重 <code>W_k^l</code> / <code>W_v^l</code></strong> —— 每層獨立訓練的不同矩陣。</li>
+</ol>
+<p>換句話說，layer 1 的 K 是「token 剛被 embed 時的樣子，被 W_k¹ 看出來的特徵」；layer 5 的 K 則是「token 經過 4 層 attention + FFN 整合上下文之後的樣子，被 W_k⁵ 看出來的特徵」。<strong>這兩個 K 既不是同一個東西，也沒辦法互相代打</strong>。</p>
+<h4 id="換個角度每一層都有自己的-attention">換個角度：每一層都有自己的 attention</h4>
+<p>Transformer 的設計本身就把<strong>每層 attention 當成獨立的計算單元</strong>。每層都在問「我這層的 query 跟我這層 cache 裡的 key 像不像」，答案決定了我這層怎麼把 V 加總起來。底下幾層通常學「文法、近距離 token 關係」，中層學「短語結構」，高層學「語意、長距離依賴」——這些功能，只有在它們各自的 K/V 空間裡才講得通。</p>
+<p>所以你要是硬說「我只想存一份 K/V 給所有層共用」，那其實就等於在說「所有層都做同一件事」——這不就退化成一個超淺的模型了嗎？Transformer 的深度價值，正是每層做不同的轉換，而每層的 K/V 就是這個轉換的 fingerprint。</p>
+<h4 id="從層之間的依賴鏈看為什麼不能省">從層之間的依賴鏈看為什麼不能省</h4>
+<p>講得更技術一點：layer <code>l</code> 的 K/V 是 layer <code>l-1</code> 輸出的函式。整個 forward pass 其實是這樣一路串下來的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>        x¹              x²              x³
+</span></span><span style="display:flex;"><span>embed → ─→ attn¹+ffn¹ ─→ ─→ attn²+ffn² ─→ ─→ ...
+</span></span><span style="display:flex;"><span>        │                │                │
+</span></span><span style="display:flex;"><span>        └─→ k¹, v¹       └─→ k², v²       └─→ k³, v³</span></span></code></pre></div>
+
+<p>每一層的 K/V 都「<strong>只能在自己這層用</strong>」——下一層的 attention 才不會去看 k¹，因為它要看的是經過這一層 transform 過的世界。所以這 22 份 K/V，就是 22 塊獨立的記憶體，沒有什麼一份共用這回事。</p>
+<h4 id="一個-token-在-cache-裡到底佔多少">一個 token 在 cache 裡到底佔多少？</h4>
+<p>把上面這些事全部串起來，一個 token 進到 cache 之後實際佔的記憶體就是：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>single token → n_layer × 2 × kv_dim × sizeof(f32)
+</span></span><span style="display:flex;"><span>              ↑          ↑   ↑
+</span></span><span style="display:flex;"><span>              層數       K + V</span></span></code></pre></div>
+
+<p>對 TinyLlama (n_layer=22, kv_dim=256, f32) 來說：</p>
+
+  <pre tabindex="0"><code>22 × 2 × 256 × 4 = 45 KB per token</code></pre>
+
+<p>對 Llama-2 7B (n_layer=32, kv_dim=4096) 來說：</p>
+
+  <pre tabindex="0"><code>32 × 2 × 4096 × 4 = 1 MB per token</code></pre>
+
+<p><strong>這就是為什麼長 context 推論這麼燒記憶體</strong>——它不是 token 數乘上一個小數字而已，而是 token 數乘上 <code>n_layer × 2 × kv_dim</code>。一個 8K context 的 7B 模型，光 KV cache 就要 8 GB，比模型本身還大，想想真是有點誇張。</p>
+<p>要是 KV cache 真的能「per-token only」（所有層共用），同樣的 8K context 只要 32 MB 就夠了——只是那樣的東西早就不是 Transformer 了。<strong>這個「per-layer」的代價，說到底就是 Transformer 之所以是 Transformer 的代價</strong>。</p>
+<h4 id="per-layer--per-token-是-cache-的最小完備形式">「per-layer × per-token」 是 cache 的最小完備形式</h4>
+<p>我想可以這樣收尾：要讓 attention 在每一層都能正確算出來，你需要的最少資訊就是：</p>
+<table>
+	<thead>
+			<tr>
+					<th>維度</th>
+					<th>為什麼需要</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>per-layer</strong></td>
+					<td>每層 attention 看的是不同的轉換空間，不能共用</td>
+			</tr>
+			<tr>
+					<td><strong>per-token</strong></td>
+					<td>每個 token 在每層的特徵都不同（causal mask 之外都會被未來查到）</td>
+			</tr>
+			<tr>
+					<td><strong>K + V</strong></td>
+					<td>attention 公式裡的兩個輸入（Q 不需要 cache，因為它只在當前 step 用一次）</td>
+			</tr>
+	</tbody>
+</table>
+<p>把這三個維度切片乘起來，就是 <code>[n_layer][n_ctx][2][kv_dim]</code> 的 4D 張量——<strong>這就是 KV cache 的最小完備形狀</strong>。少存任何一個維度都會破壞 attention 的語義；多存任何一個維度都是純浪費（反正其他資訊都能重新算回來）。</p>
+<p>好，理論講夠了，回到我的 Rust 程式碼吧：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>kcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,   <span style="color:#75715e">// [n_layer][n_ctx × kv_dim]
+</span></span></span><span style="display:flex;"><span>vcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,   <span style="color:#75715e">// [n_layer][n_ctx × kv_dim]
+</span></span></span></code></pre></div>
+
+<p>外層 <code>Vec</code> 是 layer 維度，內層那個扁平陣列裡的 <code>n_ctx × kv_dim</code> 就是「token position × K/V 寬度」。這兩個 <code>Vec&lt;Vec&lt;f32&gt;&gt;</code> 加起來，剛好就是 attention 完整需要的最小狀態，一塊不多、一塊不少。</p>
+<h3 id="runner-struct-的記憶體佈局">Runner struct 的記憶體佈局</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Runner</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span>, <span style="color:#a6e22e">&#39;m</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    model: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">&#39;m</span> <span style="color:#a6e22e">LlamaModel</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    rope_style: <span style="color:#a6e22e">RopeStyle</span>,
+</span></span><span style="display:flex;"><span>    kcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,   <span style="color:#75715e">// [n_layer][n_ctx * kv_dim]
+</span></span></span><span style="display:flex;"><span>    vcache: Vec<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> pos: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 預先配好的 scratch buffer
+</span></span></span><span style="display:flex;"><span>    x: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>, xb: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>, xb2: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    hb: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>, hb2: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    q: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>, att: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    logits: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>幾個重要的設計決定：</p>
+<h4 id="兩個生命週期-a-和-m">兩個生命週期 <code>'a</code> 和 <code>'m</code></h4>
+<ul>
+<li><code>'a</code> 是 mmap 的生命週期。</li>
+<li><code>'m</code> 是 <code>LlamaModel</code> 的生命週期，且必須 <code>'m: 'a</code>（model 不能比 mmap 活得更久）。</li>
+</ul>
+<p><code>Runner</code> 借用 <code>&amp;'m LlamaModel&lt;'a&gt;</code>，自己一份模型資料都沒持有，所以建構這個結構超便宜——裡頭所有大型 buffer 都只是 scratch 用途而已。</p>
+<h4 id="kv-cache-是-vecvecf32-而不是-vecf32">KV cache 是 <code>Vec&lt;Vec&lt;f32&gt;&gt;</code> 而不是 <code>Vec&lt;f32&gt;</code></h4>
+<p>每層一個獨立的 <code>Vec</code>，而不是把所有層拼在同一個 <code>Vec</code> 裡。這是為了：</p>
+<ol>
+<li><strong>生命週期分離</strong>：不同層的 cache 可以獨立管理（雖然目前我沒這麼做）。</li>
+<li><strong>記憶體大小靈活</strong>：理論上不同層可以有不同的 KV dim（例如某些 MoE 變體），雖然 Llama 沒有這個需求。</li>
+</ol>
+<p>代價就是多一層間接（access 得走 <code>kcache[l][...]</code>）。不過對 LLM 推論來說，這點開銷根本可以無視啦。</p>
+<h4 id="一堆-scratch-buffer-一次配好">一堆 scratch buffer 一次配好</h4>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>x: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_embd],     <span style="color:#75715e">// 主 hidden state
+</span></span></span><span style="display:flex;"><span>xb: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_embd],    <span style="color:#75715e">// 暫存 a (attention/FFN 內部)
+</span></span></span><span style="display:flex;"><span>xb2: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_embd],   <span style="color:#75715e">// 暫存 b (殘差用)
+</span></span></span><span style="display:flex;"><span>hb: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_ff],      <span style="color:#75715e">// FFN gate 的中間結果
+</span></span></span><span style="display:flex;"><span>hb2: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_ff],     <span style="color:#75715e">// FFN up 的中間結果
+</span></span></span><span style="display:flex;"><span>q: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_embd],     <span style="color:#75715e">// 當前 token 的 Q
+</span></span></span><span style="display:flex;"><span>att: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; n_head <span style="color:#f92672">*</span> n_ctx],  <span style="color:#75715e">// attention scores
+</span></span></span><span style="display:flex;"><span>logits: <span style="color:#a6e22e">vec</span><span style="color:#f92672">!</span>[<span style="color:#ae81ff">0.0</span>; vocab],  <span style="color:#75715e">// 輸出 logits
+</span></span></span></code></pre></div>
+
+<p>這些 buffer 全在 <code>new()</code> 裡一次配好，<strong>整個推論過程就再也不 allocate 了</strong>。每次 <code>forward()</code> 進來，都是直接覆寫這些 buffer。沒有 GC、沒有 alloc 壓力，乾淨俐落。</p>
+<p>順便對比一下 PyTorch/Candle 的做法：每個 op 回傳一個新 Tensor，靠 reference counting 回收。這對訓練來說很合理（autograd 本來就得保留中間值），但對只做 inference 的 runner 而言，預配 + 覆寫顯然更精簡、也更可預測。</p>
+<h3 id="演算法核心forward-的整體結構">演算法核心：forward 的整體結構</h3>
+<p><code>forward(token)</code> 的結構是這樣的：</p>
+
+  <div class="mermaid">
+    flowchart TD
+    A[token id] --> B[1. Embed → x]
+    B --> C{2. 22 層 Transformer Block}
+    C --> C1[2a. attn_norm: xb = norm·x]
+    C1 --> C2[2b. Q/K/V projection<br/>K/V 直接寫進 cache]
+    C2 --> C3[2c. RoPE on Q & current K]
+    C3 --> C4[2d. multi-head attention<br/>Q · K^T / softmax / · V]
+    C4 --> C5[2e. wo projection + 殘差]
+    C5 --> C6[2f. ffn_norm + SwiGLU + 殘差]
+    C6 --> C
+    C --> D[3. final norm]
+    D --> E[4. lm_head: logits]
+  </div>
+
+<p>把每個 block 內部攤開來看，會更有感覺：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// attention norm
+</span></span></span><span style="display:flex;"><span>rmsnorm(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.xb, <span style="color:#f92672">&amp;</span>self.x, <span style="color:#f92672">&amp;</span>layer.attn_norm, cfg.rms_eps);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// qkv projections
+</span></span></span><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.q, <span style="color:#f92672">&amp;</span>layer.wq, <span style="color:#f92672">&amp;</span>self.xb);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> krow <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> kc[pos <span style="color:#f92672">*</span> kv_dim<span style="color:#f92672">..</span>(pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> kv_dim];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> vrow <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> vc[pos <span style="color:#f92672">*</span> kv_dim<span style="color:#f92672">..</span>(pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> kv_dim];
+</span></span><span style="display:flex;"><span>matvec(krow, <span style="color:#f92672">&amp;</span>layer.wk, <span style="color:#f92672">&amp;</span>self.xb);    <span style="color:#75715e">// K 直接寫進 cache
+</span></span></span><span style="display:flex;"><span>matvec(vrow, <span style="color:#f92672">&amp;</span>layer.wv, <span style="color:#f92672">&amp;</span>self.xb);    <span style="color:#75715e">// V 也是
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// RoPE
+</span></span></span><span style="display:flex;"><span>apply_rope(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.q, pos, head_dim, <span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>apply_rope(krow, pos, head_dim, <span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// attention
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> h <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>cfg.n_head {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> kv_head <span style="color:#f92672">=</span> h <span style="color:#f92672">/</span> gqa;          <span style="color:#75715e">// GQA 對應
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 算 attention scores
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// softmax
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 加權 V
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 輸出投影 + 殘差
+</span></span></span><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.xb2, <span style="color:#f92672">&amp;</span>layer.wo, <span style="color:#f92672">&amp;</span>self.xb);
+</span></span><span style="display:flex;"><span>add_inplace(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.x, <span style="color:#f92672">&amp;</span>self.xb2);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// FFN: x = x + Wdown(silu(Wgate(norm)) * Wup(norm))
+</span></span></span><span style="display:flex;"><span>rmsnorm(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.xb, <span style="color:#f92672">&amp;</span>self.x, <span style="color:#f92672">&amp;</span>layer.ffn_norm, cfg.rms_eps);
+</span></span><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.hb, <span style="color:#f92672">&amp;</span>layer.w_gate, <span style="color:#f92672">&amp;</span>self.xb);
+</span></span><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.hb2, <span style="color:#f92672">&amp;</span>layer.w_up, <span style="color:#f92672">&amp;</span>self.xb);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>self.hb.len() {
+</span></span><span style="display:flex;"><span>    self.hb[i] <span style="color:#f92672">=</span> silu(self.hb[i]) <span style="color:#f92672">*</span> self.hb2[i];
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.xb2, <span style="color:#f92672">&amp;</span>layer.w_down, <span style="color:#f92672">&amp;</span>self.hb);
+</span></span><span style="display:flex;"><span>add_inplace(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.x, <span style="color:#f92672">&amp;</span>self.xb2);</span></span></code></pre></div>
+
+<h3 id="演算法核心一kv-直接寫進-cache">演算法核心一：K/V 直接寫進 cache</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> krow <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> kc[pos <span style="color:#f92672">*</span> kv_dim<span style="color:#f92672">..</span>(pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> kv_dim];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> vrow <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> vc[pos <span style="color:#f92672">*</span> kv_dim<span style="color:#f92672">..</span>(pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> kv_dim];
+</span></span><span style="display:flex;"><span>matvec(krow, <span style="color:#f92672">&amp;</span>layer.wk, <span style="color:#f92672">&amp;</span>self.xb);
+</span></span><span style="display:flex;"><span>matvec(vrow, <span style="color:#f92672">&amp;</span>layer.wv, <span style="color:#f92672">&amp;</span>self.xb);</span></span></code></pre></div>
+
+<p>這短短四行藏著一個我蠻喜歡的設計選擇：<strong>K/V 計算的輸出 buffer 直接就是 cache 的某一行</strong>，而不是先算到 scratch buffer、再 copy 進 cache。這就省下了一次 <code>n_embd × 4 bytes</code> 的記憶體拷貝。</p>
+<p><code>matvec</code> 的簽章 <code>fn matvec(out: &amp;mut [f32], ...)</code> 接受任何 mutable slice，cache 的 slice 自然也塞得進去。而 Rust 的借用檢查器會幫你確認 <code>kc</code> 跟 <code>xb</code>、<code>q</code> 那些 buffer 不會 alias——這種事不用自己提心吊膽，編譯器顧得很周到。</p>
+<h3 id="演算法核心二rope-的兩階段套用">演算法核心二：RoPE 的兩階段套用</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>apply_rope(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.q, pos, head_dim, <span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>apply_rope(krow, pos, head_dim, <span style="color:#f92672">..</span>.);</span></span></code></pre></div>
+
+<p>注意喔，這裡 RoPE 是套在 <strong>Q 和當前的 K</strong> 上，<strong>不是套在 cache 裡所有 K</strong> 上。為什麼這樣就夠了？</p>
+<p>因為 RoPE 帶的是「絕對位置」資訊（每個 K_t 套用 t 對應的 RoPE），而每個 K_t 只要在它被算出來的那次 forward call 裡套一次就完事了。等到後面要做 attention，cache 裡的 K_t 早就帶著 RoPE 了，根本不用再套一遍。</p>
+<p>至於 V 為什麼不用 RoPE？因為 attention 對 V 的處理是線性 weighted sum，position 資訊在 Q·K 那一步就已經注入進去了，V 這邊不需要再湊一腳。</p>
+<h3 id="演算法核心三gqa-的-head-對應">演算法核心三：GQA 的 head 對應</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> h <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>cfg.n_head {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> kv_head <span style="color:#f92672">=</span> h <span style="color:#f92672">/</span> gqa;          <span style="color:#75715e">// GQA 對應
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> q_off <span style="color:#f92672">=</span> h <span style="color:#f92672">*</span> head_dim;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> q <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>self.q[q_off<span style="color:#f92672">..</span>q_off <span style="color:#f92672">+</span> head_dim];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> att <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.att[h <span style="color:#f92672">*</span> cfg.n_ctx<span style="color:#f92672">..</span>h <span style="color:#f92672">*</span> cfg.n_ctx <span style="color:#f92672">+</span> (pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (t, score) <span style="color:#66d9ef">in</span> att.iter_mut().enumerate() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> k_off <span style="color:#f92672">=</span> t <span style="color:#f92672">*</span> kv_dim <span style="color:#f92672">+</span> kv_head <span style="color:#f92672">*</span> head_dim;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> k <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>self.kcache[l][k_off<span style="color:#f92672">..</span>k_off <span style="color:#f92672">+</span> head_dim];
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> s <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span><span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>head_dim {
+</span></span><span style="display:flex;"><span>            s <span style="color:#f92672">+=</span> q[i] <span style="color:#f92672">*</span> k[i];
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">*</span>score <span style="color:#f92672">=</span> s <span style="color:#f92672">*</span> scale;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    softmax(att);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... 加權 V
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>GQA 的小聰明</strong>：在 vanilla MHA（multi-head attention）裡，每個 query head 都配一個獨立的 K/V head。但 GQA 把 query head 分組，讓每組共用同一個 K/V head：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>n_head = 32, n_head_kv = 4 → gqa = 8
+</span></span><span style="display:flex;"><span>query head 0..7   → K/V head 0
+</span></span><span style="display:flex;"><span>query head 8..15  → K/V head 1
+</span></span><span style="display:flex;"><span>query head 16..23 → K/V head 2
+</span></span><span style="display:flex;"><span>query head 24..31 → K/V head 3</span></span></code></pre></div>
+
+<p><code>kv_head = h / gqa</code> 就是在做這個對應。這招把 KV cache 的大小從 <code>n_head × head_dim × n_ctx</code> 一口氣縮成 <code>n_head_kv × head_dim × n_ctx</code>，對長 context 推論實在是太關鍵了——畢竟前面也講過，KV cache 才是長 context 推論真正的記憶體大胃王。</p>
+<h3 id="演算法核心四attention-scores-的記憶體佈局">演算法核心四：attention scores 的記憶體佈局</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> att <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.att[h <span style="color:#f92672">*</span> cfg.n_ctx<span style="color:#f92672">..</span>h <span style="color:#f92672">*</span> cfg.n_ctx <span style="color:#f92672">+</span> (pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)];</span></span></code></pre></div>
+
+<p><code>att</code> buffer 是 <code>[n_head, n_ctx]</code> 展平後的結果。head <code>h</code> 的 attention scores 佔 <code>att[h*n_ctx .. h*n_ctx + n_ctx]</code>，但每次 forward 我們其實只用得到前 <code>pos+1</code> 個（因為只有從過去到現在的 token 才有 score 嘛）。</p>
+<p>這樣設計的好處是：buffer 固定大小（一開始就照 worst case <code>n_ctx</code> 配好），不必動態 resize。代價就是有些空間會閒著沒用到——對 TinyLlama 來說是 <code>n_head * n_ctx * 4 = 32 * 2048 * 4 = 256 KB</code>，這點浪費我覺得完全可以接受。</p>
+<h3 id="rust-用法借用檢查器與切片">Rust 用法：借用檢查器與切片</h3>
+<p>這個 forward pass 裡有大量 <code>&amp;mut</code> 切片操作：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> kc <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.kcache[l];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> krow <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> kc[pos <span style="color:#f92672">*</span> kv_dim<span style="color:#f92672">..</span>(pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> kv_dim];
+</span></span><span style="display:flex;"><span>matvec(krow, <span style="color:#f92672">&amp;</span>layer.wk, <span style="color:#f92672">&amp;</span>self.xb);</span></span></code></pre></div>
+
+<p>注意我這裡得<strong>先把 <code>&amp;mut self.kcache[l]</code> 抓進局部變數 <code>kc</code></strong>，再去對 <code>kc</code> 切片。為什麼要這樣？因為 Rust 的借用檢查器希望看到「我們對 self.kcache 的 mutable 借用」是乾乾淨淨、一目了然的。</p>
+<p>這大概是 Rust 寫多 mutable buffer 程式碼最常踩的坑之一了。假如你偷懶寫成：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>matvec(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.kcache[l][pos<span style="color:#f92672">*</span>kv_dim<span style="color:#f92672">..</span>(pos<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>)<span style="color:#f92672">*</span>kv_dim], <span style="color:#f92672">&amp;</span>layer.wk, <span style="color:#f92672">&amp;</span>self.xb);</span></span></code></pre></div>
+
+<p>而附近又還有 <code>&amp;self.x</code>、<code>&amp;self.xb</code> 這類不可變借用，編譯器十之八九會跳出來抗議「不能同時 mutable 又 immutable 借用 self」。先把 mutable slice 抽出來、再做後續操作，就是縮小借用範圍的標準解法。踩過幾次就記住了。</p>
+<h4 id="split_at_mut-這種招式">split_at_mut 這種招式</h4>
+<p>更刁鑽的場合可能就得搬出 <code>split_at_mut</code> 了——比方說要同時拿到 K cache 和 V cache 的 mutable ref：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (kc, vc) <span style="color:#f92672">=</span> (<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.kcache[l], <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self.vcache[l]);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 這個寫法借用檢查器會接受，因為 self.kcache 和 self.vcache 是不同的 field
+</span></span></span></code></pre></div>
+
+<p>但 <code>kcache[l]</code> 和 <code>vcache[l]</code> 是不同的 field，所以可以同時 mutable borrow。如果是同一個 <code>Vec</code> 的兩段切片，就需要 <code>split_at_mut</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (left, right) <span style="color:#f92672">=</span> my_vec.split_at_mut(mid);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// left 和 right 都是 &amp;mut [T]，但編譯器知道它們不重疊
+</span></span></span></code></pre></div>
+
+<h3 id="效能最佳化空間">效能最佳化空間</h3>
+<p><code>runner.rs</code> 可以說是整個專案效能熱點的大本營，能再壓榨的空間還多得很：</p>
+<h4 id="1-attention-的-head-parallel">1. Attention 的 head-parallel</h4>
+<p>我目前的 attention loop 是 sequential <code>for h in 0..n_head</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> h <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>cfg.n_head {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 算 attention scores、softmax、加權 V → 寫進 self.xb 的某段
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>每個 head 寫進 <code>self.xb</code> 的不同 slice，是 disjoint 的。可以用 <code>rayon</code> 的 <code>chunks_exact_mut</code> 平行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>self.xb.par_chunks_exact_mut(head_dim).enumerate().for_each(<span style="color:#f92672">|</span>(h, out)<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 算這個 head 的 attention
+</span></span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+
+<p>不過 <code>att</code> buffer 是共享的（<code>self.att</code>），平行版得替每個 thread 準備獨立的 attention scratch。再加上 head 數量通常不大（32-64），fork-join 的 overhead 搞不好就把省下來的時間吃光了——這個值得 benchmark 一下，但我猜不一定划算。</p>
+<h4 id="2-flashattention-風格的-fused-attention">2. FlashAttention 風格的 fused attention</h4>
+<p>我現在的 attention 是「先算完所有 score、再 softmax、再加權 V」三步走。FlashAttention 則把這三步 fuse 成一趟 streaming pass，記憶體占用從 <code>O(n_ctx)</code> 降到 <code>O(head_dim)</code>，而且對 cache 超友善。只是實作複雜不少——這已經是 candle/ggml 那種等級的優化了，不是隨手就能塞進來的。</p>
+<h4 id="3-kv-cache-的量化">3. KV cache 的量化</h4>
+<p>KV cache 是長 context 的記憶體大頭，這點講到都快變口頭禪了。對 7B 模型、2k context、F32 cache 來說，每層 cache 是 <code>2 * 2048 * 1024 * 4 = 16 MB</code>，32 層就是 512 MB。要是把 cache 也量化成 Q8（1 byte/element），就能砍到 128 MB。<code>llama.cpp</code> 早就支援這招了（<code>-ctk q8_0 -ctv q8_0</code>）。</p>
+<h4 id="4-prefill-batching">4. Prefill batching</h4>
+<p>目前 prefill 是 sequential 的——一個 token 跑一次 forward。但 prompt 的 token 其實全都已知，大可以拼成一個矩陣做 batched forward：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>seq forward: O(L * (matvec for each layer))
+</span></span><span style="display:flex;"><span>batch forward: O(matmul of [L, n_embd] for each layer)</span></span></code></pre></div>
+
+<p>GEMM 的 cache locality 比 GEMV 好太多了，prefill 速度衝個 5-10× 不是夢。代價是 attention 要重新設計（causal mask 從可有可無變成非寫不可）、KV cache 的寫入方式也得改（一次寫 L 個 token）。算是中量級的工程，不算小但也沒有嚇人。</p>
+<h4 id="5-speculative-decoding">5. Speculative decoding</h4>
+<p>更進階的玩法：拿一個小小的 &ldquo;draft model&rdquo; 一次先猜 K 個 token，再用主模型一口氣 verify。要是 K 個全猜中，那等於只花一次 forward 的時間就吐出 K 個 token，賺翻了。這在 inference latency 上算是革命性的技術，不過代價是要兩個模型協同，沒那麼好伺候。</p>
+<h4 id="6-continuous-batching">6. Continuous batching</h4>
+<p>如果哪天 runner 要同時 serve 一堆請求，就可以做 continuous batching——不同請求的 token 塞進同一個 batch，還能動態加進來、抽出去。但這要求 KV cache 變成「per-request」的，記憶體管理瞬間複雜好幾級。<code>vLLM</code> 就是這條路線的代表作。</p>
+<h3 id="一個有趣的權衡為什麼不寫得更-functional">一個有趣的權衡：為什麼不寫得更 functional？</h3>
+<p>其實我大可以把 forward 寫得更 functional 一點，比方把每個 layer 包成一個閉包、再用 <code>fold</code> 串起來，看起來會很「漂亮」。但說真的，<strong>現在這個命令式的寫法反而更好讀</strong>——你一眼就能看出每一步在改哪個 buffer、用哪個權重，毫不囉嗦。</p>
+<p>LLM 推論的程式碼有個很特別的地方：<strong>90% 的時間都在做矩陣運算，剩下 10% 才是 control flow</strong>。寫得太 functional，反而會把 control flow 的成本擺到台前，把真正重要的計算給遮住了。我不建議盲目追求函式式的優雅，該樸實的時候就樸實吧。</p>
+<h3 id="總結runnerrs-的角色">總結：runner.rs 的角色</h3>
+<ul>
+<li><strong>概念上</strong>：它就是把 token id 映射到 logits 的那個單一函式，順手把 KV cache 和層層遞進都管起來。</li>
+<li><strong>實作上</strong>：fixed-size scratch buffers + sequential layer loop + 手工 KV slice 操作，沒什麼花俏的。</li>
+<li><strong>設計上</strong>：把所有複雜性都收進這一個檔案裡，讓其他檔案（<code>ops</code>、<code>tensor</code>）保持乾淨——我覺得這種「把髒活集中在一處」的取捨頗值得參考。</li>
+</ul>
+<p>寫到這裡，整個推論流程的骨架其實已經攤在眼前了。下一篇我們往前再退一步，聊聊 <code>tokenizer.rs</code>——看看 byte 流是怎麼變成 token id 的，那又是另一個有趣的小宇宙。</p>
+<blockquote><p>系列文章：</p>
+<ul>
+<li><a href="/posts/2026/05-30-tiny-llm-runner">tiny-llm-runner 介紹</a></li>
+<li><a href="/posts/2026/06-01-tiny-llm-deep-dive-1-config">(1) config</a> ・ <a href="/posts/2026/06-02-tiny-llm-deep-dive-2-dequant">(2) dequant</a> ・ <a href="/posts/2026/06-03-tiny-llm-deep-dive-3-tensor">(3) tensor</a> ・ <a href="/posts/2026/06-04-tiny-llm-deep-dive-4-model">(4) model</a> ・ <a href="/posts/2026/06-05-tiny-llm-deep-dive-5-ops">(5) ops</a></li>
+<li><strong>(6) runner.rs</strong>（本篇）</li>
+</ul>
+</blockquote>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>

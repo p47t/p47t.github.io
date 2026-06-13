@@ -1,0 +1,795 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/"/>
+  <meta property="og:title" content="用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-05-20 17:54:07 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/">
+            用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</h2>
+      <div class="post-meta">
+        <span class="post-date">May 20, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架：tiny-llm-runner 與 candle 的架構對照</a></li>
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama：從 GGUF 到 Token 的零 C 依賴推論引擎</a></li>
+  
+    <li>May 25, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站：用 Python、Node.js、Rust 輕鬆串接 OpenAI 相容 API</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)：Axum 串流與 OpenAI 相容 API 的實現</a></li>
+  
+    <li>May 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</a></li>
+  
+    <li>May 20, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</a></li>
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/05-20-llm-gguf-parser/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Claude）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p>現在的大型語言模型（LLM）動輒幾十 GB，要把它們塞進一般的電腦或筆電裡跑，通常都得靠經過量化（Quantization）的模型格式。而在這些格式裡，由 <code>llama.cpp</code> 開源專案主導的 <strong>GGUF (GPT-Generated Unified Format)</strong> 大概就是當今最主流的霸主了吧。</p>
+<p>身為一個對底層原理很好奇的工程師，每次看到一個肥滋滋的二進位檔案，心裡總會癢癢的：<strong>「這檔案裡面到底裝了什麼？如果我自己用 Rust 寫一個解析器，要怎麼開工呢？」</strong></p>
+<p>於是這次我就動手實作了一個純 Rust 的 GGUF 模型解析器：<a href="https://github.com/p47t/rust-52-projects/tree/master/llm-gguf-parser"><code>llm-gguf-parser</code></a>。</p>
+<p>這篇文章就來跟你聊聊，實作這個二進位解析器時我做的幾個關鍵設計決定，還有怎麼利用 Rust 的強型別與記憶體管理特性，優雅地拆解這個龐然大物。</p>
+<h3 id="設計抉擇為什麼要這樣實作">設計抉擇：為什麼要這樣實作？</h3>
+<p>在開始動筆寫程式之前，有幾個技術難題得先克服：</p>
+<h4 id="1-檔案太大記憶體會爆掉怎麼辦">1. 檔案太大，記憶體會爆掉！怎麼辦？</h4>
+<p>LLM 模型檔案的容量實在是非常驚人。如果直接用 <code>std::fs::read</code> 把整個檔案一口氣讀進記憶體，一般電腦的 RAM 肯定瞬間就被塞爆，接著被系統強制結束（OOM Crash），整個悲劇。</p>
+<p>為了解決這個問題，我用了 <strong>記憶體映射（Memory Mapping）</strong>，也就是 <code>memmap2</code> 這個套件：</p>
+<ul>
+<li><strong>零拷貝讀取（Zero-Copy Reading）</strong>：我們只是將硬碟檔案對應到處理器的虛擬位址空間。當我們需要某一段資料（例如 Tensor 的名稱或某個 Metadata 數值）時，我們可以直接「切片」（Slice）檔案緩衝區，不需要在記憶體中配置新的空間。</li>
+<li><strong>隨選載入（On-Demand Loading）</strong>：作業系統的虛擬記憶體管理器非常聰明，它只會將我們真正讀取到的硬碟分頁（通常是檔頭的 Metadata 區塊）載入到 RAM。而佔了檔案 99.9% 空間的 Tensor 權重數值，在解析過程中根本不會被讀入記憶體，完美避開了記憶體不足的問題。</li>
+</ul>
+<h4 id="2-不需要大砲拒絕複雜的解析框架">2. 不需要大砲！拒絕複雜的解析框架</h4>
+<p>雖然 Rust 有很強大的解析器組合子框架（如 <code>nom</code>）或序列化套件（如 <code>serde</code>），不過對於 GGUF 這種結構非常規律、順序明確的格式來說，引進這些厚重的套件反而會增加學習曲線跟編譯時間，有點殺雞用牛刀。</p>
+<p>所以我決定回歸本質：<strong>手寫一個簡單的順序讀取器（Reader）</strong>。
+我們只要包裝一個指向 Byte 切片的指標，每次讀完資料就把指標往後移動就好。因為 GGUF 規定用小端序（Little-Endian）儲存，我們可以直接利用 Rust 標準函式庫內建的字節轉換方法（像 <code>u32::from_le_bytes</code>、<code>u64::from_le_bytes</code>），編譯器會把這些直接翻譯成硬體層級的指令，速度極快又直覺好懂。</p>
+<h4 id="3-處理-gguf-歷史版本演進">3. 處理 GGUF 歷史版本演進</h4>
+<p>GGUF 規範在發展過程中經歷了三個版本：</p>
+<ul>
+<li><strong>Version 1</strong>：早期設計給 32 位元系統使用，Metadata 鍵值對和 Tensor 的數量是用 <code>u32</code> 來儲存。</li>
+<li><strong>Version 2 &amp; 3</strong>：隨著模型規模暴增，為了支援擁有成千上萬個 Tensor 的巨型模型，數量改用 <code>u64</code> 儲存。</li>
+</ul>
+<p>為了讓解析器有足夠的相容性，我們得在程式一開始就讀取版本號，然後<strong>動態決定</strong>接下來讀計數的時候要用 4 個字節（<code>u32</code>）還是 8 個字節（<code>u64</code>）。</p>
+<h3 id="gguf-檔案格式一覽">GGUF 檔案格式一覽</h3>
+<p>在看程式碼之前，我們先來看看 GGUF 在硬碟上的位元組佈局：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">區段</th>
+					<th style="text-align: left">大小</th>
+					<th style="text-align: left">說明</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>Magic Bytes</strong></td>
+					<td style="text-align: left">4 Bytes</td>
+					<td style="text-align: left">必須是 ASCII 的 <code>'G' 'G' 'U' 'F'</code> (<code>0x46554747</code>)</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Version</strong></td>
+					<td style="text-align: left">4 Bytes</td>
+					<td style="text-align: left">小端序 <code>u32</code>（目前常見為 2 或 3）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Tensor Count</strong></td>
+					<td style="text-align: left">4 或 8 Bytes</td>
+					<td style="text-align: left">檔案中包含的張量（Tensor）總數</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Metadata Count</strong></td>
+					<td style="text-align: left">4 或 8 Bytes</td>
+					<td style="text-align: left">鍵值對（KV）形式的 Metadata 數量</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Metadata KVs</strong></td>
+					<td style="text-align: left">變動大小</td>
+					<td style="text-align: left">一系列的 <code>(Key字串, 數值型態ID, Value)</code> 資料</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Tensor Metadata</strong></td>
+					<td style="text-align: left">變動大小</td>
+					<td style="text-align: left">每個張量的名稱、維度、資料型態以及在檔案中的偏移量（Offset）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>對齊填充 (Padding)</strong></td>
+					<td style="text-align: left">變動大小</td>
+					<td style="text-align: left">用於對齊張量資料區段的邊界</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>張量權重資料 (Data)</strong></td>
+					<td style="text-align: left">變動大小</td>
+					<td style="text-align: left">模型的原始權重數值（佔據 99.9% 空間）</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="核心實作">核心實作</h3>
+<p>接下來，我們來看看如何用 Rust 把這個格式描述出來。</p>
+<h4 id="1-用強型別定義-metadata-型態">1. 用強型別定義 Metadata 型態</h4>
+<p>GGUF 支援非常豐富的資料型態。我們可以用 Rust 的 <code>enum</code> 來表達這些型態，不僅安全，還能附帶資料：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, Copy, PartialEq, Eq)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[repr(u32)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">ValueType</span> {
+</span></span><span style="display:flex;"><span>    Uint8 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    Int8 <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>    Uint16 <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span>,
+</span></span><span style="display:flex;"><span>    Int16 <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>,
+</span></span><span style="display:flex;"><span>    Uint32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>,
+</span></span><span style="display:flex;"><span>    Int32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span>,
+</span></span><span style="display:flex;"><span>    Float32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>,
+</span></span><span style="display:flex;"><span>    Bool <span style="color:#f92672">=</span> <span style="color:#ae81ff">7</span>,
+</span></span><span style="display:flex;"><span>    String <span style="color:#f92672">=</span> <span style="color:#ae81ff">8</span>,
+</span></span><span style="display:flex;"><span>    Array <span style="color:#f92672">=</span> <span style="color:#ae81ff">9</span>,
+</span></span><span style="display:flex;"><span>    Uint64 <span style="color:#f92672">=</span> <span style="color:#ae81ff">10</span>,
+</span></span><span style="display:flex;"><span>    Int64 <span style="color:#f92672">=</span> <span style="color:#ae81ff">11</span>,
+</span></span><span style="display:flex;"><span>    Float64 <span style="color:#f92672">=</span> <span style="color:#ae81ff">12</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, PartialEq)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Value</span> {
+</span></span><span style="display:flex;"><span>    Uint8(<span style="color:#66d9ef">u8</span>),
+</span></span><span style="display:flex;"><span>    Int8(<span style="color:#66d9ef">i8</span>),
+</span></span><span style="display:flex;"><span>    Uint16(<span style="color:#66d9ef">u16</span>),
+</span></span><span style="display:flex;"><span>    Int16(<span style="color:#66d9ef">i16</span>),
+</span></span><span style="display:flex;"><span>    Uint32(<span style="color:#66d9ef">u32</span>),
+</span></span><span style="display:flex;"><span>    Int32(<span style="color:#66d9ef">i32</span>),
+</span></span><span style="display:flex;"><span>    Float32(<span style="color:#66d9ef">f32</span>),
+</span></span><span style="display:flex;"><span>    Bool(<span style="color:#66d9ef">bool</span>),
+</span></span><span style="display:flex;"><span>    String(String),
+</span></span><span style="display:flex;"><span>    Array(ValueType, Vec<span style="color:#f92672">&lt;</span>Value<span style="color:#f92672">&gt;</span>), <span style="color:#75715e">// 陣列型態，內部帶有元素列表
+</span></span></span><span style="display:flex;"><span>    Uint64(<span style="color:#66d9ef">u64</span>),
+</span></span><span style="display:flex;"><span>    Int64(<span style="color:#66d9ef">i64</span>),
+</span></span><span style="display:flex;"><span>    Float64(<span style="color:#66d9ef">f64</span>),
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>解析 Metadata 時，我們會先讀出一個 <code>u32</code> 代表型態 ID，接著用 <code>TryFrom&lt;u32&gt;</code> 轉換成 <code>ValueType</code>，最後依據型態讀取對應長度的位元組，包裝成 <code>Value</code> enum。</p>
+<p>我覺得 <code>Value::Array</code> 的設計頗值得一提——它內部帶有元素型態（<code>ValueType</code>）和元素列表（<code>Vec&lt;Value&gt;</code>），這意味著陣列的解析是<strong>遞迴的</strong>：先讀出元素型態 ID，再讀出陣列長度，然後逐一呼叫 <code>read_value()</code> 讀取每個元素。如果今天是「字串陣列」，每個元素就會進入 <code>ValueType::String</code> 分支；如果是「陣列的陣列」，理論上也可以一路遞迴下去（雖然 GGUF 規範裡沒有這種用法啦）。</p>
+<p>另外，<code>Bool</code> 在檔案裡其實是 1 byte（<code>0x00</code> = false，非零 = true），所以解析時用 <code>read_u8()? != 0</code>——這是 GGUF 規範的設計，不是 Rust 的 <code>bool</code>（1 byte），而是把 C 語言的慣例忠實對應過來。</p>
+<h4 id="2-強型別的量化格式ggmltype-enum">2. 強型別的量化格式：GgmlType Enum</h4>
+<p>除了 Metadata 的型別系統，GGUF 還定義了一套模型量化（Quantization）格式，用 <code>GgmlType</code> 表示。這個 enum 有 30 個變體，涵蓋了從原始的 FP32 到各種「K 量化」和「IQ 量化」格式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Debug, Clone, Copy, PartialEq, Eq)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[allow(non_camel_case_types)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[repr(u32)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">GgmlType</span> {
+</span></span><span style="display:flex;"><span>    F32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, F16 <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>,           <span style="color:#75715e">// 原始浮點
+</span></span></span><span style="display:flex;"><span>    Q4_0 <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span>, Q4_1 <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>,         <span style="color:#75715e">// 4-bit 量化（基本款）
+</span></span></span><span style="display:flex;"><span>    Q5_0 <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>, Q5_1 <span style="color:#f92672">=</span> <span style="color:#ae81ff">7</span>,         <span style="color:#75715e">// 5-bit 量化
+</span></span></span><span style="display:flex;"><span>    Q8_0 <span style="color:#f92672">=</span> <span style="color:#ae81ff">8</span>, Q8_1 <span style="color:#f92672">=</span> <span style="color:#ae81ff">9</span>,         <span style="color:#75715e">// 8-bit 量化
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">Q2_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">10</span>, <span style="color:#66d9ef">Q3_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">11</span>,       <span style="color:#75715e">// K 量化家族（block-wise）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">Q4_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">12</span>, <span style="color:#66d9ef">Q5_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">13</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">Q6_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">14</span>, <span style="color:#66d9ef">Q8_K</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">15</span>,
+</span></span><span style="display:flex;"><span>    Iq2Xxs <span style="color:#f92672">=</span> <span style="color:#ae81ff">16</span>, Iq2Xs <span style="color:#f92672">=</span> <span style="color:#ae81ff">17</span>,    <span style="color:#75715e">// IQ 量化（integer quantization）
+</span></span></span><span style="display:flex;"><span>    Iq3Xxs <span style="color:#f92672">=</span> <span style="color:#ae81ff">18</span>, Iq1S <span style="color:#f92672">=</span> <span style="color:#ae81ff">19</span>,
+</span></span><span style="display:flex;"><span>    Iq4Nl <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span>, Iq3S <span style="color:#f92672">=</span> <span style="color:#ae81ff">21</span>,
+</span></span><span style="display:flex;"><span>    Iq2S <span style="color:#f92672">=</span> <span style="color:#ae81ff">22</span>, Iq4Xs <span style="color:#f92672">=</span> <span style="color:#ae81ff">23</span>,
+</span></span><span style="display:flex;"><span>    I8 <span style="color:#f92672">=</span> <span style="color:#ae81ff">24</span>, I16 <span style="color:#f92672">=</span> <span style="color:#ae81ff">25</span>,          <span style="color:#75715e">// 整數型態
+</span></span></span><span style="display:flex;"><span>    I32 <span style="color:#f92672">=</span> <span style="color:#ae81ff">26</span>, I64 <span style="color:#f92672">=</span> <span style="color:#ae81ff">27</span>, F64 <span style="color:#f92672">=</span> <span style="color:#ae81ff">28</span>,
+</span></span><span style="display:flex;"><span>    Iq1M <span style="color:#f92672">=</span> <span style="color:#ae81ff">29</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>你可能注意到 ID 4、5 是<strong>空的</strong>——這不是漏掉喔，而是 GGML 規範裡本來就沒有分配這些 ID（歷史因素，早期有些格式被廢棄了）。用 <code>#[repr(u32)]</code> 標記讓每個變體的判別式（discriminant）直接對應檔案裡的 type ID，<code>TryFrom&lt;u32&gt;</code> 則確保遇到未知型態時優雅地報錯。</p>
+<p>這些量化格式的差異在於「每個 block 有多少元素、scale factor 怎麼存、量化精度到哪裡」——例如 <code>Q4_0</code> 是把 32 個 FP16 權重壓成 4-bit，一個 block 佔 18 bytes；<code>Q4_K</code> 則是更進階的版本，用 super-block 加 sub-block 的雙層結構來提升精度。不過對於一個<strong>解析器</strong>來說，我們其實不需要知道每種格式的解碼細節——只要能正確讀出「這個 tensor 是哪種格式」就夠了，剩下的交給後續的推理引擎去解碼權重就好。</p>
+<p>另一個實作細節：<code>GgmlType</code> 有獨立的 <code>Display</code> impl，把 Rust 的 camelCase 變體名稱轉成更可讀的字串（例如 <code>Iq2Xxs</code> → <code>&quot;IQ2_XXS&quot;</code>），這樣 CLI 輸出才不會讓人一頭霧水：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> fmt::Display <span style="color:#66d9ef">for</span> GgmlType {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">fmt</span>(<span style="color:#f92672">&amp;</span>self, f: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> fmt::Formatter<span style="color:#f92672">&lt;</span>&#39;_<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">fmt</span>::Result {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> name <span style="color:#f92672">=</span> <span style="color:#66d9ef">match</span> self {
+</span></span><span style="display:flex;"><span>            Self::Iq2Xxs <span style="color:#f92672">=&gt;</span> <span style="color:#e6db74">&#34;IQ2_XXS&#34;</span>,
+</span></span><span style="display:flex;"><span>            Self::Iq4Nl <span style="color:#f92672">=&gt;</span> <span style="color:#e6db74">&#34;IQ4_NL&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// ...每個變體手動對應
+</span></span></span><span style="display:flex;"><span>        };
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;{}&#34;</span>, name)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="3-手寫-byte-reader用-const-generics-消除重複">3. 手寫 Byte Reader：用 Const Generics 消除重複</h4>
+<p>Reader 的核心巧妙之處在於 <code>read_array&lt;const N: usize&gt;()</code>——利用 Rust 的 const generics，一個方法就能處理所有固定大小的讀取：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Reader</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    data: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">&#39;a</span> [<span style="color:#66d9ef">u8</span>],
+</span></span><span style="display:flex;"><span>    offset: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span> Reader<span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;a</span><span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 讀取指定長度的 Slice——所有讀取的最終入口
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_bytes</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, len: <span style="color:#66d9ef">usize</span>) -&gt; Result<span style="color:#f92672">&lt;&amp;</span><span style="color:#a6e22e">&#39;a</span> [<span style="color:#66d9ef">u8</span>], ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> slice <span style="color:#f92672">=</span> self.data
+</span></span><span style="display:flex;"><span>            .get(self.offset<span style="color:#f92672">..</span>self.offset <span style="color:#f92672">+</span> len)
+</span></span><span style="display:flex;"><span>            .ok_or(ParserError::UnexpectedEof {
+</span></span><span style="display:flex;"><span>                bytes: <span style="color:#a6e22e">len</span>,
+</span></span><span style="display:flex;"><span>                offset: <span style="color:#a6e22e">self</span>.offset,
+</span></span><span style="display:flex;"><span>                len: <span style="color:#a6e22e">self</span>.data.len(),
+</span></span><span style="display:flex;"><span>            })<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        self.offset <span style="color:#f92672">+=</span> len;
+</span></span><span style="display:flex;"><span>        Ok(slice)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Const Generics 技巧：一個方法服務所有固定大小讀取
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_array</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">const</span> N: <span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span>[<span style="color:#66d9ef">u8</span>; N], ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> slice <span style="color:#f92672">=</span> self.read_bytes(N)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        Ok(slice.try_into()<span style="color:#f92672">?</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_u32</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u32</span>, ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        Ok(<span style="color:#66d9ef">u32</span>::from_le_bytes(self.read_array()<span style="color:#f92672">?</span>))  <span style="color:#75715e">// N = 4
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_u64</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u64</span>, ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        Ok(<span style="color:#66d9ef">u64</span>::from_le_bytes(self.read_array()<span style="color:#f92672">?</span>))  <span style="color:#75715e">// N = 8
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_f32</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span>, ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        Ok(<span style="color:#66d9ef">f32</span>::from_le_bytes(self.read_array()<span style="color:#f92672">?</span>))  <span style="color:#75715e">// N = 4
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 完全相同模式，只是 N 不同！
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_u16</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u16</span>, ParserError<span style="color:#f92672">&gt;</span> { <span style="color:#75715e">/* N = 2 */</span> }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_i32</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span>, ParserError<span style="color:#f92672">&gt;</span> { <span style="color:#75715e">/* N = 4 */</span> }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_f64</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span>, ParserError<span style="color:#f92672">&gt;</span> { <span style="color:#75715e">/* N = 8 */</span> }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 讀取 GGUF 格式的字串（先讀長度 u64，再讀 UTF-8 位元組）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">read_string</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self) -&gt; Result<span style="color:#f92672">&lt;</span>String, ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> len <span style="color:#f92672">=</span> self.read_u64()<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> bytes <span style="color:#f92672">=</span> self.read_bytes(len)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        String::from_utf8(bytes.to_vec()).map_err(ParserError::from)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>看到玄機了嗎？<code>read_u32</code>、<code>read_u64</code>、<code>read_f32</code>……全部都是 <code>self.read_array()</code> + <code>from_le_bytes()</code> 的組合，差別只在 <code>N</code> 的值。如果不用 const generics，你就得為每種大小各寫一個 <code>read_bytes</code> 變體——程式碼會囉唆到不行。有了 <code>read_array&lt;const N: usize&gt;()</code>，編譯器會在編譯期把每個呼叫 monomorphize 成固定大小的讀取，效能跟手寫完全一樣，但程式碼乾淨多了。</p>
+<p>這個設計實在是很直觀。萬一檔案不小心毀損、或讀到一半檔案就結束了，<code>get(..)</code> 會回傳 <code>None</code>，我們就能拋出一個漂亮的 <code>ParserError::UnexpectedEof</code>，而不會讓程式崩潰。</p>
+<h4 id="4-解析主流程">4. 解析主流程</h4>
+<p>有了 Reader 之後，我們就能像照著食譜一樣，一步一步把 GGUF 解析出來：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parse_gguf</span>(data: <span style="color:#a6e22e">impl</span> AsRef<span style="color:#f92672">&lt;</span>[<span style="color:#66d9ef">u8</span>]<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span>GgufFile, ParserError<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> reader <span style="color:#f92672">=</span> Reader::new(data.as_ref());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 檢查 Magic Bytes (必須是 &#34;GGUF&#34;)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> magic <span style="color:#f92672">=</span> reader.read_u32()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> magic <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0x46554747</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Err(ParserError::InvalidMagic(magic));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 讀取版本號
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> version <span style="color:#f92672">=</span> reader.read_u32()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> version <span style="color:#f92672">!=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&amp;&amp;</span> version <span style="color:#f92672">!=</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">&amp;&amp;</span> version <span style="color:#f92672">!=</span> <span style="color:#ae81ff">3</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Err(ParserError::UnsupportedVersion(version));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 依據版本讀取 Tensor 數量與 Metadata 數量
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (tensor_count, metadata_kv_count) <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> version <span style="color:#f92672">==</span> <span style="color:#ae81ff">1</span> {
+</span></span><span style="display:flex;"><span>        (reader.read_u32()<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>, reader.read_u32()<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>)
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        (reader.read_u64()<span style="color:#f92672">?</span>, reader.read_u64()<span style="color:#f92672">?</span>)
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 4. 迴圈讀取所有的 Metadata 鍵值對
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> metadata <span style="color:#f92672">=</span> HashMap::with_capacity(metadata_kv_count <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>metadata_kv_count {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> key <span style="color:#f92672">=</span> reader.read_string()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> val_type_u32 <span style="color:#f92672">=</span> reader.read_u32()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> val_type <span style="color:#f92672">=</span> ValueType::try_from(val_type_u32)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> val <span style="color:#f92672">=</span> reader.read_value(val_type)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        metadata.insert(key, val);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 5. 迴圈讀取所有 Tensor 的描述資訊
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> tensors <span style="color:#f92672">=</span> Vec::with_capacity(tensor_count <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>tensor_count {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> name <span style="color:#f92672">=</span> reader.read_string()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> dimensions_count <span style="color:#f92672">=</span> reader.read_u32()<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> dimensions <span style="color:#f92672">=</span> Vec::with_capacity(dimensions_count);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>dimensions_count {
+</span></span><span style="display:flex;"><span>            dimensions.push(reader.read_u64()<span style="color:#f92672">?</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> tensor_type_u32 <span style="color:#f92672">=</span> reader.read_u32()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> tensor_type <span style="color:#f92672">=</span> GgmlType::try_from(tensor_type_u32)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> offset <span style="color:#f92672">=</span> reader.read_u64()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        tensors.push(TensorInfo {
+</span></span><span style="display:flex;"><span>            name,
+</span></span><span style="display:flex;"><span>            dimensions,
+</span></span><span style="display:flex;"><span>            tensor_type,
+</span></span><span style="display:flex;"><span>            offset,
+</span></span><span style="display:flex;"><span>        });
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Ok(GgufFile {
+</span></span><span style="display:flex;"><span>        version,
+</span></span><span style="display:flex;"><span>        metadata,
+</span></span><span style="display:flex;"><span>        tensors,
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個主流程清晰展現了二進位檔案結構解析的精髓：<strong>順序讀取、條件分支、結構映射</strong>。</p>
+<h4 id="5-錯誤處理帶上下文的-parsererror">5. 錯誤處理：帶上下文的 ParserError</h4>
+<p><code>Reader</code> 的每個讀取操作都可能失敗——檔案截斷、格式不符、編碼錯誤。我們用 <code>thiserror</code> 定義了 6 種精確的錯誤型態：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Error, Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">ParserError</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;unexpected end of file reading {bytes} bytes (offset: {offset}, len: {len})&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    UnexpectedEof { bytes: <span style="color:#66d9ef">usize</span>, offset: <span style="color:#66d9ef">usize</span>, len: <span style="color:#66d9ef">usize</span> },
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;invalid GGUF magic bytes: expected 0x46554747 (&#39;GGUF&#39;), found 0x{0:08X}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    InvalidMagic(<span style="color:#66d9ef">u32</span>),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;unsupported GGUF version: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    UnsupportedVersion(<span style="color:#66d9ef">u32</span>),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;unknown value type ID {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    UnknownValueType(<span style="color:#66d9ef">u32</span>),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;unknown GGML type ID {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    UnknownGgmlType(<span style="color:#66d9ef">u32</span>),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 以下兩個用 #[from] 自動轉換
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;invalid UTF-8 string: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    InvalidUtf8(<span style="color:#75715e">#[from]</span> std::string::FromUtf8Error),
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[error(</span><span style="color:#e6db74">&#34;slice conversion failed: {0}&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    TryFromSlice(<span style="color:#75715e">#[from]</span> std::array::TryFromSliceError),
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>其中我覺得最值得說的是 <code>UnexpectedEof</code>——它不只告訴你「檔案結束了」，還告訴你<strong>當時想讀多少 bytes、在哪個偏移量、檔案總共有多大</strong>。當你在除錯一個被截斷的 GGUF 檔案時，這三個數字真的可以省下一堆瞎猜的時間。背後靠的是 <code>slice::get(..)</code> 回傳 <code>Option</code>，而不是直接索引——直接索引會 panic，而對一個解析器來說，panic 實在是比回傳錯誤糟糕太多了。</p>
+<h4 id="6-顯示大陣列的巧思value-的-display">6. 顯示大陣列的巧思：Value 的 Display</h4>
+<p>GGUF 模型的 Metadata 裡，有些陣列大到嚇人——例如 tokenizer 的詞彙表可以有 32000 個 entry。要是 <code>Display</code> 把整個陣列印出來，你的終端機保證直接被洗版。所以我們做了一個小小的截斷：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span>Self::Array(t, v) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;[Type: {:?}, Len: {}, Elements: [&#34;</span>, t, v.len())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (i, elem) <span style="color:#66d9ef">in</span> v.iter().take(<span style="color:#ae81ff">5</span>).enumerate() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> i <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span> { <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;, &#34;</span>)<span style="color:#f92672">?</span>; }
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;{}&#34;</span>, elem)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> v.len() <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">5</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;, ... +{} more&#34;</span>, v.len() <span style="color:#f92672">-</span> <span style="color:#ae81ff">5</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">write!</span>(f, <span style="color:#e6db74">&#34;]]&#34;</span>)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>只顯示前 5 個元素，再附上剩餘數量——這樣你一眼就能看出「這是什麼型態的陣列、有多長、大概裝什麼」，而不會被好幾千行輸出淹沒，蠻實用的。</p>
+<h3 id="cli-工具實戰解析-llm-模型">CLI 工具：實戰解析 LLM 模型</h3>
+<p>解析器本身是個 library（<code>lib.rs</code>），但專案也附了一個 CLI 工具（<code>main.rs</code>），讓你可以直接對 GGUF 檔案做查詢：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 基本用法：顯示檔頭資訊 + Metadata 摘要</span>
+</span></span><span style="display:flex;"><span>cargo run -- path/to/model.gguf
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 顯示所有 Tensor 的名稱、維度、型態</span>
+</span></span><span style="display:flex;"><span>cargo run -- path/to/model.gguf --tensors
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 過濾 Metadata，只看關鍵字含 &#34;context&#34; 的項目</span>
+</span></span><span style="display:flex;"><span>cargo run -- path/to/model.gguf --query context</span></span></code></pre></div>
+
+<p>CLI 用 <code>clap</code> 的 derive 模式定義了三個參數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Parser, Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[command(author, version, about = </span><span style="color:#e6db74">&#34;A parser for GGUF model files&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Args</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Path to the GGUF model file
+</span></span></span><span style="display:flex;"><span>    file: String,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Print all tensor names, dimensions and types
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long)]</span>
+</span></span><span style="display:flex;"><span>    tensors: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Filter metadata keys by a query string
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long)]</span>
+</span></span><span style="display:flex;"><span>    query: Option<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>--query</code> 真的很實用——GGUF 模型的 Metadata 動不動就幾百個 KV pair，全部印出來根本找不到你要的東西。用 <code>--query tokenizer</code> 就只會顯示 key 裡含 &ldquo;tokenizer&rdquo; 的項目，像是 tokenizer 的詞表大小、BOS/EOS token ID 之類的。</p>
+<p>執行時，檔案透過 <code>memmap2</code> 做 memory map，然後把 <code>&amp;mmap</code> 直接傳給 <code>parse_gguf()</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> file <span style="color:#f92672">=</span> File::open(file_path)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> mmap <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { Mmap::map(<span style="color:#f92672">&amp;</span>file)<span style="color:#f92672">?</span> };
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> gguf <span style="color:#f92672">=</span> parse_gguf(<span style="color:#f92672">&amp;</span>mmap).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> anyhow::<span style="color:#a6e22e">anyhow!</span>(<span style="color:#e6db74">&#34;failed to parse: {}&#34;</span>, e))<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p>這裡需要 <code>unsafe</code> 是因為 OS 沒辦法保證 mmap 期間檔案不會被外部偷改，不過對於唯讀的解析工具來說，這其實是完全安全的用法。</p>
+<h3 id="單元測試如何在記憶體裡手搓一個迷你-gguf">單元測試：如何在記憶體裡手搓一個迷你 GGUF？</h3>
+<p>寫二進位解析器最麻煩的就是測試這關。我們總不可能每次跑 CI 都真的去下載一個好幾 GB 的模型檔案吧？</p>
+<p>我的作法是：<strong>在記憶體裡手動兜出一個「迷你 GGUF 檔案」的二進位切片</strong>。</p>
+<p>把代表 Magic、版本、數量、字串長度與資料的位元組依序推進一個 <code>Vec&lt;u8&gt;</code>，我們就能生出一份合法的 GGUF 記憶體資料，直接餵給解析器驗證：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[cfg(test)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">mod</span> tests {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">use</span> <span style="color:#66d9ef">super</span>::<span style="color:#f92672">*</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">test_parse_gguf_mock</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> data <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 1. Magic Bytes: &#39;GGUF&#39;
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">0x46554747</span><span style="color:#66d9ef">u32</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 2. Version: 3
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">3</span><span style="color:#66d9ef">u32</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 3. Tensor count: 1
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">1</span><span style="color:#66d9ef">u64</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 4. Metadata KV count: 2
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">2</span><span style="color:#66d9ef">u64</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Metadata 1: Key &#34;general.architecture&#34; -&gt; &#34;llama&#34;
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> key1 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;general.architecture&#34;</span>;
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span>(key1.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>).to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(key1.as_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">8</span><span style="color:#66d9ef">u32</span>.to_le_bytes()); <span style="color:#75715e">// Type: String (8)
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> val1 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;llama&#34;</span>;
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span>(val1.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>).to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(val1.as_bytes());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Metadata 2: Key &#34;llama.context_length&#34; -&gt; 2048
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> key2 <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;llama.context_length&#34;</span>;
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span>(key2.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>).to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(key2.as_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">4</span><span style="color:#66d9ef">u32</span>.to_le_bytes()); <span style="color:#75715e">// Type: Uint32 (4)
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">2048</span><span style="color:#66d9ef">u32</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Tensor 1: Name &#34;token_embd.weight&#34; (Dims: [4096, 32000], Type: F16, Offset: 0)
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> t_name <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;token_embd.weight&#34;</span>;
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span>(t_name.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">u64</span>).to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(t_name.as_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">2</span><span style="color:#66d9ef">u32</span>.to_le_bytes()); <span style="color:#75715e">// Dims Count: 2
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">4096</span><span style="color:#66d9ef">u64</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">32000</span><span style="color:#66d9ef">u64</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">1</span><span style="color:#66d9ef">u32</span>.to_le_bytes()); <span style="color:#75715e">// Type: F16 (1)
+</span></span></span><span style="display:flex;"><span>        data.extend_from_slice(<span style="color:#f92672">&amp;</span><span style="color:#ae81ff">0</span><span style="color:#66d9ef">u64</span>.to_le_bytes());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 執行解析
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> gguf <span style="color:#f92672">=</span> parse_gguf(<span style="color:#f92672">&amp;</span>data).unwrap();
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(gguf.version, <span style="color:#ae81ff">3</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(gguf.metadata.len(), <span style="color:#ae81ff">2</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(gguf.tensors.len(), <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert_eq!</span>(gguf.tensors[<span style="color:#ae81ff">0</span>].name, <span style="color:#e6db74">&#34;token_embd.weight&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個測試案例不只能確保我們的讀取指標和位元組轉換百分之百正確，也讓我們之後重構解析器時，心裡踏實多了！</p>
+<h3 id="結語">結語</h3>
+<p>寫這類低階二進位格式的解析器，我想是深入理解系統程式設計（Systems Programming）最好的途徑之一。在這個專案裡，我們又把以下幾個核心觀念溫習了一遍：</p>
+<ul>
+<li><strong>記憶體映射（Memory Mapping）</strong> 避開大檔案的 I/O 與記憶體配置瓶頸，作業系統的虛擬記憶體管理器幫你做 on-demand paging。</li>
+<li><strong>Const Generics</strong> 讓 <code>read_array&lt;N&gt;()</code> 一個方法服務所有大小的固定讀取，編譯期 monomorphize，零成本抽象。</li>
+<li><strong>強型別 Enum（ValueType / GgmlType）</strong> 把二進位檔案的型態 ID 映射到 Rust 的型別系統，搭配 <code>TryFrom</code> 在未知 ID 時優雅報錯。</li>
+<li><strong>帶上下文的錯誤處理</strong> <code>UnexpectedEof</code> 攜帶 offset 和 len，比單純的 panic 或 <code>io::Error</code> 有用得多。</li>
+<li><strong>手寫 Reader</strong> 替代了厚重繁複的解析框架，用標準函式庫的 <code>from_le_bytes</code> 直接對應硬體指令，效能達到極致。</li>
+<li><strong>動態分支處理</strong> 解決了 GGUF 版本演進的向下相容性。</li>
+<li><strong>記憶體模擬二進位切片</strong> 實現了高效且無外部相依性的單元測試。</li>
+</ul>
+<p>整個解析器只有 414 行（含測試），4 個依賴——這也再次證明了，在 Rust 裡，<strong>有時候最精簡的做法就是最好的做法</strong>。</p>
+<p>如果你也對 LLM 的底層檔案格式感到好奇，不妨自己動手寫一個簡單的解析器吧。我相信你也會在 byte 與 offset 來回移動之間，找到那種屬於工程師的單純樂趣……</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/llm-gguf-parser">llm-gguf-parser 專案原始碼</a></li>
+<li><a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF 官方格式規格書</a></li>
+<li><a href="https://crates.io/crates/memmap2">memmap2 crate</a> — 跨平台 memory mapping</li>
+<li><a href="https://crates.io/crates/clap">clap crate</a> — CLI 參數解析</li>
+<li><a href="https://crates.io/crates/thiserror">thiserror crate</a> — 衍生錯誤型態</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+
+</body>
+</html>

@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff9e64"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2e42"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="50" y="50" width="140" height="4" fill="url(#accent)" rx="2"/>
+
+  <text x="60" y="92" font-family="monospace" font-size="14" fill="#9ece6a">tiny-llm-runner · deep dive</text>
+  <text x="60" y="138" font-family="Arvo, serif" font-size="42" fill="#c0caf5" font-weight="bold">(7) tokenizer.rs</text>
+  <text x="60" y="170" font-family="Arial, sans-serif" font-size="20" fill="rgba(192,202,245,0.65)">SentencePiece-BPE · greedy merge · byte fallback</text>
+
+  <!-- Step 1: split into chars -->
+  <g transform="translate(70, 220)">
+    <text x="0" y="0" font-family="monospace" font-size="14" fill="#7dcfff">step 1 · split → tokens (with ▁ for spaces)</text>
+    <g transform="translate(0, 20)" font-family="monospace" font-size="13" fill="#c0caf5">
+      <rect x="0" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="20" y="22" text-anchor="middle">▁</text>
+      <rect x="44" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="64" y="22" text-anchor="middle">H</text>
+      <rect x="88" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="108" y="22" text-anchor="middle">e</text>
+      <rect x="132" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="152" y="22" text-anchor="middle">l</text>
+      <rect x="176" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="196" y="22" text-anchor="middle">l</text>
+      <rect x="220" y="0" width="40" height="36" rx="4" fill="rgba(125,207,255,0.15)" stroke="#7dcfff"/>
+      <text x="240" y="22" text-anchor="middle">o</text>
+    </g>
+  </g>
+
+  <!-- Step 2: greedy merge -->
+  <g transform="translate(70, 320)">
+    <text x="0" y="0" font-family="monospace" font-size="14" fill="#bb9af7">step 2 · find highest-score adjacent pair → merge → repeat</text>
+    <g transform="translate(0, 20)" font-family="monospace" font-size="13" fill="#c0caf5">
+      <rect x="0" y="0" width="40" height="36" rx="4" fill="rgba(187,154,247,0.15)" stroke="#bb9af7"/>
+      <text x="20" y="22" text-anchor="middle">▁</text>
+      <rect x="44" y="0" width="64" height="36" rx="4" fill="rgba(187,154,247,0.15)" stroke="#bb9af7"/>
+      <text x="76" y="22" text-anchor="middle">He</text>
+      <rect x="112" y="0" width="64" height="36" rx="4" fill="rgba(187,154,247,0.15)" stroke="#bb9af7"/>
+      <text x="144" y="22" text-anchor="middle">ll</text>
+      <rect x="180" y="0" width="40" height="36" rx="4" fill="rgba(187,154,247,0.15)" stroke="#bb9af7"/>
+      <text x="200" y="22" text-anchor="middle">o</text>
+    </g>
+    <g transform="translate(280, 20)" font-family="monospace" font-size="14" fill="#9ece6a">
+      <text x="0" y="22">→</text>
+      <rect x="22" y="0" width="40" height="36" rx="4" fill="rgba(158,206,106,0.15)" stroke="#9ece6a"/>
+      <text x="42" y="22" text-anchor="middle" fill="#c0caf5">▁</text>
+      <rect x="66" y="0" width="100" height="36" rx="4" fill="rgba(158,206,106,0.15)" stroke="#9ece6a"/>
+      <text x="116" y="22" text-anchor="middle" fill="#c0caf5">Hello</text>
+    </g>
+  </g>
+
+  <!-- Step 3: token ids -->
+  <g transform="translate(70, 420)">
+    <text x="0" y="0" font-family="monospace" font-size="14" fill="#9ece6a">step 3 · → token ids</text>
+    <g transform="translate(0, 20)" font-family="monospace" font-size="13" fill="#c0caf5">
+      <rect x="0" y="0" width="60" height="36" rx="4" fill="rgba(158,206,106,0.18)" stroke="#9ece6a"/>
+      <text x="30" y="22" text-anchor="middle">15043</text>
+      <rect x="64" y="0" width="60" height="36" rx="4" fill="rgba(158,206,106,0.18)" stroke="#9ece6a"/>
+      <text x="94" y="22" text-anchor="middle">2787</text>
+    </g>
+  </g>
+
+  <!-- Byte fallback panel -->
+  <g transform="translate(620, 220)">
+    <rect width="510" height="280" rx="12" fill="url(#card)" stroke="#ff9e64" stroke-width="2"/>
+    <text x="20" y="32" font-family="monospace" font-size="14" fill="#ff9e64">byte fallback (chars not in vocab)</text>
+    <line x1="20" y1="46" x2="490" y2="46" stroke="rgba(255,158,100,0.2)"/>
+    <text x="20" y="72" font-family="monospace" font-size="13" fill="#c0caf5">"我" (U+6211)</text>
+    <text x="20" y="92" font-family="monospace" font-size="11" fill="rgba(192,202,245,0.7)">UTF-8 = [0xE6, 0x88, 0x91]</text>
+    <g transform="translate(20, 110)">
+      <rect x="0" y="0" width="80" height="34" rx="4" fill="rgba(255,158,100,0.18)" stroke="#ff9e64"/>
+      <text x="40" y="22" font-family="monospace" font-size="12" fill="#ff9e64" text-anchor="middle">&lt;0xE6&gt;</text>
+      <rect x="86" y="0" width="80" height="34" rx="4" fill="rgba(255,158,100,0.18)" stroke="#ff9e64"/>
+      <text x="126" y="22" font-family="monospace" font-size="12" fill="#ff9e64" text-anchor="middle">&lt;0x88&gt;</text>
+      <rect x="172" y="0" width="80" height="34" rx="4" fill="rgba(255,158,100,0.18)" stroke="#ff9e64"/>
+      <text x="212" y="22" font-family="monospace" font-size="12" fill="#ff9e64" text-anchor="middle">&lt;0x91&gt;</text>
+    </g>
+    <text x="20" y="180" font-family="monospace" font-size="13" fill="#c0caf5">decode():</text>
+    <text x="20" y="200" font-family="monospace" font-size="11" fill="rgba(192,202,245,0.7)">// collect bytes Vec&lt;u8&gt; first</text>
+    <text x="20" y="220" font-family="monospace" font-size="11" fill="rgba(192,202,245,0.7)">// then String::from_utf8_lossy</text>
+    <text x="20" y="252" font-family="monospace" font-size="13" fill="#9ece6a">// → "我"  (3 byte tokens → 1 codepoint)</text>
+  </g>
+
+  <!-- Tech tags -->
+  <g transform="translate(600, 580)" font-family="monospace" font-size="14">
+    <g transform="translate(-200, 0)">
+      <rect x="-80" y="-15" width="160" height="30" rx="6" fill="rgba(187,154,247,0.18)" stroke="#bb9af7" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#bb9af7" text-anchor="middle">SentencePiece</text>
+    </g>
+    <g transform="translate(-20, 0)">
+      <rect x="-50" y="-15" width="100" height="30" rx="6" fill="rgba(125,207,255,0.18)" stroke="#7dcfff" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#7dcfff" text-anchor="middle">BPE</text>
+    </g>
+    <g transform="translate(120, 0)">
+      <rect x="-70" y="-15" width="140" height="30" rx="6" fill="rgba(255,158,100,0.18)" stroke="#ff9e64" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#ff9e64" text-anchor="middle">UTF-8</text>
+    </g>
+  </g>
+
+  <text x="1160" y="650" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.5)" text-anchor="end">blog.simplypatrick.com</text>
+</svg>

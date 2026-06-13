@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff9e64"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2e42"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="50" y="50" width="140" height="4" fill="url(#accent)" rx="2"/>
+
+  <!-- Title -->
+  <text x="60" y="120" font-family="Arvo, serif" font-size="44" fill="#c0caf5" font-weight="bold">用純 Rust 跑 Llama</text>
+  <text x="60" y="158" font-family="Arial, sans-serif" font-size="20" fill="rgba(192,202,245,0.65)">tiny-llm-runner — zero-C-deps inference engine</text>
+
+  <!-- Pipeline diagram: GGUF -> Tensors -> Forward -> Tokens -->
+  <g transform="translate(60, 220)">
+    <!-- Stage 1: GGUF file -->
+    <g>
+      <rect x="0" y="0" width="200" height="150" rx="12" fill="url(#card)" stroke="#7dcfff" stroke-width="2"/>
+      <text x="100" y="40" font-family="monospace" font-size="14" fill="#7dcfff" text-anchor="middle">model.gguf</text>
+      <line x1="20" y1="55" x2="180" y2="55" stroke="rgba(125,207,255,0.3)" stroke-width="1"/>
+      <text x="20" y="80" font-family="monospace" font-size="12" fill="#9ece6a">metadata</text>
+      <text x="20" y="100" font-family="monospace" font-size="12" fill="#9ece6a">tensor index</text>
+      <text x="20" y="120" font-family="monospace" font-size="12" fill="#e0af68">Q4_0 weights</text>
+      <text x="20" y="140" font-family="monospace" font-size="12" fill="#e0af68">Q6_K lm_head</text>
+    </g>
+    <!-- Arrow 1 -->
+    <path d="M 210 75 L 250 75" stroke="#bb9af7" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <!-- Stage 2: Forward Pass -->
+    <g transform="translate(260, 0)">
+      <rect x="0" y="0" width="280" height="320" rx="12" fill="url(#card)" stroke="#bb9af7" stroke-width="2"/>
+      <text x="140" y="30" font-family="monospace" font-size="14" fill="#bb9af7" text-anchor="middle">forward pass · 22 layers</text>
+      <line x1="20" y1="42" x2="260" y2="42" stroke="rgba(187,154,247,0.3)" stroke-width="1"/>
+      <g font-family="monospace" font-size="12" fill="#c0caf5">
+        <text x="20" y="68">embed(token) → x</text>
+        <text x="20" y="92">rmsnorm(x) → xb</text>
+        <text x="20" y="116">matvec(wq, xb) → q</text>
+        <text x="20" y="140">matvec(wk, xb) → k_cache</text>
+        <text x="20" y="164">matvec(wv, xb) → v_cache</text>
+        <text x="20" y="188">apply_rope(q, k)</text>
+        <text x="20" y="212">attention(q, K, V)</text>
+        <text x="20" y="236">silu(gate) * up</text>
+        <text x="20" y="260">matvec(w_down, hb)</text>
+        <text x="20" y="284">x += residuals</text>
+        <text x="20" y="308" fill="#f7768e">→ logits</text>
+      </g>
+    </g>
+    <!-- Arrow 2 -->
+    <path d="M 550 160 L 590 160" stroke="#bb9af7" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <!-- Stage 3: Tokens -->
+    <g transform="translate(600, 0)">
+      <rect x="0" y="0" width="200" height="150" rx="12" fill="url(#card)" stroke="#9ece6a" stroke-width="2"/>
+      <text x="100" y="40" font-family="monospace" font-size="14" fill="#9ece6a" text-anchor="middle">sampled tokens</text>
+      <line x1="20" y1="55" x2="180" y2="55" stroke="rgba(158,206,106,0.3)" stroke-width="1"/>
+      <text x="20" y="80" font-family="monospace" font-size="12" fill="#c0caf5">"Once upon"</text>
+      <text x="20" y="100" font-family="monospace" font-size="12" fill="#c0caf5">"a"</text>
+      <text x="20" y="120" font-family="monospace" font-size="12" fill="#c0caf5">"time"</text>
+      <text x="20" y="140" font-family="monospace" font-size="12" fill="#c0caf5">...</text>
+    </g>
+  </g>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#bb9af7"/>
+    </marker>
+  </defs>
+
+  <!-- Tech tags -->
+  <g transform="translate(600, 615)" font-family="monospace" font-size="14">
+    <g transform="translate(-200, 0)">
+      <rect x="-40" y="-15" width="80" height="30" rx="6" fill="rgba(255,158,100,0.18)" stroke="#ff9e64" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#ff9e64" text-anchor="middle">Rust</text>
+    </g>
+    <g transform="translate(-100, 0)">
+      <rect x="-40" y="-15" width="80" height="30" rx="6" fill="rgba(125,207,255,0.18)" stroke="#7dcfff" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#7dcfff" text-anchor="middle">GGUF</text>
+    </g>
+    <g transform="translate(0, 0)">
+      <rect x="-40" y="-15" width="80" height="30" rx="6" fill="rgba(187,154,247,0.18)" stroke="#bb9af7" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#bb9af7" text-anchor="middle">Llama</text>
+    </g>
+    <g transform="translate(100, 0)">
+      <rect x="-40" y="-15" width="80" height="30" rx="6" fill="rgba(158,206,106,0.18)" stroke="#9ece6a" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#9ece6a" text-anchor="middle">mmap</text>
+    </g>
+    <g transform="translate(200, 0)">
+      <rect x="-40" y="-15" width="80" height="30" rx="6" fill="rgba(247,118,142,0.18)" stroke="#f7768e" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#f7768e" text-anchor="middle">rayon</text>
+    </g>
+  </g>
+
+  <text x="1160" y="650" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.5)" text-anchor="end">blog.simplypatrick.com</text>
+</svg>

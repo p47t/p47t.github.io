@@ -1,0 +1,594 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/"/>
+  <meta property="og:title" content="用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-05-25 17:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="web"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner/">
+            用純 Rust 跑 Llama：從 GGUF 到 Token 的零 C 依賴推論引擎
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</h2>
+      <div class="post-meta">
+        <span class="post-date">May 25, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/web"><span class="label label-primary">web</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架：tiny-llm-runner 與 candle 的架構對照</a></li>
+  
+    <li>May 30, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama：從 GGUF 到 Token 的零 C 依賴推論引擎</a></li>
+  
+    <li>May 25, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)：整合 Vulkan GPU 加速與 libmtmd 本地多模態語音推論</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理：從 GGUF 封裝到 REST API 的影像與文字融合技術</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)：編譯嵌入式 Web UI 與 Axum 靜態資源整合</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站：用 Python、Node.js、Rust 輕鬆串接 OpenAI 相容 API</a></li>
+  
+    <li>May 24, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)：Axum 串流與 OpenAI 相容 API 的實現</a></li>
+  
+    <li>May 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站：llama.cpp 原生整合與 Hugging Face 模型管理</a></li>
+  
+    <li>May 20, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器：記憶體映射與二進位讀取實戰</a></li>
+  
+    <li>Mar 21, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞：所有權如何塑造遊戲引擎的設計</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-emu/">NES 模擬器完成：Bevy 前端、CRT Shader 與 Debug UI</a></li>
+  
+    <li>Mar 19, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-19-nes-apu/">NES APU 模擬器：方波、三角波、噪音與 DMC 取樣</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器：Bank Switching、MMC1 串列暫存器與 MMC3 Scanline IRQ</a></li>
+  
+    <li>Mar 17, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器：Strobe 協議、Input Mapping 與完整系統整合</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-ppu/">NES PPU 模擬器：Catch-Up 同步、VBlank 競態與 Edge-Triggered NMI</a></li>
+  
+    <li>Mar 16, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU：Cycle-Accurate NES 模擬器</a></li>
+  
+    <li>Feb 23, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器：Arc&lt;dyn Trait&gt;、LRU 快取與非同步預載</a></li>
+  
+    <li>Feb 18, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器：用 FFmpeg 剖析影音檔案與打造 TUI</a></li>
+  
+    <li>Feb 15, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM：把 Ultra HDR 圖片切割搬到瀏覽器</a></li>
+  
+    <li>Feb 14, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-14-tilesplit/">TileSplit：用 Rust 打造保留 Ultra HDR 資訊的圖片切割工具</a></li>
+  
+    <li>Feb 13, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro：builder-derive 實戰</a></li>
+  
+    <li>Feb 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-wgpu-game-of-life/">用 Rust &#43; WebGPU 在瀏覽器跑 Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk：從 Rust 到 Android APK 的完整流程</a></li>
+  
+    <li>Feb 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-08-flashcard-app/">從間隔重複記憶卡學習 Rust 程式設計</a></li>
+  
+    <li>Feb 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/02-07-guitar-fretboard/">從吉他指板視覺化學習 Rust 程式設計</a></li>
+  
+    <li>Jan 31, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-31-gpui-calculator/">從 GPUI 計算機學習 Rust 程式設計</a></li>
+  
+    <li>Jan 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-06-rust-wasm-markdown-editor/">用 Rust 和 WebAssembly 打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列：系統設計與核心概念</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/05-25-llm-local-studio-4/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Antigravity）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p>在先前的系列文章中，我們已經為本地推論引擎奠定了非常堅實的基礎：</p>
+<ol>
+<li><strong><a href="/posts/2026/05-21-llm-local-studio">第一篇：基礎架構與 C FFI 整合</a></strong>：實現了模型註冊表、Hugging Face 下載管理，並直接透過 FFI 呼叫 <code>llama.cpp</code> 原生函式庫。</li>
+<li><strong><a href="/posts/2026/05-24-llm-local-studio-2">第二篇：非同步 Web API 伺服器</a></strong>：使用 Axum 搭建 HTTP 伺服器，設計了非同步與同步（FFI 執行緒）邊界的解耦架構，並實現相容於 OpenAI 規範的 SSE 令牌串流。</li>
+<li><strong><a href="/posts/2026/05-24-llm-local-studio-3">第三篇：編譯嵌入式 Web UI 與 Axum 靜態資源整合</a></strong>：利用 <code>rust-embed</code> 將靜態網頁打包進 Rust 執行檔、實現了 SPA Fallback 路由，並用 Vanilla JS 打造出精美的暗黑毛玻璃聊天介面。</li>
+</ol>
+<p>走到這裡，我們的「LLM 本地工作室」已經是一套頗成熟的文字對談系統了。不過在今天這個多模態（Multimodal）滿天飛的時代，只能打字聊天，是不是有點單調呢？我想，如果我們的本地服務也能<strong>直接聽懂我們的聲音</strong>，還能在瀏覽器上玩即時的「語音對講」，那體驗大概會一口氣上好幾個檔次吧。</p>
+<p>為了把這件事做出來，我們在最新的 <a href="https://github.com/p47t/rust-52-projects/tree/master/llm-local-studio-4"><code>llm-local-studio-4</code></a> 中，帶來了兩項重量級的升級：</p>
+<ol>
+<li><strong>整合 Vulkan GPU 硬體加速</strong>：擺脫 CPU 推論的緩慢，讓生成速度成倍飆升。</li>
+<li><strong>導入 <code>libmtmd</code> 實現本地多模態音訊（Audio）直接推論</strong>：無需先用額外的語音轉文字（STT）模型，而是將聲音特徵直接送入多模態大模型進行解碼！</li>
+</ol>
+<p>這篇文章我會帶你一路拆解：怎麼在 Rust 中開啟 Vulkan GPU 加速、怎麼用 <code>libmtmd</code> 把音訊與文字的向量融合在一起、後端怎麼透過 <code>ffmpeg</code> 子行程把瀏覽器的 WebM 格式轉成標準 WAV，以及前端怎麼用 HTML5 <code>MediaRecorder</code> 原生串接相容於 OpenAI 格式的多模態 API。</p>
+<h3 id="技術關鍵一跨平台-gpu-加速的救星--vulkan-整合">技術關鍵一：跨平台 GPU 加速的救星 —— Vulkan 整合</h3>
+<p>要在本地流暢跑多模態大模型，GPU 加速實在是少不了。只是常見的 CUDA 方案痛點頗多：它只認 NVIDIA 顯示卡，而且光是裝驅動跟 CUDA Toolkit 就臃腫到不行——對一個想要做到輕量、好部署的 Rust 執行檔來說，這實在是個障礙。</p>
+<p>為了真正做到「跨平台、低依賴」，我們在 <code>Cargo.toml</code> 中把 <code>llama-cpp-4</code> 推論引擎的 <strong><code>vulkan</code></strong> 特徵打開：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">llama-cpp-4</span> = { <span style="color:#a6e22e">version</span> = <span style="color:#e6db74">&#34;0.3.0&#34;</span>, <span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;mtmd&#34;</span>, <span style="color:#e6db74">&#34;vulkan&#34;</span>] }</span></span></code></pre></div>
+
+<p>Vulkan 是一套現代、跨平台的低階圖形與計算 API。不管你手上是 NVIDIA、AMD 還是 Intel 的顯示卡，只要驅動支援 Vulkan，我們的 Rust 程式就能直接叫顯示卡幫忙算——這點真是頗方便。</p>
+<p>在 Rust 程式碼裡，開啟 GPU 加速也簡單到有點不真實。在 <code>src/inference.rs</code> 的 <code>load_model</code> 函式中，我們只要設好 <code>n_gpu_layers</code> 這個參數就行了：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> model <span style="color:#f92672">=</span> LlamaModel::load_from_file(
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>backend, 
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>request.path, 
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>LlamaModelParams::default().with_n_gpu_layers(<span style="color:#ae81ff">99</span>) <span style="color:#75715e">// 將 99 層（即所有層）模型載入 GPU 記憶體
+</span></span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>.with_context(<span style="color:#f92672">||</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;failed to load model </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, request.path.display()))<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p>就靠這一行，<code>llama.cpp</code> 底層會自動把模型權重搬進顯示記憶體（VRAM）。有了 Vulkan 撐腰，就算只是中階顯卡，模型的 Tokens/s 生成速度也馬上翻了好幾倍，總算給後面那段流暢的語音對答打好了硬體底子。</p>
+<h3 id="技術關鍵二本地多模態音訊推論的奧秘--libmtmd">技術關鍵二：本地多模態音訊推論的奧秘 —— <code>libmtmd</code></h3>
+<p>傳統的「語音對話」通常採用<strong>級聯（Cascade）架構</strong>：</p>
+<ol>
+<li>麥克風錄音 → 2. 送給 STT 模型（如 Whisper）轉成文字 → 3. 文字送給 LLM 產生回答 → 4. 回答文字送給 TTS 模型唸出來。</li>
+</ol>
+<p>這套架構放在本地跑實在是笨重，得同時載入好幾個模型；更可惜的是，語音裡的情緒、語調這些特徵，一轉成文字就全沒了。</p>
+<p>而在 <code>llm-local-studio-4</code> 中，我們改走 <strong>Direct Multimodal Audio（直接音訊多模態）</strong> 這條路。我們用支援音訊輸入的多模態模型（例如 <code>gemma-4-E4B-it</code>），再搭配它專屬的 <strong>音訊投影器（Audio Projector, mmproj）</strong>。</p>
+<p>其底層數據流如下：</p>
+
+  <div class="mermaid">
+    graph TD
+    Audio[輸入 WAV 語音檔] --> AudioEncoder[音訊編碼器]
+    AudioEncoder --> Projector[音訊投影器 mmproj]
+    Projector --> AudioEmbeds[音訊特徵向量 Audio Embeddings]
+    
+    Text[輸入文字 Prompt + 預留置換符] --> Tokenizer[分詞器]
+    Tokenizer --> TextEmbeds[文字特徵向量 Text Embeddings]
+    
+    AudioEmbeds --> Merge[在預留位置將文字向量替換為音訊向量]
+    TextEmbeds --> Merge
+    
+    Merge --> LlamaEval[llama.cpp 一次性評估完整 Context]
+    LlamaEval --> SampleLoop[標準採樣輸出 Token 串流]
+  </div>
+
+<p>在 Rust 中，我們透過 <code>llama_cpp_4::mtmd</code> 模組來實作這套頗精密的操作（細節都在 <code>src/inference.rs</code> 裡）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 1. 從音訊投影器檔案 (mmproj.gguf) 初始化多模態上下文
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> params <span style="color:#f92672">=</span> MtmdContextParams::default();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> mtmd_ctx <span style="color:#f92672">=</span> MtmdContext::init_from_file(<span style="color:#f92672">&amp;</span>mmproj_path, <span style="color:#f92672">&amp;</span>session.model, params)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 將輸入的音訊檔案載入為 MtmdBitmap (此處 libmtmd 會處理對數梅爾頻譜圖轉換與特徵提取)
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> bitmap <span style="color:#f92672">=</span> MtmdBitmap::from_file(mtmd_ctx, <span style="color:#f92672">&amp;</span>request.audio_path)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 在文字 Prompt 中加入特殊的媒體預留標記 (Default Marker)
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> marker <span style="color:#f92672">=</span> MtmdContext::default_marker();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> full_prompt <span style="color:#f92672">=</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{}</span><span style="color:#e6db74"> </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, request.prompt, marker);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 4. Tokenize：將文字與音訊資料進行融合，將預留標記替換為音訊向量
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> text <span style="color:#f92672">=</span> MtmdInputText::new(<span style="color:#f92672">&amp;</span>full_prompt, <span style="color:#66d9ef">true</span>, <span style="color:#66d9ef">true</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> bitmaps <span style="color:#f92672">=</span> [<span style="color:#f92672">&amp;</span>bitmap];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> chunks <span style="color:#f92672">=</span> MtmdInputChunks::new();
+</span></span><span style="display:flex;"><span>mtmd_ctx.tokenize(<span style="color:#f92672">&amp;</span>text, <span style="color:#f92672">&amp;</span>bitmaps, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> chunks)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 5. 評估（Evaluation）音訊與文字的混合向量
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> lctx <span style="color:#f92672">=</span> session.model.new_context(<span style="color:#f92672">&amp;</span>session.backend, self.loaded_context_params.clone())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> n_past <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span><span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>mtmd_ctx.eval_chunks(lctx.as_ptr(), <span style="color:#f92672">&amp;</span>chunks, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, lctx.n_batch() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>, <span style="color:#66d9ef">true</span>, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> n_past)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 6. 進入標準的 Token 採樣循環，即時輸出文字答案
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> batch <span style="color:#f92672">=</span> LlamaBatch::new(<span style="color:#ae81ff">512</span>, <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (output_text, generated_tokens) <span style="color:#f92672">=</span> sample_loop(
+</span></span><span style="display:flex;"><span>    session,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> lctx,
+</span></span><span style="display:flex;"><span>    batch,
+</span></span><span style="display:flex;"><span>    n_past, <span style="color:#75715e">// 評估音訊後的起始位置
+</span></span></span><span style="display:flex;"><span>    request.max_tokens,
+</span></span><span style="display:flex;"><span>    request.seed,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>request.stream_callback,
+</span></span><span style="display:flex;"><span>)<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p>這套實作完全跳過了傳統的「語音轉文字（STT）」步驟，讓大模型的大腦<strong>直接</strong>去聽、去理解你的聲波向量——這才是真正的原生多模態互動啊。</p>
+<h3 id="技術關鍵三後端-webm-到-wav-的音訊處理管線">技術關鍵三：後端 WebM 到 WAV 的音訊處理管線</h3>
+<p>講到這裡，身為開發者的你大概已經想到一個很現實的問題了：</p>
+<blockquote><p>現代瀏覽器透過 MediaRecorder 錄製的音訊，通常是 <code>audio/webm</code> (包含 Opus 編碼) 格式；然而底層 <code>libmtmd</code> 進行特徵提取時，只收標準的 <code>16 kHz 單聲道 (Mono) 16-bit WAV</code> 格式。</p>
+</blockquote><p>為了填平這道格式鴻溝，我們在 Axum 後端的 <code>/v1/chat/completions</code> API 路由裡（<code>src/api/routes.rs</code>），動手做了一個<strong>即時音訊轉換管線</strong>。</p>
+<p>當後端發現 API 請求裡夾帶了音訊，它就會：</p>
+<ol>
+<li>將前端傳送的 Base64 字串解碼回原始的 WebM 二進位數據。</li>
+<li>啟動本機的 <code>ffmpeg</code> 作為子行程（Subprocess），並透過管道（Pipe）進行流式轉換，避免在硬碟上寫入未壓縮的超大暫存檔。</li>
+</ol>
+<p>具體實作在 <code>audio_bytes_to_wav</code> 函數中：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">audio_bytes_to_wav</span>(audio_bytes: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">u8</span>], _format_hint: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) -&gt; Result<span style="color:#f92672">&lt;</span>std::path::PathBuf, String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> tmp_dir <span style="color:#f92672">=</span> std::env::temp_dir();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> wav_path <span style="color:#f92672">=</span> tmp_dir.join(<span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;llm_audio_</span><span style="color:#e6db74">{}</span><span style="color:#e6db74">.wav&#34;</span>, uuid::Uuid::new_v4()));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 啟動 ffmpeg 子行程
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> child <span style="color:#f92672">=</span> Command::new(<span style="color:#e6db74">&#34;ffmpeg&#34;</span>)
+</span></span><span style="display:flex;"><span>        .args([
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;-y&#34;</span>,            <span style="color:#75715e">// 若檔案存在則覆寫
+</span></span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;-i&#34;</span>, <span style="color:#e6db74">&#34;pipe:0&#34;</span>,  <span style="color:#75715e">// 從標準輸入 (stdin) 讀取 WebM 數據
+</span></span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;-ar&#34;</span>, <span style="color:#e6db74">&#34;16000&#34;</span>,  <span style="color:#75715e">// 設定採樣率為 16000 Hz
+</span></span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;-ac&#34;</span>, <span style="color:#e6db74">&#34;1&#34;</span>,      <span style="color:#75715e">// 單聲道 (Mono)
+</span></span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;-f&#34;</span>, <span style="color:#e6db74">&#34;wav&#34;</span>,     <span style="color:#75715e">// 強制輸出格式為 wav
+</span></span></span><span style="display:flex;"><span>            wav_path.to_str().ok_or(<span style="color:#e6db74">&#34;temp path not UTF-8&#34;</span>)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>        ])
+</span></span><span style="display:flex;"><span>        .stdin(Stdio::piped())
+</span></span><span style="display:flex;"><span>        .stdout(Stdio::null())
+</span></span><span style="display:flex;"><span>        .stderr(Stdio::null())
+</span></span><span style="display:flex;"><span>        .spawn()
+</span></span><span style="display:flex;"><span>        .map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;Failed to spawn ffmpeg: </span><span style="color:#e6db74">{e}</span><span style="color:#e6db74">&#34;</span>))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 將 WebM 二進位數據寫入 ffmpeg 的標準輸入
+</span></span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> stdin <span style="color:#f92672">=</span> child.stdin.take().ok_or(<span style="color:#e6db74">&#34;Failed to open ffmpeg stdin&#34;</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        stdin.write_all(audio_bytes).map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;Failed to write audio to ffmpeg: </span><span style="color:#e6db74">{e}</span><span style="color:#e6db74">&#34;</span>))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 等待轉換完成
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> status <span style="color:#f92672">=</span> child.wait().map_err(<span style="color:#f92672">|</span>e<span style="color:#f92672">|</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;ffmpeg wait error: </span><span style="color:#e6db74">{e}</span><span style="color:#e6db74">&#34;</span>))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>status.success() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Err(<span style="color:#e6db74">&#34;ffmpeg failed to convert audio to WAV&#34;</span>.to_string());
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Ok(wav_path)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>等推論引擎拿到轉好的 <code>wav_path</code>、跑完 <code>eval_chunks</code> 之後，後端會<strong>馬上把那個暫存檔刪掉</strong>（<code>std::fs::remove_file</code>），確保你的隱私資料跟暫存檔不會賴在硬碟上不走。畢竟都做本地推論了，總不能在這種地方漏氣吧。</p>
+<h3 id="技術關鍵四前端-ui-語音錄製與-openai-多模態-api-串接">技術關鍵四：前端 UI 語音錄製與 OpenAI 多模態 API 串接</h3>
+<p>前端這邊，我們跟著 <strong>OpenAI 最新的多模態語音 API 規範</strong>走，把網頁端錄到的語音打包成 <code>ContentPart</code> 陣列送給後端。</p>
+<p>前端 <code>ui/src/main.ts</code> 用瀏覽器原生的 <code>navigator.mediaDevices.getUserMedia</code> 拿麥克風權限，再開 <code>MediaRecorder</code> 錄 WebM 音訊：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 1. 啟動錄音
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">stream</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">navigator</span>.<span style="color:#a6e22e">mediaDevices</span>.<span style="color:#a6e22e">getUserMedia</span>({ <span style="color:#a6e22e">audio</span>: <span style="color:#66d9ef">true</span> });
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">mediaRecorder</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">MediaRecorder</span>(<span style="color:#a6e22e">stream</span>, { <span style="color:#a6e22e">mimeType</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;audio/webm&#39;</span> });
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">audioChunks</span> <span style="color:#f92672">=</span> [];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">mediaRecorder</span>.<span style="color:#a6e22e">ondataavailable</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">event</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">event</span>.<span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">size</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">audioChunks</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">event</span>.<span style="color:#a6e22e">data</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">mediaRecorder</span>.<span style="color:#a6e22e">onstop</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">async</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 將錄音數據打包為 Blob
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">audioBlob</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Blob</span>(<span style="color:#a6e22e">audioChunks</span>, { <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;audio/webm&#39;</span> });
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">stream</span>.<span style="color:#a6e22e">getTracks</span>().<span style="color:#a6e22e">forEach</span>(<span style="color:#a6e22e">track</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">track</span>.<span style="color:#a6e22e">stop</span>());
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">handleAudioMultimodal</span>(<span style="color:#a6e22e">audioBlob</span>);
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">mediaRecorder</span>.<span style="color:#a6e22e">start</span>();</span></span></code></pre></div>
+
+<p>錄音一結束，前端就會把 Blob 轉成 Base64，再組出一個符合 OpenAI 規格的多模態請求體（Request Body）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 將 Blob 轉成 Base64 字串
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">base64Data</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">string</span>&gt;((<span style="color:#a6e22e">resolve</span>, <span style="color:#a6e22e">reject</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">reader</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">FileReader</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">reader</span>.<span style="color:#a6e22e">onloadend</span> <span style="color:#f92672">=</span> () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">result</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">reader</span>.<span style="color:#a6e22e">result</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">base64</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">result</span>.<span style="color:#a6e22e">split</span>(<span style="color:#e6db74">&#39;,&#39;</span>)[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resolve</span>(<span style="color:#a6e22e">base64</span>);
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">reader</span>.<span style="color:#a6e22e">onerror</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">reject</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">reader</span>.<span style="color:#a6e22e">readAsDataURL</span>(<span style="color:#a6e22e">audioBlob</span>);
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 建立多模態內容片段
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">contentParts</span> <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>  { <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;text&#39;</span>, <span style="color:#a6e22e">text</span>: <span style="color:#66d9ef">chatInput.value.trim</span>() <span style="color:#f92672">||</span> <span style="color:#e6db74">&#39;Listen and respond to this audio input.&#39;</span> },
+</span></span><span style="display:flex;"><span>  {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;input_audio&#39;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">input_audio</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">data</span>: <span style="color:#66d9ef">base64Data</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">format</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;webm&#39;</span> <span style="color:#75715e">// 瀏覽器錄製的 webm 格式
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 推入對話歷史紀錄
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">messages</span>.<span style="color:#a6e22e">push</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">role</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;user&#39;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">content</span>: <span style="color:#66d9ef">contentParts</span> <span style="color:#75715e">// 陣列格式的多模態訊息
+</span></span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 呼叫 Axum 後端 (支援與純文字相同的 SSE 串流輸出)
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">await</span> <span style="color:#a6e22e">generateResponse</span>();</span></span></code></pre></div>
+
+<p>這樣一搞，我們的 UI 跟後端 API 通用性就頗高了。同一套 UI，你可以拿去接線上的 OpenAI 語音 API，也可以反過來用任何支援 OpenAI 協定的第三方工具（像 Continue 或各種 CLI）無縫接上我們本地的多模態語音服務——兩邊都通，是不是頗划算？</p>
+<h3 id="如何構建與運行">如何構建與運行？</h3>
+<p>想親手玩玩這款「能聽、能說」又有 GPU 加速的本地多模態工作站嗎？其實流程頗簡單：</p>
+<h4 id="1-下載多模態模型與投影器">1. 下載多模態模型與投影器</h4>
+<p>至 Hugging Face 下載多模態語音模型 <code>gemma-4-E4B-it</code> 及其對應的音訊投影器 <code>mmproj-gemma-4-E4B-it-BF16.gguf</code>，並放置於專案根目錄的 <code>models/</code> 下。</p>
+<h4 id="2-一鍵啟動服務">2. 一鍵啟動服務</h4>
+<p>用 Cargo 把服務拉起來。除了指定要載入的主模型，你還得多加一個 <code>--mmproj</code> 參數指到投影器路徑，才能初始化多模態上下文：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 啟動服務並加載 Vulkan GPU 加速與音訊投影器</span>
+</span></span><span style="display:flex;"><span>cargo run --release -- serve gemma-4-E4B-it-Q4_K_M.gguf --mmproj models/huggingface/lmstudio-community/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf --port <span style="color:#ae81ff">8080</span></span></span></code></pre></div>
+
+<h4 id="3-打開瀏覽器用語音聊天">3. 打開瀏覽器用語音聊天</h4>
+<p>開瀏覽器連到 <code>http://localhost:8080</code>。這時你會發現輸入框左邊多了一個「麥克風」圖示：</p>
+<ul>
+<li>點一下麥克風就開始錄音（狀態列跟按鈕會跑出錄音中的呼吸燈特效）。</li>
+<li>再點一下收音，前端會自動把語音編碼好送出去。</li>
+<li>本地 LLM 收到聲音後，靠 Vulkan GPU 加速很快就解完碼，再用流暢的打字機效果（SSE Stream）即時把答案吐出來囉！</li>
+</ul>
+<h3 id="總結與展望">總結與展望</h3>
+<p>在 <code>llm-local-studio-4</code> 裡，我們的本地 LLM 工作站總算從「純文字」進化到「硬體加速多模態」，這一步跨得實在是頗大。</p>
+<p>走過這一章，我們學到了：</p>
+<ul>
+<li>如何在 Rust 中整合 <strong>Vulkan GPU API</strong> 來進行高效能的張量計算。</li>
+<li>深入探索了 <strong><code>libmtmd</code> 底層多模態編碼器與投影器（MLP）</strong> 的融合原理與程式碼實現。</li>
+<li>搭建了後端多執行緒子行程的 <code>ffmpeg</code> 影音流式轉換管線。</li>
+<li>掌握了前端 HTML5 錄音與 <strong>OpenAI 多模態 API 標準</strong> 的完美整合。</li>
+</ul>
+<p>我想，原生多模態應該就是 AI 互動接下來的走向吧。能直接吃聲音、影像這些來自物理世界訊號的模型，表達能力遠比只會讀文字的高出一截。下一篇我們會在這個基礎上再往前一步，挑戰把**本地相機影像（Vision）<strong>跟</strong>即時語音輸出（TTS）**深度整合起來，做出一個完全跑在本機、隱私上也完全不用擔心的「本地雙向影音對話助理」——光想就有點期待。</p>
+<p>本專案的原始碼都收在我們的 Rust 52 Projects 挑戰計畫裡。如果你也對本地 AI 跟 Rust 系統編程有興趣，歡迎來倉庫點顆 Star，順便自己動手玩玩看 :-)</p>
+<p>我們下一個 Rust 專案見囉！</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+
+</body>
+</html>

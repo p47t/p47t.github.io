@@ -1,0 +1,600 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-09-tiny-llm-deep-dive-9-main/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-09-tiny-llm-deep-dive-9-main/"/>
+  <meta property="og:title" content="tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-06-09 12:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/06-08-tiny-llm-deep-dive-8-sampler/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            tiny-llm-runner 深入解讀 (8)：sampler.rs —— Greedy、Top-K 與 xorshift PRNG
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能</h2>
+      <div class="post-meta">
+        <span class="post-date">June 9, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>tiny-llm-runner-deep-dive</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Jun 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-09-tiny-llm-deep-dive-9-main/">tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能</a></li>
+  
+    <li>Jun 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-08-tiny-llm-deep-dive-8-sampler/">tiny-llm-runner 深入解讀 (8)：sampler.rs —— Greedy、Top-K 與 xorshift PRNG</a></li>
+  
+    <li>Jun 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-07-tiny-llm-deep-dive-7-tokenizer/">tiny-llm-runner 深入解讀 (7)：tokenizer.rs —— SentencePiece-BPE 與 Byte Fallback</a></li>
+  
+    <li>Jun 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-06-tiny-llm-deep-dive-6-runner/">tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排</a></li>
+  
+    <li>Jun 05, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-05-tiny-llm-deep-dive-5-ops/">tiny-llm-runner 深入解讀 (5)：ops.rs —— Transformer 的六種樂高積木</a></li>
+  
+    <li>Jun 04, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-04-tiny-llm-deep-dive-4-model/">tiny-llm-runner 深入解讀 (4)：model.rs —— 把扁平張量組成 Llama 結構</a></li>
+  
+    <li>Jun 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-03-tiny-llm-deep-dive-3-tensor/">tiny-llm-runner 深入解讀 (3)：tensor.rs —— 用生命週期蓋一層薄殼</a></li>
+  
+    <li>Jun 02, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/">tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心</a></li>
+  
+    <li>Jun 01, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-01-tiny-llm-deep-dive-1-config/">tiny-llm-runner 深入解讀 (1)：config.rs —— 把 GGUF metadata 變成 Rust 強型別</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/06-09-tiny-llm-deep-dive-9-main/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Claude）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p>歷經八篇深入解讀，我們終於來到 <code>tiny-llm-runner</code> 的最後一塊——<code>main.rs</code>。前面拆了那麼多零件，總得有人把它們兜起來吧？這個檔案就 130 行，是把所有元件串起來的「指揮台」。</p>
+<p>這也是整個系列的最後一篇了。除了講 <code>main.rs</code>，我想在最後對整個專案做一個<strong>全局的效能最佳化清單</strong>，把每個檔案散落的優化點串起來看——算是給這趟旅程一個交代。</p>
+<h3 id="概念一cli-參數設計">概念一：CLI 參數設計</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Parser, Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[command(version, about = </span><span style="color:#e6db74">&#34;Pure-Rust llama-architecture inference over a GGUF model&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Args</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long)]</span>                              model: <span style="color:#a6e22e">PathBuf</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value = </span><span style="color:#e6db74">&#34;Once upon a time&#34;</span><span style="color:#75715e">)]</span> prompt: String,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value_t = 64)]</span>        n_predict: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value_t = 0.8)]</span>       temperature: <span style="color:#66d9ef">f32</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(long, default_value_t = 40)]</span>               top_k: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(long, default_value_t = 42)]</span>               seed: <span style="color:#66d9ef">u64</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(long)]</span>                                     no_bos: <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(long, default_value = </span><span style="color:#e6db74">&#34;llama&#34;</span><span style="color:#75715e">)]</span>            rope: String,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>clap</code> 的 derive macro 把 CLI parsing 變成宣告式：每個欄位加上 <code>#[arg(...)]</code> 就自動產生 <code>--model</code>、<code>--prompt</code> 之類的 flag。這比手寫 argument parser 短得多，而且 <code>--help</code>、type validation、default value 全都免費送你，實在是頗划算。</p>
+<h4 id="clap-的-zero-cost-abstraction"><code>clap</code> 的 zero-cost abstraction</h4>
+<p><code>clap</code> 的 macro 在 compile-time 就生成好 parsing code，runtime 沒有任何 reflection。也就是說啟動時 <code>Args::parse()</code> 是純 native code，速度比 Python 的 <code>argparse</code> 快上好幾個量級。</p>
+<p>對 LLM runner 來說 CLI 啟動時間其實不是什麼大問題，不過<strong>這個習慣很 Rust——把 metadata 處理推到 compile time，runtime 只留下純粹的計算</strong>。看多了你會發現整個語言都在貫徹這件事。</p>
+<h3 id="概念二unsafe-mmap">概念二：unsafe Mmap</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> file <span style="color:#f92672">=</span> File::open(<span style="color:#f92672">&amp;</span>args.model)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> mmap <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { Mmap::map(<span style="color:#f92672">&amp;</span>file)<span style="color:#f92672">?</span> };</span></span></code></pre></div>
+
+<p>整個專案唯一一個 <code>unsafe</code>，就這麼一行。為什麼 mmap 非得 unsafe 不可？</p>
+<p>因為 mmap 違反了 Rust 的記憶體模型假設：<strong>Rust 假設一個 <code>&amp;[u8]</code> 的內容在它的生命週期內不會被外部修改</strong>。但 mmap 對應的檔案如果被另一個 process 改掉（甚至 truncate），這個 <code>&amp;[u8]</code> 就會看到變了樣的資料、最慘還會吃到 SIGBUS。</p>
+<p><code>unsafe</code> 說穿了就是程式設計師對編譯器的一句承諾：「我知道這違反一般規則，使用過程中檔案不會被外部動到，我自己負責」。對 LLM 模型檔來說這承諾其實很好守——模型檔通常就是 read-only 的，誰會去動它呢。</p>
+<p>這也呼應了 Rust 的一個設計哲學：<strong>unsafe 不是禁忌，而是被精準框定的工具</strong>。整個 codebase 只有這一行 unsafe，但它被框得清清楚楚——出了問題，責任就在這一行，跑不掉。</p>
+<h3 id="演算法核心prefill--decode-二段式">演算法核心：Prefill / Decode 二段式</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 1. Prefill —— 處理 prompt
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> prefill_start <span style="color:#f92672">=</span> Instant::now();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> last_logits: Option<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span> <span style="color:#f92672">=</span> None;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#f92672">&amp;</span>tok <span style="color:#66d9ef">in</span> <span style="color:#f92672">&amp;</span>prompt_ids {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> logits <span style="color:#f92672">=</span> runner.forward(tok);
+</span></span><span style="display:flex;"><span>    last_logits <span style="color:#f92672">=</span> Some(logits.to_vec());
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> prefill_elapsed <span style="color:#f92672">=</span> prefill_start.elapsed();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. Decode —— 生成 token
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> decode_start <span style="color:#f92672">=</span> Instant::now();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> generated: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u32</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> Vec::with_capacity(args.n_predict);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> logits <span style="color:#f92672">=</span> last_logits.expect(<span style="color:#e6db74">&#34;empty prompt&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>args.n_predict {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next <span style="color:#f92672">=</span> sampler.sample(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> logits);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> next <span style="color:#f92672">==</span> tokenizer.eos { <span style="color:#66d9ef">break</span>; }
+</span></span><span style="display:flex;"><span>    generated.push(next);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> piece <span style="color:#f92672">=</span> tokenizer.decode(<span style="color:#f92672">&amp;</span>[next]);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">print!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{piece}</span><span style="color:#e6db74">&#34;</span>);
+</span></span><span style="display:flex;"><span>    std::io::stdout().flush().ok();
+</span></span><span style="display:flex;"><span>    logits <span style="color:#f92672">=</span> runner.forward(next).to_vec();
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="為什麼分兩階段">為什麼分兩階段？</h4>
+<p>LLM 推論天然分兩個階段：</p>
+<ul>
+<li><strong>Prefill</strong>：把使用者的 prompt 餵進去，建立 KV cache。<strong>logits 只有最後一個 token 的有用</strong>——前面的丟掉。</li>
+<li><strong>Decode</strong>：每次 forward 一個 token、抽下一個。每個 logits 都會用到。</li>
+</ul>
+<p>這兩個階段的特性差異很有意思：</p>
+<ul>
+<li>Prefill 的 token 全都是已知的，理論上可以<strong>批次處理</strong>（用 GEMM 取代 GEMV）。</li>
+<li>Decode 就只能乖乖 sequential（下一個 token 取決於上一個，沒得偷懶）。</li>
+</ul>
+<p>不過我目前 prefill 也是 sequential（一個 token 一個 forward）的，這就是個明擺著的優化機會了——後面清單會再回來算這筆帳。</p>
+<h3 id="演算法核心toks-的計算">演算法核心：tok/s 的計算</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#a6e22e">eprintln!</span>(<span style="color:#e6db74">&#34;[prefill] </span><span style="color:#e6db74">{}</span><span style="color:#e6db74"> tok in </span><span style="color:#e6db74">{:.2}</span><span style="color:#e6db74">s (</span><span style="color:#e6db74">{:.1}</span><span style="color:#e6db74"> tok/s)&#34;</span>,
+</span></span><span style="display:flex;"><span>    prompt_ids.len(),
+</span></span><span style="display:flex;"><span>    prefill_elapsed.as_secs_f64(),
+</span></span><span style="display:flex;"><span>    prompt_ids.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">/</span> prefill_elapsed.as_secs_f64().max(<span style="color:#ae81ff">1e-9</span>),
+</span></span><span style="display:flex;"><span>);</span></span></code></pre></div>
+
+<p><code>max(1e-9)</code> 是用來防止 0 秒（極短 prompt）導致除以零。<code>f64::max(self, other)</code> 回傳兩者較大者，所以 <code>0.0.max(1e-9) = 1e-9</code>，分母就保證不會是 0 了。</p>
+<p>這種小細節很容易忘記寫喔——prompt 只有一個 token 時，prefill 可能是 0.001 秒，算出來還有意義；但要是快到變成 0 秒（測試環境有時就是這麼誇張），分母歸零你就會收到一個漂亮的 NaN。</p>
+<h3 id="rust-用法streaming-output-的-flush">Rust 用法：streaming output 的 flush</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#a6e22e">print!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{piece}</span><span style="color:#e6db74">&#34;</span>);
+</span></span><span style="display:flex;"><span>std::io::stdout().flush().ok();</span></span></code></pre></div>
+
+<p><code>print!</code> 寫進 stdout buffer，但<strong>不會馬上顯示</strong>——一般 stdout 是 line-buffered，要等到 <code>\n</code> 才 flush。LLM 串流輸出又沒有 <code>\n</code>，所以非得手動 flush 不可，不然你會傻等半天什麼都看不到，還以為當機了。</p>
+<p><code>flush().ok()</code> 把 <code>Result&lt;(), Error&gt;</code> 轉成 <code>Option&lt;()&gt;</code> 然後丟掉——白話講就是「這個 flush 失不失敗我才懶得管」。stdout 寫入失敗本來就極罕見（例如 pipe 被人砍掉），就算真的失敗我們也無能為力，silent ignore 反而是最合理的處理。</p>
+<h3 id="rust-用法anyhow-的錯誤處理">Rust 用法：anyhow 的錯誤處理</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... 整個 main 都是 Result-friendly 的，用 ? 早期返回
+</span></span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>fn main() -&gt; Result&lt;()&gt;</code> 是 Rust 處理 CLI errors 最乾淨的寫法。任何 <code>?</code> 失敗都會把錯誤往 main 外面丟，runtime 自動 print 出來再 exit 1，連 error handling 的 boilerplate 都省了。</p>
+<p><code>anyhow::Result&lt;T&gt;</code> 不過就是 <code>Result&lt;T, anyhow::Error&gt;</code> 的別名。<code>anyhow::Error</code> 可以從任何 <code>std::error::Error</code> 自動轉換——這就是為什麼我能把 <code>std::io::Error</code>、parser error、自定義的 <code>bail!</code> 全混在一起，通通用一個 <code>?</code> 打發掉，實在是頗舒服。</p>
+<h3 id="rust-用法環境變數和-stderr">Rust 用法：環境變數和 stderr</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#a6e22e">eprintln!</span>(<span style="color:#e6db74">&#34;[loaded] n_layer=</span><span style="color:#e6db74">{}</span><span style="color:#e6db74"> ...&#34;</span>, config.n_layer, <span style="color:#f92672">..</span>.);</span></span></code></pre></div>
+
+<p><code>eprintln!</code> 寫到 stderr，<code>println!</code> 寫到 stdout。我刻意把 metadata 印在 stderr、生成內容印在 stdout——這樣你用 <code>./tiny-llm-runner &gt; out.txt</code> 時，out.txt 裡就只有乾淨的生成內容，那些 metadata 還是乖乖留在 console 上，不會污染你的檔案。</p>
+<p>這是 Unix 工具的老慣例了。在 Rust 裡用兩個不同的 macro 就自然支援，不必特別費心。</p>
+<h3 id="整個專案的端到端-forward-pass-流程">整個專案的端到端 forward pass 流程</h3>
+
+  <div class="mermaid">
+    flowchart TD
+    A[CLI Args] --> B[File::open + Mmap]
+    B --> C[parse_gguf]
+    C --> D[LlamaConfig::from_gguf]
+    C --> E[LlamaModel::load<br/>建 TensorView]
+    C --> F[Tokenizer::from_gguf]
+    F --> G[encode prompt]
+    D --> H[Runner::new<br/>配 KV cache + scratch]
+    E --> H
+    G --> I[Prefill loop<br/>forward each token]
+    H --> I
+    I --> J[Decode loop<br/>sample → forward → repeat]
+    J --> K[print tokens]
+  </div>
+
+<p>從 CLI 進來到 token 吐出去，整條流水線就這樣。仔細看會發現，圖裡每一個方框幾乎都對應到前面九篇文章其中一篇的主題——拼到這裡，整張地圖才算完整。</p>
+<h3 id="全局效能最佳化清單">全局效能最佳化清單</h3>
+<p>到這裡，所有檔案都翻過一遍了。我想趁記憶猶新，把整個專案的最佳化機會匯總成一張 prioritized list。要強調的是：我不建議盲目地照著順序硬幹，還是得看你自己最想練哪一塊。</p>
+<h4 id="tier-1最大效能槓桿10-級的改進">Tier 1（最大效能槓桿，10× 級的改進）</h4>
+<ol>
+<li>
+<p><strong>SIMD 化 dot kernels</strong>（<code>dequant.rs</code>）</p>
+<ul>
+<li>Q4_0、Q8_0、Q6_K 的 inner loop 用 AVX2/AVX-512/NEON</li>
+<li>預期：matvec 加速 8-16×</li>
+<li>工作量：中—需要小心和 <code>llama.cpp</code> 對拍正確性</li>
+</ul>
+</li>
+<li>
+<p><strong>Prefill batching（GEMV → GEMM）</strong>（<code>runner.rs</code>、<code>ops.rs</code>）</p>
+<ul>
+<li>把 prompt N 個 token 的 forward 拼成一個 batched 計算</li>
+<li>預期：prefill 加速 5-10×（decode 不變）</li>
+<li>工作量：大—涉及 attention 的 mask、KV cache 的 batched 寫入</li>
+</ul>
+</li>
+<li>
+<p><strong>支援 K-quants（Q4_K、Q5_K、Q4_K_M）</strong>（<code>dequant.rs</code>）</p>
+<ul>
+<li>不是加速 per se，而是讓現代 GGUF 都能跑</li>
+<li>工作量：中—實作複雜但有 ggml C 程式碼可參考</li>
+</ul>
+</li>
+</ol>
+<h4 id="tier-2顯著改進2-3-級">Tier 2（顯著改進，2-3× 級）</h4>
+<ol start="4">
+<li>
+<p><strong>Multi-row matvec fusion</strong>（<code>ops.rs</code>）</p>
+<ul>
+<li>一次處理多個 row，減少 x 的 cache miss</li>
+<li>預期：matvec 加速 2-4×</li>
+</ul>
+</li>
+<li>
+<p><strong>KV cache 量化</strong>（<code>runner.rs</code>）</p>
+<ul>
+<li>把 KV cache 從 F32 改成 Q8_0</li>
+<li>預期：記憶體用量 4×、速度可能略有提升（cache miss 變少）</li>
+<li>工作量：中</li>
+</ul>
+</li>
+<li>
+<p><strong>f16 / bf16 全程</strong>（多個檔案）</p>
+<ul>
+<li>不要每次都 dequant 成 f32，scratch buffer 也用 f16</li>
+<li>預期：記憶體頻寬減半</li>
+<li>工作量：大—需要全程 f16 的 numerical stability 驗證</li>
+</ul>
+</li>
+</ol>
+<h4 id="tier-3小但容易的改進">Tier 3（小但容易的改進）</h4>
+<ol start="7">
+<li>
+<p><strong>RoPE sin/cos 表預計算</strong>（<code>ops.rs</code>）</p>
+<ul>
+<li>不要每次 forward 都算 sin/cos</li>
+<li>預期：每層省幾十 μs，整體可能 1-2%</li>
+</ul>
+</li>
+<li>
+<p><strong>Tokenizer 的 pair lookup table</strong>（<code>tokenizer.rs</code>）</p>
+<ul>
+<li>避免 <code>format!</code> 字串拼接</li>
+<li>預期：encode 加速 5-10×（但 encode 不在 hot path）</li>
+</ul>
+</li>
+<li>
+<p><strong>Top-P sampling</strong>（<code>sampler.rs</code>）</p>
+<ul>
+<li>提升 sampling 品質（不是速度，是輸出品質）</li>
+</ul>
+</li>
+<li>
+<p><strong>Repetition penalty</strong>（<code>sampler.rs</code>）</p>
+<ul>
+<li>同上</li>
+</ul>
+</li>
+</ol>
+<h4 id="tier-4架構級重構可能不值得">Tier 4（架構級重構，可能不值得）</h4>
+<ol start="11">
+<li>
+<p><strong>GPU backend</strong></p>
+<ul>
+<li>加 <code>wgpu</code> 或 CUDA 支援</li>
+<li>工作量：極大—基本上是另一個專案</li>
+</ul>
+</li>
+<li>
+<p><strong>FlashAttention</strong></p>
+<ul>
+<li>Fused attention with online softmax</li>
+<li>工作量：大—但 candle/ggml 有現成實作可學</li>
+</ul>
+</li>
+<li>
+<p><strong>Speculative decoding</strong></p>
+<ul>
+<li>用小模型加速大模型推論</li>
+<li>工作量：大—需要兩個模型協作</li>
+</ul>
+</li>
+</ol>
+<h3 id="一個整體觀察抽象與效能的權衡">一個整體觀察：抽象與效能的權衡</h3>
+<p>寫完整個系列，我最強烈的感受是：<strong><code>tiny-llm-runner</code> 的「易讀」，其實是拿「不可擴充」換來的</strong>。每個檔案都針對單一情境寫得直白到不行，但代價就是——要加新功能（新架構、新量化、新後端）往往得同時動好幾個檔案。</p>
+<p>這跟 candle 的設計哲學根本是兩條路。candle 透過一層厚厚的抽象（<code>Tensor</code>、<code>Module</code>、<code>VarBuilder</code>）讓擴充變得很便宜，代價則是「想看懂一次 forward pass，得在好幾個 trait 之間跳來跳去」。</p>
+<p>那到底哪個對？<strong>老實說，取決於你的目標。</strong> 你要做生產級框架，candle 那套抽象就是必要之惡；你要做一個「能跑、能讀、能 hack」的學習版，那 <code>tiny-llm-runner</code> 的扁平結構反而才是對的。沒有標準答案，只有適不適合。</p>
+<h3 id="把九個檔案的學習收穫匯總">把九個檔案的學習收穫匯總</h3>
+<p>回到我們最一開始問的那個問題：「<strong>寫一個會跑 LLM 的專案，到底需要哪些零件？</strong>」攤開來看，答案就是這張表：</p>
+<table>
+	<thead>
+			<tr>
+					<th>檔案</th>
+					<th>你需要學會</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>config.rs</code></td>
+					<td>metadata 解析 + 不變式檢查</td>
+			</tr>
+			<tr>
+					<td><code>dequant.rs</code></td>
+					<td>block-wise 量化 + fused dot product</td>
+			</tr>
+			<tr>
+					<td><code>tensor.rs</code></td>
+					<td>lifetime + view 抽象 + Copy struct</td>
+			</tr>
+			<tr>
+					<td><code>model.rs</code></td>
+					<td>樹形權重組織 + tied embeddings</td>
+			</tr>
+			<tr>
+					<td><code>ops.rs</code></td>
+					<td>RMSNorm、softmax、RoPE、SwiGLU、rayon</td>
+			</tr>
+			<tr>
+					<td><code>runner.rs</code></td>
+					<td>KV cache + GQA + 殘差連接 + scratch buffer</td>
+			</tr>
+			<tr>
+					<td><code>tokenizer.rs</code></td>
+					<td>SentencePiece-BPE + byte fallback + UTF-8 重組</td>
+			</tr>
+			<tr>
+					<td><code>sampler.rs</code></td>
+					<td>top-k partial sort + xorshift + CDF sampling</td>
+			</tr>
+			<tr>
+					<td><code>main.rs</code></td>
+					<td>CLI design + prefill/decode split + tok/s metric</td>
+			</tr>
+	</tbody>
+</table>
+<p>如果你真的把整個系列啃完了，那「LLM 推論引擎到底在幹嘛」這件事，你心裡應該已經有一張完整的 mental model 了。<strong>而且接下來能玩的還多著呢</strong>：自己加 SIMD、自己刻 GEMM、自己補 K-quants、自己接 GPU backend……每一條我都覺得夠格獨立寫成一篇工程旅程。</p>
+<h3 id="結語">結語</h3>
+<p>回頭看，<code>tiny-llm-runner</code> 對我來說從來就不只是「一個專案」，而是「一次把 LLM 推論從頭到尾看透的旅程」。從一個 mmap 出來的 byte slice 開始，經過一連串型別、抽象、運算的層層組合，最後居然真的長成一個能跑、能跟 <code>llama.cpp</code> 對拍、又讀得懂的 Rust 程式——<strong>對我這種改不掉、就是愛把黑盒子拆開看裡面齒輪的工程師來說，這份滿足感，比把效能再快一倍都還過癮</strong>。 :-)</p>
+<p>九篇走下來，最大的收穫其實不是哪個 kernel 怎麼寫，而是那種「啊，原來這裡面沒有魔法」的踏實感。LLM 聽起來玄，拆開來不過就是量化、矩陣、softmax、sampling 這些老朋友排排站而已。</p>
+<p>謝謝你一路陪我把這九篇啃完。下次再見的時候，但願我已經把上面那張清單裡的優化，至少落地了幾個——不然這篇結語可就有點心虛了。我們，下個專案見。</p>
+<blockquote><p>系列文章：</p>
+<ul>
+<li><a href="/posts/2026/05-30-tiny-llm-runner">tiny-llm-runner 介紹</a> ・ <a href="/posts/2026/05-30-tiny-llm-runner-vs-candle">vs. candle 比較</a></li>
+<li><a href="/posts/2026/06-01-tiny-llm-deep-dive-1-config">(1) config</a> ・ <a href="/posts/2026/06-02-tiny-llm-deep-dive-2-dequant">(2) dequant</a> ・ <a href="/posts/2026/06-03-tiny-llm-deep-dive-3-tensor">(3) tensor</a> ・ <a href="/posts/2026/06-04-tiny-llm-deep-dive-4-model">(4) model</a> ・ <a href="/posts/2026/06-05-tiny-llm-deep-dive-5-ops">(5) ops</a> ・ <a href="/posts/2026/06-06-tiny-llm-deep-dive-6-runner">(6) runner</a> ・ <a href="/posts/2026/06-07-tiny-llm-deep-dive-7-tokenizer">(7) tokenizer</a> ・ <a href="/posts/2026/06-08-tiny-llm-deep-dive-8-sampler">(8) sampler</a></li>
+<li><strong>(9) main.rs</strong>（本篇 / 系列終章）</li>
+</ul>
+</blockquote>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+
+</body>
+</html>

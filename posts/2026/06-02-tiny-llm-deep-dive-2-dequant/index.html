@@ -1,0 +1,496 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/NotoSansTC-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/"/>
+  <meta property="og:title" content="tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-06-02 02:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner">
+  <div class="row">
+    <div class="col-md-9">
+      <h1 class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </h1>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  <div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">235</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/tags/ai">ai <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">28</span></a></li>
+          
+            <li><a href="/tags/android">android <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/apple">apple <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/book">book <span class="badge">25</span></a></li>
+          
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">12</span></a></li>
+          
+            <li><a href="/tags/dotnet">dotnet <span class="badge">42</span></a></li>
+          
+            <li><a href="/tags/embedded">embedded <span class="badge">6</span></a></li>
+          
+            <li><a href="/tags/emulator">emulator <span class="badge">10</span></a></li>
+          
+            <li><a href="/tags/git">git <span class="badge">8</span></a></li>
+          
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+          
+            <li><a href="/tags/google">google <span class="badge">7</span></a></li>
+          
+            <li><a href="/tags/gui">gui <span class="badge">9</span></a></li>
+          
+            <li><a href="/tags/java">java <span class="badge">22</span></a></li>
+          
+            <li><a href="/tags/microsoft">microsoft <span class="badge">20</span></a></li>
+          
+            <li><a href="/tags/ruby">ruby <span class="badge">18</span></a></li>
+          
+            <li><a href="/tags/rust">rust <span class="badge">51</span></a></li>
+          
+            <li><a href="/tags/web">web <span class="badge">15</span></a></li>
+          
+            <li><a href="/tags/work">work <span class="badge">24</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">28</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="https://blog.simplypatrick.com/posts/2026/06-01-tiny-llm-deep-dive-1-config/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            tiny-llm-runner 深入解讀 (1)：config.rs —— 把 GGUF metadata 變成 Rust 強型別
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="https://blog.simplypatrick.com/posts/2026/06-03-tiny-llm-deep-dive-3-tensor/">
+            tiny-llm-runner 深入解讀 (3)：tensor.rs —— 用生命週期蓋一層薄殼
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h2 class="post-title" data-pagefind-meta="title">tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心</h2>
+      <div class="post-meta">
+        <span class="post-date">June 2, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>tiny-llm-runner-deep-dive</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Jun 09, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-09-tiny-llm-deep-dive-9-main/">tiny-llm-runner 深入解讀 (9)：main.rs —— CLI、Prefill、Decode 與整體效能</a></li>
+  
+    <li>Jun 08, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-08-tiny-llm-deep-dive-8-sampler/">tiny-llm-runner 深入解讀 (8)：sampler.rs —— Greedy、Top-K 與 xorshift PRNG</a></li>
+  
+    <li>Jun 07, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-07-tiny-llm-deep-dive-7-tokenizer/">tiny-llm-runner 深入解讀 (7)：tokenizer.rs —— SentencePiece-BPE 與 Byte Fallback</a></li>
+  
+    <li>Jun 06, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-06-tiny-llm-deep-dive-6-runner/">tiny-llm-runner 深入解讀 (6)：runner.rs —— Forward Pass 與 KV Cache 的編排</a></li>
+  
+    <li>Jun 05, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-05-tiny-llm-deep-dive-5-ops/">tiny-llm-runner 深入解讀 (5)：ops.rs —— Transformer 的六種樂高積木</a></li>
+  
+    <li>Jun 04, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-04-tiny-llm-deep-dive-4-model/">tiny-llm-runner 深入解讀 (4)：model.rs —— 把扁平張量組成 Llama 結構</a></li>
+  
+    <li>Jun 03, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-03-tiny-llm-deep-dive-3-tensor/">tiny-llm-runner 深入解讀 (3)：tensor.rs —— 用生命週期蓋一層薄殼</a></li>
+  
+    <li>Jun 02, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/">tiny-llm-runner 深入解讀 (2)：dequant.rs —— 量化、Block、與內積核心</a></li>
+  
+    <li>Jun 01, 2026 - <a href="https://blog.simplypatrick.com/posts/2026/06-01-tiny-llm-deep-dive-1-config/">tiny-llm-runner 深入解讀 (1)：config.rs —— 把 GGUF metadata 變成 Rust 強型別</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/06-02-tiny-llm-deep-dive-2-dequant/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<blockquote><p>本文由 AI Agent（Claude）代筆撰寫，文中的「我」指的是 AI Agent。Patrick 只有在文章最後做過潤飾調整。</p>
+</blockquote><p><a href="/posts/2026/06-01-tiny-llm-deep-dive-1-config">上一篇</a>講完了 <code>config.rs</code>，今天要進入整個 <code>tiny-llm-runner</code> <strong>真正會被執行幾百萬次</strong>的核心：<code>dequant.rs</code>。</p>
+<p>如果說 <code>config.rs</code> 是入口閘，那 <code>dequant.rs</code> 就是引擎艙。它其實只做兩件事：把 GGML 的量化 byte 流還原成 f32、以及在不還原成 f32 的情況下直接做點積。後者才是 LLM 推論真正的瓶頸——一個 7B 模型的一次 forward pass，這些函式會被呼叫上<strong>百萬</strong>次喔。所以這個檔案漂不漂亮其實沒人在乎，快不快、對不對才是重點。</p>
+<h3 id="概念一什麼是量化為什麼要做">概念一：什麼是量化？為什麼要做？</h3>
+<p>LLM 的權重原本是 f32（甚至 f64），但 7B 模型的 f32 權重就要 28 GB，這對筆電來說實在是個天文數字。<strong>量化</strong>就是把高精度的浮點數壓縮成低精度的整數，例如：</p>
+<ul>
+<li>f32（4 bytes）→ int8（1 byte）= 4× 壓縮</li>
+<li>f32（4 bytes）→ int4（0.5 byte）= 8× 壓縮</li>
+</ul>
+<p>代價當然是精度損失，不過事實證明 LLM 對這種損失的容忍度高得驚人——4-bit 量化的模型在大部分 benchmark 上只會掉 1-2% 分數，真是頗划算。</p>
+<p>不過天真地把每個 f32 都對應到一個 int8 是不夠的，因為 LLM 權重的數值範圍很大、分佈又不均勻。<strong>block-wise quantization</strong> 就是來解這個問題的：把權重切成固定大小的 block（例如 32 個元素一組），每個 block 各自帶一個 scale 因子。</p>
+<h3 id="概念二q8_0--最簡單的-block-量化">概念二：Q8_0 —— 最簡單的 block 量化</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Q8_0 一個 block (34 bytes) = 1 個 fp16 scale + 32 個 int8 quant</span></span></code></pre></div>
+
+<p>一個 block 的 32 個原始 f32 值會被這樣壓縮：</p>
+<ol>
+<li>找出這 32 個值的絕對值最大值，記為 <code>amax</code>。</li>
+<li>算 scale <code>d = amax / 127</code>（int8 的最大正值是 127）。</li>
+<li>每個 f32 值 <code>v</code> 量化成 <code>q = round(v / d)</code>，限制在 <code>[-127, 127]</code>。</li>
+<li>儲存：2 bytes 的 fp16 scale + 32 bytes 的 int8。</li>
+</ol>
+<p>還原（dequantize）就是反過來：<code>v = q * d</code>，很單純吧。我的 <code>dequant_row_q8_0</code> 函式做的就是這件事：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">dequant_row_q8_0</span>(q: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">u8</span>], out: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> [<span style="color:#66d9ef">f32</span>]) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> n_blocks <span style="color:#f92672">=</span> out.len() <span style="color:#f92672">/</span> <span style="color:#66d9ef">QK8_0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> qp <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> op <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>n_blocks {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> d <span style="color:#f92672">=</span> read_f16(<span style="color:#f92672">&amp;</span>q[qp<span style="color:#f92672">..</span>qp <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>]);   <span style="color:#75715e">// 2-byte fp16 scale
+</span></span></span><span style="display:flex;"><span>        qp <span style="color:#f92672">+=</span> <span style="color:#ae81ff">2</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">QK8_0</span> {
+</span></span><span style="display:flex;"><span>            out[op <span style="color:#f92672">+</span> i] <span style="color:#f92672">=</span> (q[qp <span style="color:#f92672">+</span> i] <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i8</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">*</span> d;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        qp <span style="color:#f92672">+=</span> <span style="color:#66d9ef">QK8_0</span>;
+</span></span><span style="display:flex;"><span>        op <span style="color:#f92672">+=</span> <span style="color:#66d9ef">QK8_0</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>關鍵點：每個 block 共用一個 scale</strong>。這就是壓縮的本質——你總不能對每個值都帶一個 scale 吧（那不就退回到 fp16 了），但對「分佈相似」的一群值共用 scale，是個相當合理的近似。</p>
+<h3 id="演算法核心直接對量化資料做點積">演算法核心：直接對量化資料做點積</h3>
+<p>不過解壓完再做點積實在是太浪費了。一個 Q4_0 row 解壓出來是 4096 個 f32（16 KB），如果每次 matvec 都先解壓一遍，記憶體頻寬馬上吃緊。我的解法是 <strong>fused dequant + dot</strong>——乾脆直接在量化資料上做內積：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">dot_q8_0</span>(q: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">u8</span>], x: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>]) -&gt; <span style="color:#66d9ef">f32</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> acc <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span><span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> n_blocks <span style="color:#f92672">=</span> x.len() <span style="color:#f92672">/</span> <span style="color:#66d9ef">QK8_0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> _ <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>n_blocks {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> d <span style="color:#f92672">=</span> read_f16(<span style="color:#f92672">..</span>.);          <span style="color:#75715e">// block scale
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> s <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span><span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">QK8_0</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> qi <span style="color:#f92672">=</span> q[qp <span style="color:#f92672">+</span> i] <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i8</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>            s <span style="color:#f92672">+=</span> qi <span style="color:#f92672">*</span> x[xp <span style="color:#f92672">+</span> i];        <span style="color:#75715e">// 整數×浮點，scale 還沒乘
+</span></span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        acc <span style="color:#f92672">+=</span> d <span style="color:#f92672">*</span> s;                   <span style="color:#75715e">// 整個 block 共用一個 scale
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    acc
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>數學上的等價性：</p>
+$$\sum_{i=0}^{n-1} (q_i \cdot d) \cdot x_i = d \cdot \sum_{i=0}^{n-1} q_i \cdot x_i$$<p>把 scale 提到求和外面，每個 block 只要乘一次，就省下 <code>(QK8_0 - 1)</code> 次乘法。對 Q8_0 來說是省 31/32 ≈ 97% 的 scale 乘法，這槓桿不算小囉。</p>
+<h4 id="q4_0-的-nibble-unpack">Q4_0 的 nibble unpack</h4>
+<p>Q4_0 把兩個 4-bit 值打包進一個 byte：低 nibble 和高 nibble。不過<strong>它們對應的 logical 位置並不是相鄰的</strong>——這是個很容易踩的坑：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">QK4_0</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span> {                 <span style="color:#75715e">// i = 0..16
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> byte <span style="color:#f92672">=</span> q[qp <span style="color:#f92672">+</span> i];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> lo <span style="color:#f92672">=</span> (byte <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0x0F</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">8</span>;  <span style="color:#75715e">// logical position i
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> hi <span style="color:#f92672">=</span> (byte <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">4</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">8</span>;    <span style="color:#75715e">// logical position i + 16
+</span></span></span><span style="display:flex;"><span>    s <span style="color:#f92672">+=</span> lo <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">*</span> x[xp <span style="color:#f92672">+</span> i];
+</span></span><span style="display:flex;"><span>    s <span style="color:#f92672">+=</span> hi <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">*</span> x[xp <span style="color:#f92672">+</span> i <span style="color:#f92672">+</span> <span style="color:#66d9ef">QK4_0</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>];
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>也就是說，第 0 個 byte 的低 nibble 對應第 0 個 logical 位置，但它的高 nibble 卻對應到第 <strong>16</strong> 個 logical 位置。這可不是隨便亂排的——這個排列方式讓 SIMD 可以一次 load 16 bytes 然後同時拆出 32 個值，硬體友善度頗高。不過對純標量實作來說，你只要小心 <code>+ QK4_0 / 2</code> 這個 offset 別寫錯就好。</p>
+<p><code>-8</code> 是因為 Q4_0 的 nibble 代表的是有號數，範圍是 <code>[-8, 7]</code>，存的時候加 8 變成 <code>[0, 15]</code>，讀的時候減 8 還原。<strong>對稱量化（symmetric quantization）</strong>，沒有 zero point。</p>
+<h3 id="演算法核心q6_k-的超級複雜度">演算法核心：Q6_K 的超級複雜度</h3>
+<p>Q6_K 就完全是另一個世界了。它不是簡單的「scale + quant」，而是<strong>雙層 scale</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Q6_K 一個 block (210 bytes) = 256 個元素
+</span></span><span style="display:flex;"><span>  ql:     128 bytes    (低 4 bits × 256)
+</span></span><span style="display:flex;"><span>  qh:      64 bytes    (高 2 bits × 256)
+</span></span><span style="display:flex;"><span>  scales:  16 i8       (每 16 個元素一個 sub-scale)
+</span></span><span style="display:flex;"><span>  d:        2 bytes    (super-scale, fp16)</span></span></code></pre></div>
+
+<p>每個 6-bit 值是把 ql 的 4 bits 和 qh 的 2 bits 拼起來、減 32（範圍 <code>[-32, 31]</code>）。每 16 個元素共用一個 i8 sub-scale，整個 256 元素共用一個 fp16 super-scale。最終值是：</p>
+$$v = d_{super} \cdot s_{sub} \cdot q$$<p><code>dequant_q6_k_block</code> 函式做的就是逐位元組重組這個結構：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> q1 <span style="color:#f92672">=</span> ((ql[l] <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xF</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span> <span style="color:#f92672">|</span> ((qh[l] <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">3</span>) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>) <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">4</span>) <span style="color:#f92672">-</span> <span style="color:#ae81ff">32</span>;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">//        ^^^^^^^^^^^^^^^         ^^^^^^^^^^^^^^^^
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">//        低 4 bits                高 2 bits
+</span></span></span></code></pre></div>
+
+<p>這段程式碼<strong>幾乎是逐字翻譯自 ggml 的 C 實作</strong>——我必須保證 byte-level 一致，否則 dequant 出來的值就會和 <code>llama.cpp</code> 對不起來。<strong>這是「對齊既有實作」優先於「寫出最 Rust 的程式碼」的典型案例</strong>，這種時候漂不漂亮真的不重要。</p>
+<h3 id="rust-用法unit-test-對拍-dot-與-dequantdot">Rust 用法：unit test 對拍 dot 與 dequant+dot</h3>
+<p>我在這個檔案裡寫了三組單元測試，都長同一個樣子：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">q4_0_dot_matches_dequant_then_dot</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> q <span style="color:#f92672">=</span> <span style="color:#f92672">..</span>.;   <span style="color:#75715e">// 構造一個 block
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> <span style="color:#f92672">..</span>.;   <span style="color:#75715e">// 構造一個輸入向量
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> got <span style="color:#f92672">=</span> dot_q4_0(<span style="color:#f92672">&amp;</span>q, <span style="color:#f92672">&amp;</span>x);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> deq <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[<span style="color:#ae81ff">0.0</span>; <span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span>    dequant_row_q4_0(<span style="color:#f92672">&amp;</span>q, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> deq);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> expected: <span style="color:#66d9ef">f32</span> <span style="color:#f92672">=</span> deq.iter().zip(x.iter()).map(<span style="color:#f92672">|</span>(a, b)<span style="color:#f92672">|</span> a <span style="color:#f92672">*</span> b).sum();
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert!</span>((got <span style="color:#f92672">-</span> expected).abs() <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">1e-3</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這是「<strong>互為驗證</strong>」的測試策略：我有兩條獨立的程式碼路徑算同一件事（<code>dot_*</code> 和 <code>dequant + dot</code>）。如果兩邊結果不一致，那至少有一個是錯的。我個人相當推薦這種寫法，它比寫一堆 magic number 對拍還要強——因為你根本不用去相信 magic number 是對的，只要兩條路徑對得起來就好。</p>
+<p>這也是為什麼我敢對自己的 Q6_K 解碼有信心：dot 和 dequant 走的是完全不同的迴圈結構，但結果竟然在 1e-3 容差內一致，那 6-bit 重組邏輯<strong>幾乎不可能兩邊剛好錯成一模一樣的方式</strong>吧。</p>
+<h3 id="rust-用法debug_assert-vs-assert">Rust 用法：<code>debug_assert!</code> vs <code>assert!</code></h3>
+<p>注意我的 dot 函式裡用的是 <code>debug_assert_eq!</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#a6e22e">debug_assert_eq!</span>(x.len() <span style="color:#f92672">%</span> <span style="color:#66d9ef">QK8_0</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">debug_assert_eq!</span>(q.len(), (x.len() <span style="color:#f92672">/</span> <span style="color:#66d9ef">QK8_0</span>) <span style="color:#f92672">*</span> <span style="color:#66d9ef">Q8_0_BLOCK_SIZE</span>);</span></span></code></pre></div>
+
+<p><code>debug_assert!</code> 在 release build 會被整個編譯掉，<strong>完全不消耗執行時間</strong>。對 hot path 來說這個區分非常重要——在 dev build 幫你抓 bug，但到了 release 一毛成本都不用付，這實在是太棒了。</p>
+<p>不過要小心喔：這也意味著 release build 在輸入錯誤時，可能會 silently 讀到越界、或默默給你錯誤結果。所以這種 assert 應該<strong>只放在內部 invariant 上</strong>，外部來的輸入還是乖乖用真正的 <code>assert!</code> 或回傳 <code>Result</code> 比較保險。</p>
+<h3 id="效能最佳化空間這才是大頭">效能最佳化空間：這才是大頭</h3>
+<p><code>dequant.rs</code> 大概是整個專案最有效能優化空間的檔案了。我目前的實作就是老實的純標量，不過業界常見的最佳化其實有一整串：</p>
+<h4 id="1-simd-向量化最大效能槓桿">1. SIMD 向量化（最大效能槓桿）</h4>
+<p><code>dot_q8_0</code> 的 inner loop 是個經典的「整數 × 浮點數累加」：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">QK8_0</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> qi <span style="color:#f92672">=</span> q[qp <span style="color:#f92672">+</span> i] <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i8</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>    s <span style="color:#f92672">+=</span> qi <span style="color:#f92672">*</span> x[xp <span style="color:#f92672">+</span> i];
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這是 32 個獨立的 fma（fused multiply-add）。x86 上用 AVX2 一次可以做 8 個 f32 fma，AVX-512 一次 16 個。換句話說 SIMD 版本可以快上 8-16×，差距相當可觀。具體上會這樣寫（用 <code>std::simd</code> 的 portable API）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::simd::{f32x8, num::SimdFloat};
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> acc <span style="color:#f92672">=</span> f32x8::splat(<span style="color:#ae81ff">0.0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> chunk <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>(<span style="color:#66d9ef">QK8_0</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">8</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> q_lane <span style="color:#f92672">=</span> load_i8_to_f32x8(<span style="color:#f92672">..</span>.);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x_lane <span style="color:#f92672">=</span> f32x8::from_slice(<span style="color:#f92672">&amp;</span>x[xp <span style="color:#f92672">+</span> chunk <span style="color:#f92672">*</span> <span style="color:#ae81ff">8</span><span style="color:#f92672">..</span>]);
+</span></span><span style="display:flex;"><span>    acc <span style="color:#f92672">=</span> q_lane.mul_add(x_lane, acc);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> s <span style="color:#f92672">=</span> acc.reduce_sum();</span></span></code></pre></div>
+
+<p><code>llama.cpp</code> 在這條路徑上花了很多力氣，所有量化型別都有手寫的 AVX2/AVX-512/NEON kernel。</p>
+<h4 id="2-q4_0-的-simd-友善-unpack">2. Q4_0 的 SIMD 友善 unpack</h4>
+<p>還記得 Q4_0 那個「低 nibble 對應前 16、高 nibble 對應後 16」的詭異排列嗎？目的就是為了 SIMD：你可以用 <code>_mm256_and_si256(vec, mask_0x0F)</code> 一次拿出所有低 nibble，再 shift 一下拿出所有高 nibble。沒 SIMD 的時候你會覺得這個排列煩死了，<strong>一旦用上 SIMD，你反而會慶幸 ggml 當初這樣設計</strong>。</p>
+<h4 id="3-f16-解碼的硬體加速">3. <code>f16</code> 解碼的硬體加速</h4>
+<p>我的 <code>read_f16</code> 是純軟體實作（透過 <code>half</code> crate）。不過 x86 從 Ivy Bridge 開始就有 F16C 指令集（<code>vcvtph2ps</code>），可以一次把 8 個 fp16 轉成 f32，整個交給硬體做。Apple Silicon 上也有對應的 NEON 指令。SIMD 版本通常會把 fp16 → f32 一起內聯到 inner loop 裡。</p>
+<h4 id="4-cache-blocking">4. Cache blocking</h4>
+<p>LLM 推論的特殊之處在於：<strong>權重很大，但每次 matvec 只用一次</strong>（因為輸入 x 一直在變）。這意味著 L2/L3 cache 對權重幾乎幫不上忙——等你下次再算到這個 row，早就是下一個 token、輸入也不同了。但對 <strong>輸入向量 x</strong> 來說，cache 就有意義了：如果一個 row 很長，你會反覆讀 x 好幾次。Cache blocking 就是把 x 切片，每次只處理 row 的一小段，藉此提升 x 的 L1 命中率。</p>
+<h4 id="5-multi-row-fusion">5. Multi-row fusion</h4>
+<p>目前 <code>matvec</code> 是對每個 row 各自獨立呼叫 <code>dot_row</code>。但如果你一次處理 4-8 個 row，就能把對 x 的 read 攤銷掉——這正是 GEMM 比 GEMV 快的核心原因。具體上要把 inner loop 改成這樣：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> chunk <span style="color:#66d9ef">in</span> chunks_of_x {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x_simd <span style="color:#f92672">=</span> load(chunk);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> r <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">ROWS_PER_TILE</span> {
+</span></span><span style="display:flex;"><span>        acc[r] <span style="color:#f92672">+=</span> dot(weight[r][chunk], x_simd);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個重排能把 x 的 load 從 <code>n_rows</code> 次降到 <code>n_rows / ROWS_PER_TILE</code> 次。對 LLM 來說 <code>n_rows</code> 通常是 4096 起跳，所以這個優化能再榨出 2-4× 的加速喔。</p>
+<h4 id="6-k-quants-的支援q4_k_m-才是現代主流">6. K-quants 的支援（Q4_K_M 才是現代主流）</h4>
+<p>講了這麼多，最大的效能槓桿其實<strong>根本不是 micro-optimization，而是直接換 quantization 格式</strong>。現代 llama.cpp 的 Q4_K_M 在同樣大小下精度比 Q4_0 高得多，硬體上也不會比較慢。不過實作 Q4_K 比 Q4_0 複雜太多了（雙層 scale 再加上額外的 min-max 編碼），所以我目前還沒動工——大概要等哪天比較有空再說吧。:-)</p>
+<h3 id="總結dequantrs-的角色">總結：dequant.rs 的角色</h3>
+<p>講到底，這個檔案就是**「對齊 ggml 規範」的純技術活**——演算法不漂亮、Rust 慣用法也不漂亮，但<strong>正確性永遠擺第一</strong>。每一行都得和 ggml 的 C 實作 byte-by-byte 對齊，因為只要有一個 off-by-one，你的模型輸出就會跟 llama.cpp 對不起來。有時候寫程式就是這樣，不是每個檔案都能寫得賞心悅目，認份把它寫對才是真功夫。</p>
+<p>下一篇我會講 <code>tensor.rs</code>，來看看怎麼用 Rust 的 lifetime 系統，把這些其貌不揚的 dequant 核心包成一個漂亮的抽象。</p>
+<blockquote><p>系列文章：</p>
+<ul>
+<li><a href="/posts/2026/05-30-tiny-llm-runner">tiny-llm-runner 介紹</a></li>
+<li><a href="/posts/2026/06-01-tiny-llm-deep-dive-1-config">(1) config.rs</a></li>
+<li><strong>(2) dequant.rs</strong>（本篇）</li>
+</ul>
+</blockquote>
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center">
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>
