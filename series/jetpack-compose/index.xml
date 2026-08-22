@@ -1,0 +1,867 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/series/jetpack-compose/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-08-14 02:20:00 -0700 -0700</updated>
+    
+    <item>
+      <title>MiniCompose</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-14-minicompose/</link>
+      <pubDate>Fri, 14 Aug 2026 02:20:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-14-minicompose/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-14-minicompose/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;在&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/08-11-jetpack-compose-rendering-architecture/&#34;&gt;上一篇文章&lt;/a&gt;中，我們從 AndroidX 原始碼的視角，深入剖析了 Jetpack Compose 的底層渲染管線與動畫硬體加速原理。&lt;/p&gt;
+&lt;p&gt;不過，讀懂原始碼與自己真正掌握架構之間，往往隔著一層「動手做」的距離。為了驗證這些架構設計在真實運行時的表現，我用 Kotlin 從零手刻了一個最小化的教育型 Compose 渲染引擎：&lt;strong&gt;MiniCompose&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;這個專案不依賴任何 AndroidX Compose 函式庫，也不包含編譯器外掛（compiler plugin）或複雜的響應式狀態系統，而是專注於實現&lt;strong&gt;支撐 Compose 高效能渲染的 5 大關鍵架構決策&lt;/strong&gt;。更進一步地，為了徹底排除同一執行緒排程干擾與虛擬機垃圾回收（GC）對效能比較的污染，MiniCompose 引入了 &lt;strong&gt;Android 跨進程畫面嵌入技術（Multi-Process Embedded Rendering）&lt;/strong&gt;，在單一視窗中左右並排運行兩個&lt;strong&gt;完全隔離的 OS 獨立進程&lt;/strong&gt;，進行千節點規模的微秒級（µs）即時基準測試。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;專案原始碼：&lt;a href=&#34;https://github.com/p47t/minicompose&#34;&gt;GitHub - p47t/minicompose&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;1-雙進程multi-process即時效能基準測試與實機展示&#34;&gt;1. 雙進程（Multi-Process）即時效能基準測試與實機展示&lt;/h2&gt;
+&lt;p&gt;在深入底層實作前，我們先來看這個實驗 App 的對比設計與最新實機動態演示。&lt;/p&gt;
+&lt;p&gt;在 Android UI 開發中，移動一個元件通常有兩種常見方式：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Modifier.graphicsLayer&lt;/code&gt;&lt;/strong&gt;：在繪製階段（Draw Phase）透過硬體層做幾何變換。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Modifier.offset&lt;/code&gt;&lt;/strong&gt;：在排版階段（Layout Phase）修改座標位置。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;以往若在同一個 Activity 或同一個進程內同時跑兩種極端負載的動畫，右側高密度的排版計算與頻繁產生的短生命週期物件，容易引發全進程的 ART 虛擬機 GC 暫停（Stop-The-World），或者霸佔主執行緒的 Choreographer，進而拖累左側的幀率。&lt;/p&gt;
+&lt;p&gt;為了解決這個干擾，MiniCompose 將左右兩側拆分為&lt;strong&gt;兩個獨立的 Linux OS 進程&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart LR
+    subgraph SingleWindow [&#34;單一視窗：雙進程隔離即時基準測試&#34;]
+        direction LR
+        subgraph LeftProc [&#34;⚡ 左側進程 (:left_gpu / PID X)&#34;]
+            direction TB
+            GPUCard[&#34;GPU 硬體繪製卡片&lt;br/&gt;&lt;b&gt;100 / 500 / 1000 Nodes&lt;/b&gt;&#34;]
+            GPULayout[&#34;Layout Phase: &lt;b&gt;0 µs&lt;/b&gt;&lt;br/&gt;✓ 0 Passes / 秒（跳過 measureAndLayout）&#34;]
+            GPUDraw[&#34;Draw Phase: &lt;b&gt;~280 µs&lt;/b&gt;&lt;br/&gt;✓ 鎖定 60~62 FPS 絲滑運作&#34;]
+            GPUCard --&gt; GPULayout --&gt; GPUDraw
+        end
+
+        subgraph RightProc [&#34;⚠️ 右側進程 (:right_cpu / PID Y)&#34;]
+            direction TB
+            CPUCard[&#34;CPU 排版計算卡片&lt;br/&gt;&lt;b&gt;100 / 500 / 1000 Nodes&lt;/b&gt;&#34;]
+            CPULayout[&#34;Layout Phase: &lt;b&gt;~14,700 µs&lt;/b&gt;&lt;br/&gt;⚠️ 44 Passes / 秒（每幀全樹重排重測）&#34;]
+            CPUDraw[&#34;Draw Phase: &lt;b&gt;~6,580 µs&lt;/b&gt;&lt;br/&gt;⚠️ 總幀耗時 ~21 ms（幀率掉至 44 FPS）&#34;]
+            CPUCard --&gt; CPULayout --&gt; CPUDraw
+        end
+
+        LeftProc ~~~ RightProc
+    end
+
+    style LeftProc fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style RightProc fill:#fff1f2,stroke:#f43f5e,stroke-width:2px,color:#881337
+    style GPUCard fill:#ffffff,stroke:#34d399,stroke-width:1.5px,color:#065f46
+    style CPUCard fill:#ffffff,stroke:#fb7185,stroke-width:1.5px,color:#881337
+    style GPULayout fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPULayout fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239
+    style GPUDraw fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPUDraw fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239
+  &lt;/div&gt;
+
+
+
+
+
+
+
+&lt;div class=&#34;video-container&#34; style=&#34;text-align: center; margin: 24px auto;&#34;&gt;
+  &lt;video controls autoplay loop muted playsinline preload=&#34;auto&#34; class=&#34;img-responsive&#34; style=&#34;max-width: 100%; border-radius: 8px; margin: 0 auto; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.3);&#34;&gt;
+    
+      &lt;source src=&#34;https://blog.simplypatrick.com/posts/2026/08-14-minicompose/demo.mp4&#34; type=&#34;video/mp4&#34;&gt;
+    
+    
+      &lt;source src=&#34;https://blog.simplypatrick.com/posts/2026/08-14-minicompose/demo.webm&#34; type=&#34;video/webm&#34;&gt;
+    
+    
+    Your browser does not support the video tag.
+  &lt;/video&gt;
+&lt;/div&gt;
+
+&lt;h3 id=&#34;實驗設計與即時控制維度&#34;&gt;實驗設計與即時控制維度&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;OS 級進程隔離（Process Isolation）&lt;/strong&gt;：左側運行於 &lt;code&gt;:left_gpu&lt;/code&gt;（PID 32691），右側運行於 &lt;code&gt;:right_cpu&lt;/code&gt;（PID 32714），兩者擁有獨立的 ART 虛擬機堆積、Main Looper 與 RenderThread。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;多層級節點樹（Tree Complexity）&lt;/strong&gt;：支援即時切換 &lt;strong&gt;100 節點&lt;/strong&gt;、&lt;strong&gt;500 節點&lt;/strong&gt; 與 &lt;strong&gt;1000 節點&lt;/strong&gt; 的 &lt;code&gt;LayoutNode&lt;/code&gt; 階層樹，每個節點包含文字量測（&lt;code&gt;Paint.measureText&lt;/code&gt;）與 Flex 排版約束計算。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;排版延遲注入（Layout Delay）&lt;/strong&gt;：支援注入 &lt;strong&gt;0ms / 8ms / 20ms&lt;/strong&gt; 的主執行緒排版負載，模擬重度業務計算。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;繪製負載注入（Draw Load）&lt;/strong&gt;：支援 &lt;strong&gt;Normal / +150 DL / +300 DL&lt;/strong&gt;（Display List 繪製路徑），測試 GPU / CPU 繪製極限。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;微秒級遙測抬頭顯示（HUD）&lt;/strong&gt;：利用 &lt;code&gt;System.nanoTime()&lt;/code&gt; 分別量測排版階段（Layout Phase）與繪製階段（Draw Phase）消耗的微秒時間，並跨進程透過 Binder IPC 即時匯總至主畫面。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;實測數據與真實日誌分析&#34;&gt;實測數據與真實日誌分析&lt;/h3&gt;
+&lt;p&gt;在開啟 1000 節點、8ms Layout Delay 與 +300 DL 的重度壓力測試下，我們從實機 HUD 與 Logcat 擷取到微秒級效能數據：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;評測維度&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;⚡ &lt;code&gt;Modifier.graphicsLayer&lt;/code&gt; (&lt;code&gt;:left_gpu&lt;/code&gt; / PID 32691)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;⚠️ &lt;code&gt;Modifier.offset&lt;/code&gt; (&lt;code&gt;:right_cpu&lt;/code&gt; / PID 32714)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;效能差異與架構洞察&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;運作幀率 (FPS)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;62 FPS&lt;/strong&gt;（穩定維持滿幀）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;44 FPS&lt;/strong&gt;（掉幀、明顯卡頓）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;左側完全不受右側進程卡頓影響&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Layout Phase 耗時&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;0 µs&lt;/strong&gt;（0 passes/s，完全跳過）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;14,733 µs (~14.7 ms)&lt;/strong&gt;（44 passes/s）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;graphicsLayer&lt;/code&gt; 節省 100% 排版開銷&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Draw Phase 耗時&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;~275 – 280 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;~6,581 µs (~6.6 ms)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;graphicsLayer&lt;/code&gt; 重用 Display List，無額外重錄開銷&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;單幀總 CPU 耗時&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;~280 µs (0.28 ms)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;~21,314 µs (21.3 ms)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;每幀節省超過 21,000 µs (21 ms)&lt;/strong&gt;！&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;blockquote&gt;&lt;p&gt;📌 &lt;strong&gt;關鍵實測日誌洞察與基準測試說明&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;跳過排版階段&lt;/strong&gt;：&lt;code&gt;graphicsLayer&lt;/code&gt; 在動畫期間完全跳過 &lt;code&gt;measureAndLayout()&lt;/code&gt;（0 passes/s），Layout Phase 耗時嚴格為 &lt;strong&gt;0 µs&lt;/strong&gt;；在 1000 節點規模下，僅需在 Draw Phase 耗時實測約 &lt;strong&gt;~280 µs&lt;/strong&gt; 進行屬性更新與繪製分發。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;基準測試路徑說明（Caveat）&lt;/strong&gt;：在 MiniCompose 基準測試中，右側 &lt;code&gt;offset&lt;/code&gt; 每一幀都會標記整棵子樹 Dirty 並遍歷重算；&lt;strong&gt;這是為了演示極限排版開銷上限而刻意設計的最壞路徑（Worst-case Demo Path），並非真實 Jetpack Compose 中 &lt;code&gt;Modifier.offset&lt;/code&gt; 的局部排版（Localized Relayout）預設行為&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;進程隔離帶來的純粹性&lt;/strong&gt;：當右側進程被 1000 節點重排與延遲塞滿、單幀耗時飆至 21.3 ms（幀率跌至 44 FPS）時，左側進程依然絲滑地以 62 FPS 高速旋轉與移動，驗證了硬體加速圖層在多進程/多執行緒下的抗干擾能力。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;&lt;h2 id=&#34;2-核心技術解析如何在單一視窗中以雙進程多-activity-隔離渲染畫面&#34;&gt;2. 核心技術解析：如何在單一視窗中以雙進程／多 Activity 隔離渲染畫面？&lt;/h2&gt;
+&lt;p&gt;許多讀者可能會好奇：&lt;strong&gt;Android 原生介面中，如何讓兩個完全不同的 Linux 進程，把各自的 UI 同時渲染在同一個 Activity 的同一個視窗畫面上？&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;MiniCompose 結合了 Android 11 (API 30+) 引入的 &lt;strong&gt;&lt;code&gt;SurfaceControlViewHost&lt;/code&gt;&lt;/strong&gt; 與傳統的 &lt;strong&gt;&lt;code&gt;SurfaceView&lt;/code&gt; + Binder IPC&lt;/strong&gt;，實現了這套跨進程畫面無縫嵌入架構。&lt;/p&gt;
+&lt;h3 id=&#34;21-為什麼需要雙進程隔離&#34;&gt;2.1 為什麼需要雙進程隔離？&lt;/h3&gt;
+&lt;p&gt;在常規 Android 開發中，所有 View 都運行在同一個主執行緒（UI Thread）與同一個 ART 虛擬機進程中。若要公正地對比「高負載 CPU 計算」與「GPU 硬體加速」：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;共享 UI Looper 污染&lt;/strong&gt;：CPU 端的繁重排版會延遲 &lt;code&gt;Choreographer.doFrame()&lt;/code&gt;，使同一畫面上的 GPU 動畫也被迫延遲掉幀。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;共享 GC 暫停&lt;/strong&gt;：大量短命物件的頻繁分配會觸發全進程的垃圾回收暫停（GC Pause），干擾微秒級量測。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;將兩者拆分至 &lt;code&gt;:left_gpu&lt;/code&gt; 與 &lt;code&gt;:right_cpu&lt;/code&gt; 獨立進程後，每個進程擁有自己的 Linux PID、獨立的虛擬機堆積、專屬的 Main Looper 與 RenderThread，達成了物理級別的效能隔離。&lt;/p&gt;
+&lt;h3 id=&#34;22-跨進程畫面嵌入架構surfacecontrolviewhost&#34;&gt;2.2 跨進程畫面嵌入架構：&lt;code&gt;SurfaceControlViewHost&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;在 &lt;code&gt;AndroidManifest.xml&lt;/code&gt; 中，我們宣告了兩個獨立進程：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-xml&#34; data-lang=&#34;xml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- Process 1: 主介面與左側 GPU Activity (:left_gpu) --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;activity&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:name=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.MainActivity&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:process=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;:left_gpu&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:hardwareAccelerated=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;true&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;!-- Process 2: 右側 CPU 渲染服務與獨立 Activity (:right_cpu) --&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;service&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:name=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.RightCpuService&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:process=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;:right_cpu&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:exported=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;false&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;activity&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:name=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;.RightCpuActivity&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:process=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;:right_cpu&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;android:resizeableActivity=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;true&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;整個跨進程渲染與控制的 IPC 握手流程如下：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    sequenceDiagram
+    autonumber
+    participant Host as MainActivity (:left_gpu)
+    participant SF as SurfaceFlinger (System Compositor)
+    participant Remote as RightCpuService (:right_cpu)
+
+    Note over Host: 1. 建立 SurfaceView 並取得 hostToken
+    Host-&gt;&gt;Remote: bindService() + Binder.transact(TRANSACTION_CREATE_SURFACE, hostToken, w, h)
+    
+    Note over Remote: 2. 初始化 SurfaceControlViewHost(display, hostToken)
+    Note over Remote: 3. 將 MiniComposeView 設為 Root View
+    Note over Remote: 4. 取出 SurfacePackage (封裝 Remote SurfaceControl)
+    Remote--&gt;&gt;Host: Binder Parcel 回傳 (PID, SurfacePackage)
+
+    Note over Host: 5. surfaceView.setChildSurfacePackage(surfacePackage)
+    Host-&gt;&gt;SF: 註冊跨進程圖層混合
+    Remote-&gt;&gt;SF: :right_cpu RenderThread 直接送幀
+    Host-&gt;&gt;SF: :left_gpu RenderThread 直接送幀
+    SF--&gt;&gt;Host: SurfaceFlinger 同步合成至單一螢幕！
+
+    rect rgb(240, 249, 255)
+    Note over Host, Remote: 6. 跨進程雙向互動與遙測同步 (Binder IPC)
+    Host-&gt;&gt;Remote: transact(TRANSACTION_SET_COMPLEXITY / DELAY / LOAD)
+    Host-&gt;&gt;Remote: transact(TRANSACTION_GET_STATS) -&gt; 回傳 (FPS, LayoutUs, DrawUs)
+    end
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;23-核心程式碼實作&#34;&gt;2.3 核心程式碼實作&lt;/h3&gt;
+&lt;h4 id=&#34;步驟-1主端left_gpu配置-surfaceview-並發送-hosttoken&#34;&gt;步驟 1：主端（&lt;code&gt;:left_gpu&lt;/code&gt;）配置 &lt;code&gt;SurfaceView&lt;/code&gt; 並發送 &lt;code&gt;hostToken&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;在 &lt;code&gt;MainActivity&lt;/code&gt; 中，右半部配置一個 &lt;code&gt;SurfaceView&lt;/code&gt;，當 Surface 就緒後，將它的 &lt;code&gt;hostToken&lt;/code&gt; 透過 Binder 傳給遠端服務：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// MainActivity.kt (:left_gpu process)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;rightSurfaceView = SurfaceView(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;).apply {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    setZOrderMediaOverlay(&lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    holder.setFormat(&lt;span style=&#34;color:#a6e22e&#34;&gt;PixelFormat&lt;/span&gt;.TRANSLUCENT)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    holder.addCallback(&lt;span style=&#34;color:#66d9ef&#34;&gt;object&lt;/span&gt; &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;: &lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;SurfaceHolder&lt;/span&gt;.Callback {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;surfaceCreated&lt;/span&gt;(holder: SurfaceHolder) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            attachSurfaceIfReady()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;surfaceChanged&lt;/span&gt;(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            attachSurfaceIfReady()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;surfaceDestroyed&lt;/span&gt;(holder: SurfaceHolder) {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    })
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;attachSurfaceIfReady&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; service = rightServiceBinder &lt;span style=&#34;color:#f92672&#34;&gt;?:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; hostToken = rightSurfaceView.hostToken &lt;span style=&#34;color:#f92672&#34;&gt;?:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; w = rightSurfaceView.width
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; h = rightSurfaceView.height
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (w &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; h &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; data = &lt;span style=&#34;color:#a6e22e&#34;&gt;Parcel&lt;/span&gt;.obtain()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; reply = &lt;span style=&#34;color:#a6e22e&#34;&gt;Parcel&lt;/span&gt;.obtain()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;try&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;data&lt;/span&gt;.writeStrongBinder(hostToken)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;data&lt;/span&gt;.writeInt(w)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;data&lt;/span&gt;.writeInt(h)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        service.transact(&lt;span style=&#34;color:#a6e22e&#34;&gt;RightCpuService&lt;/span&gt;.TRANSACTION_CREATE_SURFACE, &lt;span style=&#34;color:#66d9ef&#34;&gt;data&lt;/span&gt;, reply, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        reply.readException()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        rightPid = reply.readInt()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; hasPackage = reply.readInt()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (hasPackage &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; surfacePackage = &lt;span style=&#34;color:#a6e22e&#34;&gt;SurfaceControlViewHost&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;SurfacePackage&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;CREATOR&lt;/span&gt;.createFromParcel(reply)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 將遠端進程的畫面包掛載進本地 SurfaceView！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            rightSurfaceView.setChildSurfacePackage(surfacePackage)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;finally&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;data&lt;/span&gt;.recycle()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        reply.recycle()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;步驟-2遠端right_cpu建立-surfacecontrolviewhost-並回傳-surfacepackage&#34;&gt;步驟 2：遠端（&lt;code&gt;:right_cpu&lt;/code&gt;）建立 &lt;code&gt;SurfaceControlViewHost&lt;/code&gt; 並回傳 &lt;code&gt;SurfacePackage&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;在 &lt;code&gt;RightCpuService&lt;/code&gt; 內部，收到 &lt;code&gt;hostToken&lt;/code&gt; 後建立 &lt;code&gt;SurfaceControlViewHost&lt;/code&gt;，並將耗費 CPU 計算的 &lt;code&gt;MiniComposeView&lt;/code&gt; 掛載進去：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// RightCpuService.kt (:right_cpu process)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;@RequiresApi&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;Build&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;VERSION_CODES&lt;/span&gt;.R)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;createEmbeddedViewHierarchy&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    hostToken: IBinder,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    width: Int,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    height: Int
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): &lt;span style=&#34;color:#a6e22e&#34;&gt;SurfaceControlViewHost&lt;/span&gt;.SurfacePackage? {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; displayManager = getSystemService(&lt;span style=&#34;color:#a6e22e&#34;&gt;Context&lt;/span&gt;.DISPLAY_SERVICE) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; DisplayManager
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; display = displayManager.getDisplay(&lt;span style=&#34;color:#a6e22e&#34;&gt;Display&lt;/span&gt;.DEFAULT_DISPLAY)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 建立跨進程 View 宿主
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; newHost = SurfaceControlViewHost(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;, display, hostToken)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;.host = newHost
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; newComposeView = MiniComposeView(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;.composeView = newComposeView
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 將 Compose 樹掛載至遠端 Host
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    newHost.setView(newComposeView, width, height)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    setupComposeTree(width, height)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    startAnimation()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 取得可跨進程序列化傳輸的 SurfacePackage
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; newHost.surfacePackage
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;步驟-3跨進程-binder-遙測與互動控制&#34;&gt;步驟 3：跨進程 Binder 遙測與互動控制&lt;/h4&gt;
+&lt;p&gt;為了讓主畫面的控制按鈕（如 100/500/1000 節點切換、延遲注入等）與 HUD 統計數據即時同步，兩進程間定義了一組輕量的 Binder Transaction：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 跨進程控制碼定義
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_CREATE_SURFACE = &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_SET_COMPLEXITY = &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_SET_LAYOUT_DELAY = &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_GET_STATS = &lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_SET_DRAW_LOAD = &lt;span style=&#34;color:#ae81ff&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; TRANSACTION_SET_ANIMATING = &lt;span style=&#34;color:#ae81ff&#34;&gt;6&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;MainActivity&lt;/code&gt; 每秒定期呼叫 &lt;code&gt;TRANSACTION_GET_STATS&lt;/code&gt;，跨進程讀取 &lt;code&gt;:right_cpu&lt;/code&gt; 的 FPS 與微秒耗時，並繪製在主螢幕的 HUD 面板上。&lt;/p&gt;
+&lt;h4 id=&#34;補充多-activity-原生分割畫面split-screen&#34;&gt;補充：多 Activity 原生分割畫面（Split-Screen）&lt;/h4&gt;
+&lt;p&gt;除了 &lt;code&gt;SurfaceControlViewHost&lt;/code&gt; 視窗內嵌入外，專案中也提供了獨立的 &lt;a href=&#34;https://github.com/p47t/minicompose/blob/master/app/src/main/java/com/example/minicompose/RightCpuActivity.kt&#34;&gt;&lt;code&gt;RightCpuActivity&lt;/code&gt;&lt;/a&gt;。透過設定 &lt;code&gt;android:resizeableActivity=&amp;quot;true&amp;quot;&lt;/code&gt; 與 &lt;code&gt;launchMode=&amp;quot;singleTask&amp;quot;&lt;/code&gt;，在 Android 平板或多重視窗模式下，系統可以同時以左右分割畫面運行 &lt;code&gt;MainActivity&lt;/code&gt; (:left_gpu) 與 &lt;code&gt;RightCpuActivity&lt;/code&gt; (:right_cpu)，同樣享有 100% 的進程與繪製隔離。&lt;/p&gt;
+&lt;h2 id=&#34;3-minicompose-的-5-大核心架構實作&#34;&gt;3. MiniCompose 的 5 大核心架構實作&lt;/h2&gt;
+&lt;p&gt;除了雙進程隔離技術，MiniCompose 的核心價值在於用最精簡的 Kotlin 程式碼，完整還原 Jetpack Compose 團隊在渲染管線上的 5 大關鍵設計決策。&lt;/p&gt;
+&lt;h3 id=&#34;決策-1為什麼-composeview-與-androidcomposeview-必須是-viewgroup&#34;&gt;決策 1：為什麼 &lt;code&gt;ComposeView&lt;/code&gt; 與 &lt;code&gt;AndroidComposeView&lt;/code&gt; 必須是 &lt;code&gt;ViewGroup&lt;/code&gt;？&lt;/h3&gt;
+&lt;p&gt;在傳統 View 系統中，如果我們要客製化一個純粹繪製內容的元件，通常繼承 &lt;code&gt;View&lt;/code&gt; 即可。但 Compose 的進入點卻是兩個 &lt;code&gt;ViewGroup&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    AVTree[&#34;Android 原生 View 樹狀結構&#34;] --&gt; MCV[&#34;MiniComposeView (ViewGroup)&lt;br/&gt;• 對外公開的 API 容器&lt;br/&gt;• 攔截非法 addView()&#34;]
+    MCV --&gt;|唯一合法子 View| MACV[&#34;MiniAndroidComposeView (ViewGroup)&lt;br/&gt;• 內部核心 Bridge &amp; 樹狀結構 Owner&#34;]
+    MACV --&gt;|持有與調度| RootNode[&#34;Root LayoutNode&lt;br/&gt;• Compose 元件樹根節點&#34;]
+    MACV --&gt;|持有與管理| AVHandler[&#34;AndroidViewsHandler&lt;br/&gt;• 託管 AndroidView 嵌入的原生元件&#34;]
+
+    style AVTree fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    style MCV fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style MACV fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
+    style RootNode fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style AVHandler fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155
+  &lt;/div&gt;
+
+&lt;p&gt;其背後原因有兩個：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;API 封裝&lt;/strong&gt;：&lt;code&gt;MiniComposeView&lt;/code&gt; 對外暴露給開發者使用，它必須是一個 &lt;code&gt;ViewGroup&lt;/code&gt; 才能透過 &lt;code&gt;addView()&lt;/code&gt; 將唯一的內部核心元件 &lt;code&gt;MiniAndroidComposeView&lt;/code&gt; 掛載進去。同時，它覆寫了公開的 &lt;code&gt;addView()&lt;/code&gt; 方法，禁止外部隨意新增一般 View：
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;addView&lt;/span&gt;(child: View?) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (!creatingComposition) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;throw&lt;/span&gt; UnsupportedOperationException(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Cannot add views to MiniComposeView; use setContent {} instead.&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;super&lt;/span&gt;.addView(child)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;互操作性（Interop）&lt;/strong&gt;：當我們在 Compose 中使用 &lt;code&gt;AndroidView&lt;/code&gt; 嵌入傳統原生元件（如 &lt;code&gt;WebView&lt;/code&gt; 或 &lt;code&gt;MapView&lt;/code&gt;）時，這些原生元件必須存在於 Android View 樹狀結構中。&lt;code&gt;MiniAndroidComposeView&lt;/code&gt; 作為 &lt;code&gt;ViewGroup&lt;/code&gt;，才能在內部建立一個 &lt;code&gt;AndroidViewsHandler&lt;/code&gt; 來持有並管理這些原生子 View。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;決策-2空的-ondraw-與攔截-dispatchdraw-的-z-order-奧秘&#34;&gt;決策 2：空的 &lt;code&gt;onDraw()&lt;/code&gt; 與攔截 &lt;code&gt;dispatchDraw()&lt;/code&gt; 的 Z-Order 奧秘&lt;/h3&gt;
+&lt;p&gt;在 Android 中，一個 &lt;code&gt;View&lt;/code&gt; 的完整繪製流程如下：
+&lt;/p&gt;
+$$\text{drawBackground()} \longrightarrow \text{onDraw()} \longrightarrow \text{dispatchDraw()} \longrightarrow \text{onDrawForeground()}$$&lt;p&gt;其中，&lt;code&gt;onDraw()&lt;/code&gt; 是用來畫 View 自己的內容，而 &lt;code&gt;dispatchDraw()&lt;/code&gt; 則是 &lt;code&gt;ViewGroup&lt;/code&gt; 用來派發並繪製所有子 View。&lt;/p&gt;
+&lt;blockquote&gt;&lt;p&gt;💡 &lt;strong&gt;核心洞察&lt;/strong&gt;：如果 Compose 選擇在 &lt;code&gt;onDraw()&lt;/code&gt; 中繪製 &lt;code&gt;LayoutNode&lt;/code&gt; 元件樹，那麼隨後在 &lt;code&gt;dispatchDraw()&lt;/code&gt; 繪製的原生嵌入元件（如 &lt;code&gt;AndroidView&lt;/code&gt;）將會&lt;strong&gt;永遠覆蓋在 Compose UI 之上&lt;/strong&gt;，破壞畫面的圖層順序（Z-ordering）。&lt;/p&gt;
+&lt;/blockquote&gt;&lt;p&gt;因此，&lt;code&gt;MiniAndroidComposeView&lt;/code&gt; 採取了明確的繪製順序：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;將 &lt;code&gt;onDraw()&lt;/code&gt; 留空&lt;/strong&gt;，不在這個階段做任何繪製。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;覆寫 &lt;code&gt;dispatchDraw(canvas)&lt;/code&gt;&lt;/strong&gt;：&lt;strong&gt;先畫完整棵 &lt;code&gt;LayoutNode&lt;/code&gt; 樹，再調用 &lt;code&gt;super.dispatchDraw(canvas)&lt;/code&gt; 繪製原生子 View&lt;/strong&gt;：&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;MiniAndroidComposeView&lt;/span&gt;(context: Context) : ViewGroup(context) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; root = LayoutNode(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Root&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; canvasHolder = CanvasHolder()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 刻意留空！防止內容被 dispatchDraw 繪製的子 View 覆蓋
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;onDraw&lt;/span&gt;(canvas: Canvas) {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;dispatchDraw&lt;/span&gt;(canvas: Canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 若節點樹 Dirty，執行排版與量測計時
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (root.needsLayout &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; root.hasDirtyDescendants) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; startNs = &lt;span style=&#34;color:#a6e22e&#34;&gt;System&lt;/span&gt;.nanoTime()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; didWork = root.measureAndLayout(width, height)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (didWork) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                layoutPassCount&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                lastLayoutTimeUs = (&lt;span style=&#34;color:#a6e22e&#34;&gt;System&lt;/span&gt;.nanoTime() - startNs) / &lt;span style=&#34;color:#ae81ff&#34;&gt;1000L&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 在 dispatchDraw 中繪製整個 Compose LayoutNode 樹
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; drawStartNs = &lt;span style=&#34;color:#a6e22e&#34;&gt;System&lt;/span&gt;.nanoTime()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        canvasHolder.drawInto(canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            root.draw(&lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        lastDrawTimeUs = (&lt;span style=&#34;color:#a6e22e&#34;&gt;System&lt;/span&gt;.nanoTime() - drawStartNs) / &lt;span style=&#34;color:#ae81ff&#34;&gt;1000L&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 接著讓 ViewGroup 繪製嵌入的原生 View
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;super&lt;/span&gt;.dispatchDraw(canvas)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;決策-3canvasholder-帶來的零物件分配zero-allocation&#34;&gt;決策 3：&lt;code&gt;CanvasHolder&lt;/code&gt; 帶來的零物件分配（Zero-Allocation）&lt;/h3&gt;
+&lt;p&gt;在 60 FPS 或 120 FPS 的高頻繪製迴圈中，任何短生命週期物件的頻繁分配，都會給垃圾回收器（Garbage Collector）帶來巨大壓力，導致 micro-stutter 卡頓。&lt;/p&gt;
+&lt;p&gt;Android 原生傳入 &lt;code&gt;draw()&lt;/code&gt; 的是 &lt;code&gt;android.graphics.Canvas&lt;/code&gt;，而 Compose 內部使用的是跨平台的 Canvas 抽象封裝。如果每一幀、每個節點都 &lt;code&gt;new CanvasWrapper(canvas)&lt;/code&gt;，GC 將不堪負荷。&lt;/p&gt;
+&lt;p&gt;MiniCompose 透過 &lt;a href=&#34;https://github.com/p47t/minicompose/blob/master/app/src/main/java/com/example/minicompose/CanvasHolder.kt&#34;&gt;&lt;code&gt;CanvasHolder&lt;/code&gt;&lt;/a&gt; 模式解決了這個問題：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CanvasHolder&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 預先配置單一可重複使用的 MiniCanvas 實例
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; miniCanvas = MiniCanvas()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;inline&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;drawInto&lt;/span&gt;(targetCanvas: Canvas, block: &lt;span style=&#34;color:#a6e22e&#34;&gt;MiniCanvas&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        miniCanvas.internalCanvas = targetCanvas
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;try&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            miniCanvas.block()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;finally&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            miniCanvas.internalCanvas = &lt;span style=&#34;color:#66d9ef&#34;&gt;null&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;透過 &lt;code&gt;inline&lt;/code&gt; 函式與內部引用置換，整個繪製管線在每一幀的物件分配數量嚴格為 &lt;strong&gt;0&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;決策-4graphicslayer-與硬體-rendernode-的記憶體分離&#34;&gt;決策 4：&lt;code&gt;GraphicsLayer&lt;/code&gt; 與硬體 &lt;code&gt;RenderNode&lt;/code&gt; 的記憶體分離&lt;/h3&gt;
+&lt;p&gt;在 Android 10 (API 29+) 中，Google 開放了原生 C++ &lt;code&gt;android.graphics.RenderNode&lt;/code&gt; API。MiniCompose 的 &lt;code&gt;GraphicsLayer&lt;/code&gt; 正是封裝了這顆硬體加速的核心。&lt;/p&gt;
+&lt;p&gt;一個 &lt;code&gt;RenderNode&lt;/code&gt; 在記憶體中被精確拆分為兩個獨立部分：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph RN [&#34;RenderNode (Native C++ 物件結構)&#34;]
+        direction TB
+        subgraph HP [&#34;1. Header Properties (可變資料，更新耗時 &lt; 1 µs)&#34;]
+            direction TB
+            HPList[&#34;• translationX, translationY&lt;br/&gt;• scaleX, scaleY&lt;br/&gt;• rotationX, rotationY, rotationZ&lt;br/&gt;• alpha, elevation, pivotX, pivotY&#34;]
+        end
+
+        subgraph DL [&#34;2. Display List (繪製指令，錄製完成後不可變)&#34;]
+            direction TB
+            DLList[&#34;• drawRect(0, 0, 100, 100)&lt;br/&gt;• drawText(&#39;Hello&#39;)&lt;br/&gt;• drawBitmap(...)&#34;]
+        end
+    end
+
+    HP -.-&gt;|硬體矩陣變換| GPU[&#34;GPU RenderThread&lt;br/&gt;(直接套用 4x4 矩陣，重播 Display List)&#34;]
+    DL --&gt;|無需重新錄製| GPU
+
+    style RN fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a
+    style HP fill:#eff6ff,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a8a
+    style DL fill:#f1f5f9,stroke:#64748b,stroke-width:1.5px,color:#334155
+    style HPList fill:#ffffff,stroke:#93c5fd,stroke-width:1px,color:#1e3a8a
+    style DLList fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#334155
+    style GPU fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+  &lt;/div&gt;
+
+&lt;p&gt;當我們在 MiniCompose 中使用 &lt;code&gt;graphicsLayer&lt;/code&gt; 更新動畫時：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;node.graphicsLayerBlock = { layer &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 直接寫入 native RenderNode 的 C++ 記憶體欄位！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 耗時 &amp;lt; 1 微秒，不觸發 Display List 重錄，不觸發 Re-layout
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    layer.translationY = currentY
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    layer.rotationZ = animationProgress * &lt;span style=&#34;color:#ae81ff&#34;&gt;360f&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;繪製時，GPU 上的 &lt;code&gt;RenderThread&lt;/code&gt; 可以直接套用新的 4×4 矩陣，重播完全沒有變動的 Display List。在動畫期間，&lt;code&gt;graphicsLayer&lt;/code&gt; 做到&lt;strong&gt;不重排（跳過 Layout Phase）且不重錄 Display List&lt;/strong&gt;；即使在 1000 節點的規模下，每一幀也僅需在 Draw Phase 消耗實測約 &lt;strong&gt;~280 µs&lt;/strong&gt; 即可完成全部節點的屬性更新與繪製分發。&lt;/p&gt;
+&lt;h3 id=&#34;決策-5modifiergraphicslayer-vs-modifieroffset-的本質對比&#34;&gt;決策 5：&lt;code&gt;Modifier.graphicsLayer&lt;/code&gt; vs &lt;code&gt;Modifier.offset&lt;/code&gt; 的本質對比&lt;/h3&gt;
+&lt;p&gt;Compose 的渲染管線包含三個階段：
+&lt;/p&gt;
+$$\text{Composition (組件組合)} \longrightarrow \text{Layout (量測與擺放)} \longrightarrow \text{Draw (畫布繪製)}$$&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;比較維度&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;&lt;code&gt;Modifier.graphicsLayer&lt;/code&gt;&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;&lt;code&gt;Modifier.offset&lt;/code&gt;&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;執行階段&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Draw Phase（繪製階段）&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Layout Phase（排版階段）&lt;/strong&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;底層動作&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;直接更新 native &lt;code&gt;RenderNode&lt;/code&gt; 的 Float 欄位&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;標記 &lt;code&gt;needsLayout = true&lt;/code&gt;，更新座標&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;節點樹負擔&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;0 節點遍歷&lt;/strong&gt;（跳過全樹重新排版）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;遞迴遍歷整棵樹，重新量測子節點約束&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Display List&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;完全不重新錄製&lt;/strong&gt;，Display List 保持重用&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;標記 Dirty，整棵樹重新錄製繪製指令&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;1000 節點耗時&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Layout: 0 µs / 總耗時: ~280 µs&lt;/strong&gt;（節省 98%）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Layout: ~14.7 ms / 總耗時: ~21.3 ms&lt;/strong&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;4-minicompose-專案模組結構&#34;&gt;4. MiniCompose 專案模組結構&lt;/h2&gt;
+&lt;p&gt;整個 MiniCompose 專案結構清晰，模組分工如下：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;app/src/main/
+├── AndroidManifest.xml      # 宣告 :left_gpu 與 :right_cpu 雙獨立進程
+└── java/com/example/minicompose/
+    ├── CanvasHolder.kt      # 零物件分配 Canvas 轉接器
+    ├── GraphicsLayer.kt     # 封裝 RenderNode 的硬體繪製圖層與 header 屬性更新
+    ├── LayoutNode.kt        # Compose 節點樹結構、Measure/Layout Policy 與繪製分發
+    ├── MiniComposeView.kt   # 對外公開的 MiniComposeView 與內部 Bridge MiniAndroidComposeView
+    ├── MainActivity.kt      # 雙進程協調器（運行於 :left_gpu，透過 SurfaceControlViewHost 嵌入右側畫面）
+    ├── RightCpuService.kt   # 遠端渲染服務（運行於 :right_cpu，提供 SurfacePackage 與 IPC 遙測數據）
+    └── RightCpuActivity.kt  # 獨立 CPU 測試 Activity（支援 Android 原生多重視窗分割畫面）&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;5-結語與學習心得&#34;&gt;5. 結語與學習心得&lt;/h2&gt;
+&lt;p&gt;透過從零手刻 MiniCompose 並整合 Android 雙進程跨視窗渲染架構，我們獲得了兩個層面的深刻體悟：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Compose 架構設計的精準取捨&lt;/strong&gt;：&lt;code&gt;ComposeView&lt;/code&gt; 繼承 &lt;code&gt;ViewGroup&lt;/code&gt; 與清空 &lt;code&gt;onDraw()&lt;/code&gt;，是為了在享受宣告式 UI 開發體驗的同時，兼顧與傳統 View 系統 100% 的 Z-Order 互操作性；而 &lt;code&gt;CanvasHolder&lt;/code&gt; 與 &lt;code&gt;GraphicsLayer&lt;/code&gt; 則是對 Android HWUI / RenderThread 底層管線的極致效能榨取。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;進程隔離帶來的純粹基準測試&lt;/strong&gt;：透過 &lt;code&gt;SurfaceControlViewHost&lt;/code&gt;，我們得以在單一視窗內將兩個截然不同的渲染策略隔絕在獨立的 Linux 進程中。無論右側的排版負載多麼沉重、引發多少 GC 暫停，左側的硬體加速動畫依然能以 60+ FPS 絲滑運轉。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;如果你也想親自把玩這套雙進程架構並體驗微秒級的效能數據，歡迎造訪 &lt;a href=&#34;https://github.com/p47t/minicompose&#34;&gt;GitHub - p47t/minicompose&lt;/a&gt;，將專案 clone 下來在 Android Studio 中打開並運行於實機上！&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>深入剖析 Jetpack Compose 渲染架構</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-11-jetpack-compose-rendering-architecture/</link>
+      <pubDate>Tue, 11 Aug 2026 22:45:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-11-jetpack-compose-rendering-architecture/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-11-jetpack-compose-rendering-architecture/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;身為 Android 開發者，你可能早已體驗過 Jetpack Compose 帶來的宣告式 UI 開發體驗。特別是使用 &lt;code&gt;Modifier.graphicsLayer&lt;/code&gt; 製作位移、旋轉與透明度動畫時，畫面呈現出的 60 / 120 FPS 極致流暢度，常讓人讚嘆不已。&lt;/p&gt;
+&lt;p&gt;不過，你有沒有在寫程式時突然好奇過：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Compose 作為全新設計的 UI 框架，究竟是如何無縫嵌入傳統 Android View 體系的？&lt;/li&gt;
+&lt;li&gt;當系統刷新畫面時，Compose 是如何「攔截」系統 &lt;code&gt;Canvas&lt;/code&gt; 並畫出自己的元件？&lt;/li&gt;
+&lt;li&gt;為什麼透過 &lt;code&gt;graphicsLayer&lt;/code&gt; 跑動畫時，能夠將主執行緒（Main UI Thread）的負擔降到最低並實現極致順暢的 60 / 120 FPS？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這篇文章將帶大家一起打開 AndroidX Compose 原始碼（以 &lt;code&gt;ComposeView&lt;/code&gt;、&lt;code&gt;AndroidComposeView&lt;/code&gt;、&lt;code&gt;CanvasHolder&lt;/code&gt; 與 &lt;code&gt;RenderNode&lt;/code&gt; 為核心），一層層拆解 Compose 的底層渲染架構與動畫加速！&lt;/p&gt;
+&lt;h2 id=&#34;1-compose-在-view-system-中的宿主composeview-與-androidcomposeview&#34;&gt;1. Compose 在 View System 中的宿主：ComposeView 與 AndroidComposeView&lt;/h2&gt;
+&lt;p&gt;在傳統 XML 佈局或 View 體系中引進 Compose 時，我們的進入點通常是 &lt;code&gt;ComposeView&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; composeView = ComposeView(context).apply {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    setContent {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Text(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Hello Compose!&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;11-為什麼-composeview-繼承自-viewgroup-而不是-view&#34;&gt;1.1 為什麼 &lt;code&gt;ComposeView&lt;/code&gt; 繼承自 &lt;code&gt;ViewGroup&lt;/code&gt; 而不是 &lt;code&gt;View&lt;/code&gt;？&lt;/h3&gt;
+&lt;p&gt;在 Android View 框架中，標準的 &lt;code&gt;View&lt;/code&gt; 只能繪製自己，&lt;strong&gt;無法包含子 View&lt;/strong&gt;；唯有 &lt;code&gt;ViewGroup&lt;/code&gt; 才能透過 &lt;code&gt;addView()&lt;/code&gt; 管理與擺放子視圖。&lt;/p&gt;
+&lt;p&gt;當我們呼叫 &lt;code&gt;ComposeView.setContent&lt;/code&gt; 時，&lt;code&gt;AbstractComposeView&lt;/code&gt; 會在內部建立一個關鍵的子 View——&lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/AndroidComposeView.android.kt&#34;&gt;&lt;code&gt;AndroidComposeView&lt;/code&gt;&lt;/a&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    AV[&#34;Android View 樹&#34;] --&gt; CV[&#34;ComposeView (ViewGroup)&lt;br/&gt;• 公開 API 容器 &amp; 生命週期管理&#34;]
+    CV --&gt;|唯一子 View| ACV[&#34;AndroidComposeView (ViewGroup)&lt;br/&gt;• 內部橋樑 &amp; 實現 Owner 介面&#34;]
+    ACV --&gt;|管理| Root[&#34;Root LayoutNode&lt;br/&gt;• Compose 樹根節點&#34;]
+    ACV --&gt;|管理| AVH[&#34;AndroidViewsHandler&lt;br/&gt;• 用於內嵌傳統 Android View&#34;]
+
+    style AV fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    style CV fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style ACV fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
+    style Root fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style AVH fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155
+  &lt;/div&gt;
+
+&lt;p&gt;這裡的分工非常明確：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;公開 API 與內部實現解耦&lt;/strong&gt;：&lt;code&gt;ComposeView&lt;/code&gt; 負責處理生命週期策略 (&lt;code&gt;ViewCompositionStrategy&lt;/code&gt;) 與 XML 佈局防護。它透過覆寫 &lt;code&gt;checkAddView()&lt;/code&gt; 防止外部誤加原生 View：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ComposeView.android.kt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;checkAddView&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (!creatingComposition) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;throw&lt;/span&gt; UnsupportedOperationException(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Cannot add views to &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${javaClass.simpleName}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;; only Compose content is supported&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;當呼叫 &lt;code&gt;createComposition()&lt;/code&gt; 時，&lt;code&gt;AbstractComposeView&lt;/code&gt; 會經由 &lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/Wrapper.android.kt&#34;&gt;&lt;code&gt;Wrapper.android.kt&lt;/code&gt;&lt;/a&gt; 實例化 &lt;code&gt;AndroidComposeView&lt;/code&gt; 並將其掛載為唯一的子 View：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Wrapper.android.kt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;internal&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;AbstractComposeView&lt;/span&gt;.setContent(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    composeViewContext: ComposeViewContext,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    content: &lt;span style=&#34;color:#a6e22e&#34;&gt;@Composable&lt;/span&gt; () &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Composition {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;GlobalSnapshotManager&lt;/span&gt;.ensureStarted()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; composeView = &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (childCount &amp;gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        (getChildAt(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt;? AndroidComposeView)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        removeAllViews()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;null&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#f92672&#34;&gt;?:&lt;/span&gt; AndroidComposeView(context, composeViewContext).also {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        addView(&lt;span style=&#34;color:#66d9ef&#34;&gt;it&lt;/span&gt;.view, DefaultLayoutParams)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; wrapped = composeView.getTag(&lt;span style=&#34;color:#a6e22e&#34;&gt;R&lt;/span&gt;.id.wrapped_composition_tag) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt;? WrappedComposition
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;?:&lt;/span&gt; WrappedComposition(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            composeView,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Composition(UiApplier(composeView.root), composeViewContext.compositionContext)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        ).also { composeView.setTag(&lt;span style=&#34;color:#a6e22e&#34;&gt;R&lt;/span&gt;.id.wrapped_composition_tag, &lt;span style=&#34;color:#66d9ef&#34;&gt;it&lt;/span&gt;) }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    wrapped.setContent(content)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; wrapped
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;AndroidComposeView&lt;/code&gt; 也是 &lt;code&gt;ViewGroup&lt;/code&gt;&lt;/strong&gt;：因為它不僅要作為 Compose 樹的根節點（&lt;code&gt;Owner&lt;/code&gt;），當我們在 Compose 中使用 &lt;code&gt;AndroidView&lt;/code&gt; 嵌入傳統 View（如 &lt;code&gt;WebView&lt;/code&gt; 或 &lt;code&gt;MapView&lt;/code&gt;）時，&lt;code&gt;AndroidComposeView&lt;/code&gt; 必須透過內部的 &lt;code&gt;AndroidViewsHandler&lt;/code&gt; 容器來管理這些原生子 View。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;ViewTree 依賴與生命週期傳遞&lt;/strong&gt;：&lt;code&gt;ComposeView&lt;/code&gt; 透過內部 &lt;code&gt;ComposeViewContext&lt;/code&gt; 自動尋找並傳遞 View 樹中的 &lt;code&gt;LifecycleOwner&lt;/code&gt;、&lt;code&gt;SavedStateRegistryOwner&lt;/code&gt; 與 &lt;code&gt;ViewModelStoreOwner&lt;/code&gt;，讓 Compose 能夠在 View 樹中正確注入 &lt;code&gt;CompositionLocal&lt;/code&gt; 與狀態回復機制。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;2-繪圖攔截的魔法為什麼是-dispatchdraw-而不是-ondraw&#34;&gt;2. 繪圖攔截的魔法：為什麼是 &lt;code&gt;dispatchDraw&lt;/code&gt; 而不是 &lt;code&gt;onDraw&lt;/code&gt;？&lt;/h2&gt;
+&lt;p&gt;當 Android 系統刷新畫面時，&lt;code&gt;View&lt;/code&gt; 類別的 &lt;code&gt;draw(Canvas)&lt;/code&gt; 函式會依序執行以下步驟：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-java&#34; data-lang=&#34;java&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Standard android.view.View / ViewGroup draw pipeline:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;draw&lt;/span&gt;(Canvas canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    drawBackground(canvas);   &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 繪製背景&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    onDraw(canvas);           &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 繪製 View 本身內容&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    dispatchDraw(canvas);     &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 繪製子 View 們 (ViewGroup 專屬)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    onDrawForeground(canvas); &lt;span style=&#34;color:#75715e&#34;&gt;// 4. 繪製滾動條與前景 Overlay&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    A[&#34;View.draw(Canvas)&#34;] --&gt; B[&#34;1. drawBackground (繪製背景)&#34;]
+    B --&gt; C[&#34;2. onDraw (繪製 View 本身)&#34;]
+    C --&gt; D[&#34;3. dispatchDraw (繪製子 View 們)&#34;]
+    D --&gt; E[&#34;4. onDrawForeground (繪製前景 Overlay)&#34;]
+
+    style A fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    style B fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155
+    style C fill:#fff5f5,stroke:#ef4444,stroke-width:2px,color:#991b1b
+    style D fill:#ecfdf5,stroke:#10b981,stroke-width:2.5px,color:#065f46
+    style E fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155
+  &lt;/div&gt;
+
+&lt;p&gt;你可能會以為 Compose 是在 &lt;code&gt;onDraw(Canvas)&lt;/code&gt; 中把元件印到畫面上，但如果你查閱 &lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui/src/androidMain/kotlin/androidx/compose/ui/platform/AndroidComposeView.android.kt&#34;&gt;&lt;code&gt;AndroidComposeView.android.kt&lt;/code&gt;&lt;/a&gt; 的原始碼，會發現一個有趣的現象：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;onDraw&lt;/span&gt;(canvas: android.graphics.Canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 竟然是空的！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;21-關鍵原因z-order-排序與原生-view-混合繪製&#34;&gt;2.1 關鍵原因：Z-Order 排序與原生 View 混合繪製&lt;/h3&gt;
+&lt;p&gt;Compose 選擇在 &lt;strong&gt;&lt;code&gt;dispatchDraw(Canvas)&lt;/code&gt;&lt;/strong&gt; 階段攔截 Canvas，原始碼中的關鍵實現如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// AndroidComposeView.android.kt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;dispatchDraw&lt;/span&gt;(canvas: android.graphics.Canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!is&lt;/span&gt;AttachedToWindow) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        invalidateLayers(root)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 確保繪圖前的測量與佈局已完成
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    measureAndLayout()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;Snapshot&lt;/span&gt;.notifyObjectsInitialized()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    isDrawingContent = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;try&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        trace(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;AndroidOwner:draw&amp;#34;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 將系統 Canvas 丟入 CanvasHolder 進行 Zero-Allocation 轉譯
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            canvasHolder.drawInto(canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 從 Compose 根節點遞迴繪製整棵 LayoutNode 樹
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                root.draw(canvas = &lt;span style=&#34;color:#66d9ef&#34;&gt;this&lt;/span&gt;, graphicsLayer = &lt;span style=&#34;color:#66d9ef&#34;&gt;null&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;finally&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        isDrawingContent = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;其背後的主要考量為：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;onDraw()&lt;/code&gt; 執行時間太早&lt;/strong&gt;：&lt;code&gt;onDraw()&lt;/code&gt; 在繪製任何子 View &lt;em&gt;之前&lt;/em&gt; 就執行完畢。如果 Compose 在 &lt;code&gt;onDraw()&lt;/code&gt; 繪製 UI，那麼所有透過 &lt;code&gt;AndroidView&lt;/code&gt; 嵌入的原生 View 永遠會蓋在 Compose UI 的上方，無法實現 Compose 元件與原生 View 的動態圖層交錯（Z-Index）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;在 &lt;code&gt;dispatchDraw()&lt;/code&gt; 中精確控制圖層&lt;/strong&gt;：&lt;code&gt;dispatchDraw()&lt;/code&gt; 是 &lt;code&gt;ViewGroup&lt;/code&gt; 繪製子 View 的時間點。Compose 在這裡接管 &lt;code&gt;Canvas&lt;/code&gt;，就能精確控制 Compose 的 &lt;code&gt;LayoutNode&lt;/code&gt; 樹與原生 View 之間的繪圖順序。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;3-zero-allocation-繪圖適配器canvasholder-與-androidcanvas&#34;&gt;3. Zero-Allocation 繪圖適配器：CanvasHolder 與 AndroidCanvas&lt;/h2&gt;
+&lt;p&gt;在 Android 系統中，&lt;code&gt;dispatchDraw&lt;/code&gt; 傳進來的是 &lt;code&gt;android.graphics.Canvas&lt;/code&gt;；而 Compose 內部使用的是跨平台的 &lt;code&gt;androidx.compose.ui.graphics.Canvas&lt;/code&gt; 介面。&lt;/p&gt;
+&lt;p&gt;如果每一幀（每秒 60 ~ 120 次）繪圖時，Compose 都 &lt;code&gt;new&lt;/code&gt; 一個包裝物件來轉換 Canvas，將會引發嚴重的記憶體抖動（Memory Churn）與 GC 卡頓。&lt;/p&gt;
+&lt;p&gt;為了避免這個問題，Compose 採用了 &lt;strong&gt;&lt;code&gt;CanvasHolder&lt;/code&gt;&lt;/strong&gt; 適配器設計：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    sequenceDiagram
+    participant SC as System Canvas (android.graphics.Canvas)
+    participant ACV as AndroidComposeView
+    participant CH as CanvasHolder
+    participant AC as AndroidCanvas Wrapper
+    participant Root as Compose LayoutNode Tree
+
+    SC-&gt;&gt;ACV: dispatchDraw(systemCanvas)
+    ACV-&gt;&gt;CH: drawInto(systemCanvas)
+    CH-&gt;&gt;AC: 暫時將 internalCanvas 指向 systemCanvas
+    CH-&gt;&gt;Root: root.draw(androidCanvas)
+    Root-&gt;&gt;AC: 執行繪圖指令 (drawRect, drawText...)
+    AC-&gt;&gt;SC: 直接委派給 systemCanvas 執行
+    CH-&gt;&gt;AC: 繪製結束，恢復 internalCanvas
+  &lt;/div&gt;
+
+&lt;p&gt;在 &lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui-graphics/src/androidMain/kotlin/androidx/compose/ui/graphics/AndroidCanvas.android.kt&#34;&gt;&lt;code&gt;AndroidCanvas.android.kt&lt;/code&gt;&lt;/a&gt; 中：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CanvasHolder&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;@PublishedApi&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;internal&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; androidCanvas: AndroidCanvas = AndroidCanvas()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;inline&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;drawInto&lt;/span&gt;(targetCanvas: android.graphics.Canvas, block: &lt;span style=&#34;color:#a6e22e&#34;&gt;Canvas&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; previousCanvas = androidCanvas.internalCanvas
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        androidCanvas.internalCanvas = targetCanvas &lt;span style=&#34;color:#75715e&#34;&gt;// 替換內部參考
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        androidCanvas.block()                         &lt;span style=&#34;color:#75715e&#34;&gt;// 執行 Compose 繪圖
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        androidCanvas.internalCanvas = previousCanvas &lt;span style=&#34;color:#75715e&#34;&gt;// 復原
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;透過這個簡單而精妙的設計，Compose 實現了 &lt;strong&gt;0 記憶體配置（Zero-Allocation）&lt;/strong&gt; 的 Canvas 轉譯！&lt;/p&gt;
+&lt;h2 id=&#34;4-繪圖圖層的硬體加速rendernodelayer-vs-graphicslayerownerlayer&#34;&gt;4. 繪圖圖層的硬體加速：RenderNodeLayer vs GraphicsLayerOwnerLayer&lt;/h2&gt;
+&lt;p&gt;在 Compose 中，當我們為元件加上 &lt;code&gt;Modifier.graphicsLayer&lt;/code&gt; 時，Compose 會為該節點建立一個獨立的繪圖圖層（&lt;code&gt;OwnedLayer&lt;/code&gt;）。&lt;/p&gt;
+&lt;p&gt;原始碼中主要有兩種圖層實現：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;RenderNodeLayer&lt;/code&gt;（早期實現）&lt;/strong&gt;：直接包裝 Android 系統的 &lt;code&gt;RenderNodeApi29&lt;/code&gt; / &lt;code&gt;RenderNodeApi23&lt;/code&gt;，內部手動透過 &lt;code&gt;OutlineResolver&lt;/code&gt; 來處理裁切與陰影。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;GraphicsLayerOwnerLayer&lt;/code&gt;（現代 1.7+ 標準實現）&lt;/strong&gt;：Compose 將圖層抽象化為統一的 &lt;code&gt;GraphicsLayer&lt;/code&gt; API。在 Android 10 (API 29+) 上，它底層會建立 &lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui-graphics/src/androidMain/kotlin/androidx/compose/ui/graphics/layer/GraphicsLayerV29.android.kt&#34;&gt;&lt;code&gt;GraphicsLayerV29&lt;/code&gt;&lt;/a&gt;，並直接使用 Android 系統公開的 &lt;code&gt;android.graphics.RenderNode&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在 &lt;a href=&#34;https://github.com/androidx/androidx/blob/main/compose/ui/ui-graphics/src/androidMain/kotlin/androidx/compose/ui/graphics/AndroidGraphicsContext.android.kt&#34;&gt;&lt;code&gt;AndroidGraphicsContext.android.kt&lt;/code&gt;&lt;/a&gt; 原始碼中，我們可以看到系統如何根據 API 版本動態切換圖層實現：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// AndroidGraphicsContext.android.kt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;createGraphicsLayer&lt;/span&gt;(): GraphicsLayer {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    synchronized(lock) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; ownerId = getUniqueDrawingId(ownerView)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; layerImpl = &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;Build&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;VERSION&lt;/span&gt;.SDK_INT &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Build&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;VERSION_CODES&lt;/span&gt;.Q) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// Android 10+: 使用官方 public RenderNode API
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            GraphicsLayerV29(ownerId)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (isRenderNodeCompatible &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Build&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;VERSION&lt;/span&gt;.SDK_INT &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Build&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;VERSION_CODES&lt;/span&gt;.M) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;try&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#75715e&#34;&gt;// Android 6.0~9.0: 使用隱藏的 framework RenderNode stubs
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                GraphicsLayerV23(ownerView, ownerId)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            } &lt;span style=&#34;color:#66d9ef&#34;&gt;catch&lt;/span&gt; (_: Throwable) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                isRenderNodeCompatible = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                GraphicsViewLayer(obtainViewLayerContainer(ownerView), ownerId)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 舊版或相容性降級: 使用 ViewLayer 容器
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            GraphicsViewLayer(obtainViewLayerContainer(ownerView), ownerId)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; GraphicsLayer(layerImpl)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;不論是哪一種實現，在 Android 10 (API 29) 以上的版本，兩者最終都會指向系統核心的 &lt;strong&gt;&lt;code&gt;android.graphics.RenderNode&lt;/code&gt;&lt;/strong&gt;！例如在 &lt;code&gt;GraphicsLayerV29&lt;/code&gt; 中，屬性賦值會直接轉發給原生 &lt;code&gt;RenderNode&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// GraphicsLayerV29.android.kt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; translationX: Float = &lt;span style=&#34;color:#ae81ff&#34;&gt;0f&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;set&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;value&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;field&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;value&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        renderNode.translationX = &lt;span style=&#34;color:#66d9ef&#34;&gt;value&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;// 直接寫入 Native RenderNode
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;此外，&lt;code&gt;GraphicsLayer&lt;/code&gt; 還支援彈性的 &lt;strong&gt;&lt;code&gt;CompositingStrategy&lt;/code&gt;&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;CompositingStrategy.Auto&lt;/code&gt;：系統自動判斷是否需要分配 GPU 離屏緩衝區（Offscreen Buffer）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CompositingStrategy.Offscreen&lt;/code&gt;：強制建立 GPU 離屏緩衝區，用於複雜的 &lt;code&gt;BlendMode&lt;/code&gt; 混色或遮罩渲染。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CompositingStrategy.ModulateAlpha&lt;/code&gt;：避開離屏緩衝區，直接將 Alpha 乘以子圖層繪製指令，大幅節省 GPU 記憶體頻寬。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;5-終極解密為什麼-rendernode-能讓動畫超流暢&#34;&gt;5. 終極解密：為什麼 RenderNode 能讓動畫超流暢？&lt;/h2&gt;
+&lt;p&gt;要理解 &lt;code&gt;RenderNode&lt;/code&gt; 動畫流暢的秘密，我們必須了解 Android 的 &lt;strong&gt;雙執行緒繪圖架構&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Main UI Thread（主執行緒 / Kotlin）&lt;/strong&gt;：執行 Compose 的 Composition、Layout 測量與 &lt;code&gt;dispatchDraw&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RenderThread（原生 C++ / HWUI / GPU 執行緒）&lt;/strong&gt;：負責處理 GPU 指令、發送 Vulkan / OpenGL ES 命令並渲染到螢幕。&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph UIThread[&#34;1. Main UI Thread (Kotlin)&#34;]
+        direction TB
+        M1[&#34;Composition &amp; Layout 測量&#34;] --&gt; M2[&#34;RenderNode.beginRecording()&#34;]
+        M2 --&gt; M3[&#34;寫入 DisplayList 繪圖指令集 (C++)&#34;]
+        M3 --&gt; M4[&#34;RenderNode.endRecording()&#34;]
+    end
+
+    subgraph SyncStep[&#34;2. VSYNC 幀同步&#34;]
+        M4 --&gt;|SyncFrameState 資料同步| R1
+    end
+
+    subgraph RenderStep[&#34;3. RenderThread (Native C++)&#34;]
+        direction TB
+        R1[&#34;取得 DisplayList &amp; RenderNode 4x4 矩陣屬性&#34;] --&gt; R2[&#34;Skia 引擎生成 GPU Shaders / Vulkan / OpenGL 指令&#34;]
+    end
+
+    subgraph GPUStep[&#34;4. GPU 硬體加速繪製&#34;]
+        R2 --&gt; G1[&#34;輸出至螢幕 Surface Buffer 顯示 (60/120 FPS)&#34;]
+    end
+
+    style UIThread fill:#f1f5f9,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style SyncStep fill:#faf5ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
+    style RenderStep fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style GPUStep fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
+    style M1 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M2 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M3 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M4 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style R1 fill:#ffffff,stroke:#6ee7b7,color:#0f172a
+    style R2 fill:#ffffff,stroke:#6ee7b7,color:#0f172a
+    style G1 fill:#ffffff,stroke:#fdba74,color:#0f172a
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;51-關鍵區分display-list-繪圖指令-vs-rendernode-header-properties-矩陣屬性&#34;&gt;5.1 關鍵區分：Display List (繪圖指令) vs. RenderNode Header Properties (矩陣屬性)&lt;/h3&gt;
+&lt;p&gt;許多人以為動畫改變 &lt;code&gt;translationX&lt;/code&gt; 時，系統需要重新錄製 Display List，但事實並非如此！&lt;/p&gt;
+&lt;p&gt;一個 &lt;code&gt;RenderNode&lt;/code&gt; 在記憶體中分為兩個獨立部分：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    RN[&#34;android.graphics.RenderNode (記憶體內部結構)&#34;]
+
+    RN --&gt; Header[&#34;1. RenderNode Header Properties&lt;br/&gt;(可變 C++ 原生標頭屬性 — 變形與矩陣)&lt;br/&gt;&lt;br/&gt;• translationX, translationY&lt;br/&gt;• scaleX, scaleY&lt;br/&gt;• rotationX, rotationY, rotationZ&lt;br/&gt;• alpha, shadowElevation, pivotX, pivotY&#34;]
+
+    RN --&gt; DisplayList[&#34;2. Display List&lt;br/&gt;(不可變 C++ 繪圖指令集串流 — 畫面內容)&lt;br/&gt;&lt;br/&gt;• drawRect(0, 0, 100, 100)&lt;br/&gt;• drawText(&#39;Hello World&#39;)&lt;br/&gt;• drawBitmap(...)&#34;]
+
+    style RN fill:#1e293b,stroke:#6366f1,stroke-width:2px,color:#ffffff
+    style Header fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style DisplayList fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+  &lt;/div&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Display List（繪圖指令集）&lt;/strong&gt;：儲存 &lt;code&gt;drawRect&lt;/code&gt;、&lt;code&gt;drawPath&lt;/code&gt;、&lt;code&gt;drawText&lt;/code&gt; 等靜態繪畫命令。&lt;strong&gt;錄製後即不可變（Immutable）&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RenderNode Header Properties（標頭屬性）&lt;/strong&gt;：包含 &lt;code&gt;translationX&lt;/code&gt;, &lt;code&gt;scaleX&lt;/code&gt;, &lt;code&gt;rotationZ&lt;/code&gt;, &lt;code&gt;alpha&lt;/code&gt;, &lt;code&gt;shadowElevation&lt;/code&gt; 等 C++ float 欄位。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;52-當你更新-graphicslayer-的動畫數值時&#34;&gt;5.2 當你更新 &lt;code&gt;graphicsLayer&lt;/code&gt; 的動畫數值時&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 在 Compose 動畫中變更平移位置
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Modifier&lt;/span&gt;.graphicsLayer {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    translationX = animatedOffset &lt;span style=&#34;color:#75715e&#34;&gt;// 每一幀都在改變
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;背後發生的事情是：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;❌ &lt;strong&gt;不需要 Re-composition&lt;/strong&gt;：不會重新執行 &lt;code&gt;@Composable&lt;/code&gt; 函數。&lt;/li&gt;
+&lt;li&gt;❌ &lt;strong&gt;不需要 Re-layout&lt;/strong&gt;：不會重新計算 LayoutNode 的尺寸與位置。&lt;/li&gt;
+&lt;li&gt;❌ &lt;strong&gt;不需要重新錄製 Display List&lt;/strong&gt;：完全不呼叫 &lt;code&gt;beginRecording()&lt;/code&gt;，也不重新產生 C++ 繪圖指令。&lt;/li&gt;
+&lt;li&gt;✅ &lt;strong&gt;僅更新 C++ 原生欄位&lt;/strong&gt;：Compose 僅在 &lt;code&gt;&amp;lt; 1 微秒&lt;/code&gt; 內直接修改 native &lt;code&gt;RenderNode&lt;/code&gt; 物件上的 &lt;code&gt;translationX&lt;/code&gt; float 數值！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在下一個 VSYNC 週期，RenderThread 在 GPU 上準備繪製時，它的 C++ 執行邏輯如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// RenderThread 內部的繪製虛擬碼
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;drawRenderNode&lt;/span&gt;(RenderNode&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; node, Canvas&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; canvas) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;save();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 直接將 RenderNode Header 屬性套用為 4x4 變形矩陣 (GPU 矩陣運算)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;translate(node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getTranslationX(), node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getTranslationY());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;scale(node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getScaleX(), node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getScaleY());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;rotate(node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getRotation());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;setAlpha(node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getAlpha());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 播放完全沒變過的 Display List！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;drawDisplayList(node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;getDisplayList());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    canvas&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;restore();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;因為 Display List 完全不需要重寫，所有的位移與旋轉矩陣運算都直接交由 RenderThread 與 GPU 處理。主執行緒（Main UI Thread）在動畫期間只需進行極速的屬性寫入（$&lt; 1\,\mu\text{s}$），大幅釋放了主執行緒的運算資源，從根本上避免了 CPU 排版負擔過重造成的掉幀！&lt;/p&gt;
+&lt;h3 id=&#34;53-實務建議modifieroffset-vs-modifiergraphicslayer&#34;&gt;5.3 實務建議：&lt;code&gt;Modifier.offset&lt;/code&gt; vs. &lt;code&gt;Modifier.graphicsLayer&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;這也是為什麼在 Compose 效能最佳化實踐中，強烈推薦使用 &lt;code&gt;graphicsLayer&lt;/code&gt; 跑動畫：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;特性&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;&lt;code&gt;Modifier.offset(x = 10.dp)&lt;/code&gt;&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;&lt;code&gt;Modifier.graphicsLayer { translationX = 10f }&lt;/code&gt;&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;改變時觸發流程&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;Re-layout 佈局重新計算 + 重新錄製 Display List&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;僅更新原生 C++ &lt;code&gt;RenderNode&lt;/code&gt; 標頭矩陣屬性&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;主執行緒耗時&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;隨 UI 樹深度呈 $O(N)$ 增加&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;$&lt; 1\,\mu\text{s}$ (微秒)&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;GPU 加速&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;每幀重新產生繪圖指令集&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;GPU 視訊記憶體硬體加速變形&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;6-結語&#34;&gt;6. 結語&lt;/h2&gt;
+&lt;p&gt;Jetpack Compose 不僅僅在語法層面帶來了宣告式 UI 的革新，在底層渲染架構上更展現了極致的效能考究：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;透過 &lt;code&gt;AbstractComposeView&lt;/code&gt; 與 &lt;code&gt;AndroidComposeView&lt;/code&gt; 無縫銜接傳統 View System。&lt;/li&gt;
+&lt;li&gt;透過覆寫 &lt;code&gt;dispatchDraw&lt;/code&gt; 實現與原生 View 的完美 Z-Order 混合繪製。&lt;/li&gt;
+&lt;li&gt;透過 &lt;code&gt;CanvasHolder&lt;/code&gt; 達成零記憶體配置的繪圖轉譯。&lt;/li&gt;
+&lt;li&gt;透過 &lt;code&gt;RenderNode&lt;/code&gt; 將動畫變形完全委派給 RenderThread 與 GPU，實現極致流暢的動畫體驗。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;了解這些底層細節後，下次在寫 Compose UI 時，你就知道為什麼動畫推薦優先使用 &lt;code&gt;Modifier.graphicsLayer&lt;/code&gt; 搭配 lambda 傳值了！&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;(本文關於 Compose 的其他優秀架構設計，如 Slot Table、3-Phase Invalidation、Modifier.Node 等，將在後續文章中陸續為大家拆解！)&lt;/em&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

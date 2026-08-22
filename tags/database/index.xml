@@ -1,0 +1,932 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/database/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-01-03 15:12:56 -0800 -0800</updated>
+    
+    <item>
+      <title>使用 Rust 實作非同步任務佇列</title>
+      <link>https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/</link>
+      <pubDate>Sat, 03 Jan 2026 15:12:56 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/01-03-async-job-queue/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h2 id=&#34;從一個任務佇列開始&#34;&gt;從一個任務佇列開始&lt;/h2&gt;
+&lt;p&gt;任務佇列這東西，幾乎每個後端系統都會用到。但你有沒有想過，如果自己從零刻一個出來，到底要踩過哪些坑？我這次拿 Rust 來實作一個任務佇列，本來想說應該很單純，結果一路寫下來，意外地把好幾個 Rust 的核心概念都複習了一遍，還順手挖出一個藏得很深的競爭條件 bug，實在是頗有收穫。&lt;/p&gt;
+&lt;p&gt;這篇就帶你走一遍我的思路，沿途會碰到的東西大概是這些：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;模組化設計與封裝&lt;/li&gt;
+&lt;li&gt;Trait 系統的應用&lt;/li&gt;
+&lt;li&gt;並發安全與資料競爭處理&lt;/li&gt;
+&lt;li&gt;非同步程式設計 (Tokio)&lt;/li&gt;
+&lt;li&gt;SQLite 資料持久化&lt;/li&gt;
+&lt;li&gt;CLI 工具設計&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;專案原始碼：&lt;/strong&gt; &lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/async-job-queue&#34;&gt;https://github.com/p47t/rust-52-projects/tree/master/async-job-queue&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;系統架構&#34;&gt;系統架構&lt;/h2&gt;
+&lt;h3 id=&#34;核心組件&#34;&gt;核心組件&lt;/h3&gt;
+&lt;p&gt;整個系統其實不大，主要就三個模組分工合作：&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;async-job-queue/
+├── src/
+│   ├── job.rs        # 任務定義與狀態管理
+│   ├── storage.rs    # SQLite 儲存層
+│   ├── worker.rs     # 工作池與任務處理
+│   ├── lib.rs        # 公開 API
+│   └── bin/
+│       ├── producer.rs  # 生產者 CLI
+│       └── worker.rs    # 消費者 CLI&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;資料流程&#34;&gt;資料流程&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;Producer (CLI) → SQLite Database ← Worker Pool (多個 workers)
+                      ↓
+                 [Pending Jobs]
+                      ↓
+                 [Running Jobs]
+                      ↓
+              [Completed/Failed/Dead Letter]&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;rust-核心概念解析&#34;&gt;Rust 核心概念解析&lt;/h2&gt;
+&lt;h3 id=&#34;1-模組可見性mod-vs-pub-mod&#34;&gt;1. 模組可見性：&lt;code&gt;mod&lt;/code&gt; vs &lt;code&gt;pub mod&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;問題：&lt;/strong&gt; 怎麼設計一個乾淨、不會洩漏內部細節的公開 API？&lt;/p&gt;
+&lt;p&gt;我在 &lt;code&gt;lib.rs&lt;/code&gt; 裡的做法是：模組通通設成私有，再挑需要的型別重新匯出。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 私有模組 - 隱藏內部實作細節
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mod&lt;/span&gt; job;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mod&lt;/span&gt; storage;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mod&lt;/span&gt; worker;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 公開重匯出 - 只暴露需要的類型
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; job::{Job, JobHandler, JobStatus, Priority};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; storage::{Storage, StorageError};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; worker::WorkerPool;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;優點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 使用者只能透過 &lt;code&gt;use async_job_queue::{Job, Storage}&lt;/code&gt; 匯入&lt;/li&gt;
+&lt;li&gt;✅ 內部模組結構可以自由重構而不影響公開 API&lt;/li&gt;
+&lt;li&gt;✅ 更好的封裝性，隱藏實作細節&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;替代方案（我不太推薦）：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mod&lt;/span&gt; job;  &lt;span style=&#34;color:#75715e&#34;&gt;// 暴露整個模組，使用者可存取所有公開項目
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這樣一寫，內部結構就攤在陽光下了，之後想重構都綁手綁腳。&lt;/p&gt;
+&lt;h3 id=&#34;2-trait定義行為抽象&#34;&gt;2. Trait：定義行為抽象&lt;/h3&gt;
+&lt;p&gt;要讓使用者塞自己的任務處理邏輯進來，trait 是最自然的選擇。&lt;code&gt;JobHandler&lt;/code&gt; 就定義了這個介面：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;trait&lt;/span&gt; JobHandler: Send &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; Sync {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;handle&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self, payload: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]) -&amp;gt; Result&lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lt&lt;/span&gt;;(), String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;設計考量：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;Send + Sync&lt;/code&gt;：確保可以在執行緒間安全傳遞和共享&lt;/li&gt;
+&lt;li&gt;接受 &lt;code&gt;&amp;amp;[u8]&lt;/code&gt; 而非具體類型：保持通用性，支援任何序列化格式&lt;/li&gt;
+&lt;li&gt;回傳 &lt;code&gt;Result&amp;lt;(), String&amp;gt;&lt;/code&gt;：簡單的錯誤處理&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;使用範例：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;EchoHandler&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; JobHandler &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; EchoHandler {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;handle&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self, payload: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;]) -&amp;gt; Result&lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lt&lt;/span&gt;;(), String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; message &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String::from_utf8_lossy(payload);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;處理任務：&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, message);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;3-newtype-模式的應用場景&#34;&gt;3. Newtype 模式的應用場景&lt;/h3&gt;
+&lt;p&gt;這裡我猶豫了一下：任務的內容該直接用 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;，還是包一層 &lt;code&gt;JobPayload&lt;/code&gt; 新型別呢？&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;目前實作（&lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;）：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Job&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; payload: Vec&lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lt&lt;/span&gt;;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;Newtype 模式：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;JobPayload&lt;/span&gt;(Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; JobPayload {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;new&lt;/span&gt;(bytes: Vec&lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lt&lt;/span&gt;;&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Self(bytes)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;as_bytes&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;u8&lt;/span&gt;] {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self.&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; From&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; JobPayload {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;from&lt;/span&gt;(s: String) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Self(s.into_bytes())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;何時使用 Newtype：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 提供型別安全（避免混淆不同的 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;✅ 零成本抽象（編譯時展開，無執行時開銷）&lt;/li&gt;
+&lt;li&gt;✅ API 更清晰（&lt;code&gt;Job::new(JobPayload, ...)&lt;/code&gt; vs &lt;code&gt;Job::new(Vec&amp;lt;u8&amp;gt;, ...)&lt;/code&gt;）&lt;/li&gt;
+&lt;li&gt;✅ 未來擴充性（可加入驗證、壓縮等功能）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;我最後的選擇：&lt;/strong&gt;
+還是留著 &lt;code&gt;Vec&amp;lt;u8&amp;gt;&lt;/code&gt; 就好，理由是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;系統本來就設計成通用型，不在乎你塞進來的是什麼格式&lt;/li&gt;
+&lt;li&gt;API 介面夠簡單，目前也不太可能混淆&lt;/li&gt;
+&lt;li&gt;遵循 YAGNI 原則（You Aren&amp;rsquo;t Gonna Need It）——還沒需要就先別過度設計&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;4-列舉型別與-display-trait&#34;&gt;4. 列舉型別與 Display Trait&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;問題：&lt;/strong&gt; 列舉要怎麼實作 &lt;code&gt;Display&lt;/code&gt;，把它印成好看的字串？&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;手動實作（我目前的做法）：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; fmt::Display &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; Priority {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;fmt&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self, f: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;mut&lt;/span&gt; fmt::Formatter&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;&amp;#39;_&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;fmt&lt;/span&gt;::Result {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; self {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Priority::Low &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write!&lt;/span&gt;(f, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;low&amp;#34;&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Priority::Normal &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write!&lt;/span&gt;(f, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;normal&amp;#34;&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Priority::High &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write!&lt;/span&gt;(f, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;high&amp;#34;&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Priority::Critical &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;write!&lt;/span&gt;(f, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;critical&amp;#34;&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;使用第三方 crate（&lt;code&gt;strum&lt;/code&gt;）：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; strum_macros::Display;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Display)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[strum(serialize_all = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lowercase&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;enum&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Priority&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Low,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Normal,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    High,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Critical,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;我的看法：&lt;/strong&gt; 像這種簡單列舉，手動寫反而更清楚，何必為了省四行字多拉一個依賴進來呢？&lt;code&gt;strum&lt;/code&gt; 當然很方便，但要看場合用啦。&lt;/p&gt;
+&lt;h3 id=&#34;5-非同步程式設計tokio-的角色&#34;&gt;5. 非同步程式設計：Tokio 的角色&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;Tokio 在專案中的使用：&lt;/strong&gt;&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;#[tokio::main]&lt;/code&gt;&lt;/strong&gt; - 設定非同步執行環境&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[tokio::main]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() -&amp;gt; Result&lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;lt&lt;/span&gt;;(), Box&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;&lt;span style=&#34;color:#66d9ef&#34;&gt;dyn&lt;/span&gt; std::error::Error&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;tokio::spawn&lt;/code&gt;&lt;/strong&gt; - 並發執行多個 worker&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; worker_id &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;self.num_workers {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; handle &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; tokio::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        worker_loop(worker_id, storage, handler, poll_interval).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    handles.push(handle);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;3&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;tokio::time::sleep&lt;/code&gt;&lt;/strong&gt; - 非阻塞延遲&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;sleep(poll_interval).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// 輪詢間隔
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;一個有點好笑的觀察：&lt;/strong&gt;
+講了半天 Tokio，但這個專案其實是「假非同步」喔！核心操作骨子裡通通是同步的：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;SQLite 操作使用 &lt;code&gt;rusqlite&lt;/code&gt;（同步 API）&lt;/li&gt;
+&lt;li&gt;任務處理是同步函式&lt;/li&gt;
+&lt;li&gt;使用 &lt;code&gt;std::sync::Mutex&lt;/code&gt; 而非 &lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;那既然是假的，為什麼還要拖 Tokio 下水？&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;開並發 worker 很方便（比 &lt;code&gt;std::thread&lt;/code&gt; 輕量）&lt;/li&gt;
+&lt;li&gt;sleep 不會阻塞（不會把整個執行緒凍住）&lt;/li&gt;
+&lt;li&gt;為未來真的要非同步化時鋪路&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;說穿了就是先佔個位子。哪天想把儲存層換成 async，骨架已經在那邊等著了。&lt;/p&gt;
+&lt;h3 id=&#34;6-stdsyncmutex-vs-tokiosyncmutex&#34;&gt;6. &lt;code&gt;std::sync::Mutex&lt;/code&gt; vs &lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;這兩個 Mutex 長得很像，很多人會直覺以為「寫 async 就該用 tokio 的」，其實不一定。關鍵差異在這裡：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;特性&lt;/th&gt;
+					&lt;th&gt;&lt;code&gt;std::sync::Mutex&lt;/code&gt;&lt;/th&gt;
+					&lt;th&gt;&lt;code&gt;tokio::sync::Mutex&lt;/code&gt;&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;等待鎖時&lt;/td&gt;
+					&lt;td&gt;阻塞整個執行緒&lt;/td&gt;
+					&lt;td&gt;讓出執行權給其他 task&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;使用方式&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;mutex.lock().unwrap()&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;mutex.lock().await&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;適用場景&lt;/td&gt;
+					&lt;td&gt;短時間持鎖、同步操作&lt;/td&gt;
+					&lt;td&gt;長時間持鎖、跨 await&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;效能&lt;/td&gt;
+					&lt;td&gt;更快（作業系統級）&lt;/td&gt;
+					&lt;td&gt;稍慢（需協調排程）&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;這個專案的鎖只在快速的資料庫操作那一小段持有，中間完全沒有 &lt;code&gt;await&lt;/code&gt;，所以 &lt;code&gt;std::sync::Mutex&lt;/code&gt; 才是對的選擇——又快又夠用：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Storage&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    conn: &lt;span style=&#34;color:#a6e22e&#34;&gt;Arc&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Mutex&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Connection&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;,  &lt;span style=&#34;color:#75715e&#34;&gt;// ✅ std::sync::Mutex
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;get_next_pending&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;amp;&lt;/span&gt;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Job&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;, StorageError&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; conn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.conn.lock().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 執行快速的同步資料庫操作
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 沒有在持鎖期間 await
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(job)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;那什麼時候非得用 &lt;code&gt;tokio::sync::Mutex&lt;/code&gt; 不可？&lt;/strong&gt; 答案是：當你需要在持鎖期間 &lt;code&gt;await&lt;/code&gt; 的時候。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ❌ 錯誤：在持有 std::sync::Mutex 時 await
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; guard &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std_mutex.lock().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;async_operation().&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// 會阻塞整個執行緒！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 正確：使用 tokio::sync::Mutex
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; guard &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; tokio_mutex.lock().&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;async_operation().&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// OK，會讓出執行權
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;並發安全與資料競爭&#34;&gt;並發安全與資料競爭&lt;/h2&gt;
+&lt;h3 id=&#34;我踩到的競爭條件&#34;&gt;我踩到的競爭條件&lt;/h3&gt;
+&lt;p&gt;這就是我前面說的那個藏很深的 bug。一開始我的 &lt;code&gt;get_next_pending()&lt;/code&gt; 寫得很「直覺」，結果直覺害死人：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ❌ 有競爭條件的程式碼
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;get_next_pending&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;amp;&lt;/span&gt;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Job&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;, StorageError&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 步驟 1：讀取待處理任務
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; job &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;SELECT&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;. &lt;span style=&#34;color:#66d9ef&#34;&gt;WHERE&lt;/span&gt; status &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Pending &lt;span style=&#34;color:#66d9ef&#34;&gt;LIMIT&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ⚠️ 問題：Worker 2 可能在這裡也讀取到相同任務！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(job)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Worker 處理邏輯
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; job &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; storage.get_next_pending()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// 取得任務
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;job.mark_running();                     &lt;span style=&#34;color:#75715e&#34;&gt;// 標記為執行中
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;storage.update(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;job)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;                  &lt;span style=&#34;color:#75715e&#34;&gt;// 更新資料庫
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;問題出在「讀取」跟「標記」是兩個分開的步驟。只要兩個 worker 在中間那個空隙同時撈到同一個任務，就會雙雙開工。用時序圖一攤開就很清楚了：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;時間&lt;/th&gt;
+					&lt;th&gt;Worker 1&lt;/th&gt;
+					&lt;th&gt;Worker 2&lt;/th&gt;
+					&lt;th&gt;資料庫狀態&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T1&lt;/td&gt;
+					&lt;td&gt;get_next_pending()&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;Job A: Pending&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T2&lt;/td&gt;
+					&lt;td&gt;讀取 Job A&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T3&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;get_next_pending()&lt;/td&gt;
+					&lt;td&gt;Job A: Pending&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T4&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;讀取 Job A (相同!)&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T5&lt;/td&gt;
+					&lt;td&gt;mark_running()&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T6&lt;/td&gt;
+					&lt;td&gt;update(Job A)&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;Job A: Running&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T7&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;mark_running()&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T8&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;update(Job A)&lt;/td&gt;
+					&lt;td&gt;Job A: Running&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T9&lt;/td&gt;
+					&lt;td&gt;處理 Job A&lt;/td&gt;
+					&lt;td&gt;處理 Job A&lt;/td&gt;
+					&lt;td&gt;❌ 重複處理！&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;解法把它變成一個原子操作&#34;&gt;解法：把它變成一個原子操作&lt;/h3&gt;
+&lt;p&gt;關鍵想法很簡單：與其先讀再寫，不如讓「找出任務」跟「標記成 Running」在同一個 SQL 語句裡一口氣完成。SQLite 的 &lt;code&gt;UPDATE ... RETURNING&lt;/code&gt; 正好能辦到：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;get_next_pending&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;amp;&lt;/span&gt;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;Job&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;, StorageError&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; conn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.conn.lock().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 原子性的 UPDATE + RETURNING（一個 SQL 語句完成）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; stmt &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; conn.prepare(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;UPDATE jobs
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;         SET status = ?1, updated_at = ?2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;         WHERE id = (
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;             SELECT id FROM jobs
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;             WHERE status = ?3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;             ORDER BY priority DESC, created_at ASC
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;             LIMIT 1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;         )
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;         RETURNING id, payload, priority, status, retry_count, max_retries,
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;                   created_at, updated_at, error_message&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    )&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; now &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Utc::now().to_rfc3339();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; job &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; stmt
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .query_row(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#a6e22e&#34;&gt;params!&lt;/span&gt;[JobStatus::Running &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;, now, JobStatus::Pending &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;row&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; Ok(self.row_to_job(row)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .optional()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(job)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;為什麼這樣就解掉了？&lt;/strong&gt; 簡單講就是讓任務在「被交出去之前」就已經是 Running 狀態，沒有任何空隙留給第二個 worker：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;原子性保證：&lt;/strong&gt; &lt;code&gt;UPDATE ... RETURNING&lt;/code&gt; 是單一 SQL 語句&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mutex 保護：&lt;/strong&gt; 同一時間只有一個 worker 能執行此查詢&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態立即改變：&lt;/strong&gt; 任務在被回傳前就已標記為 Running&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;資料庫層級鎖定：&lt;/strong&gt; SQLite 的 EXCLUSIVE 鎖確保寫入安全&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;strong&gt;修正後的時序：&lt;/strong&gt;&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;時間&lt;/th&gt;
+					&lt;th&gt;Worker 1&lt;/th&gt;
+					&lt;th&gt;Worker 2&lt;/th&gt;
+					&lt;th&gt;資料庫狀態&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T1&lt;/td&gt;
+					&lt;td&gt;取得 Mutex&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T2&lt;/td&gt;
+					&lt;td&gt;UPDATE Job A → Running&lt;/td&gt;
+					&lt;td&gt;等待 Mutex&lt;/td&gt;
+					&lt;td&gt;Job A: Running&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T3&lt;/td&gt;
+					&lt;td&gt;釋放 Mutex，回傳 Job A&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T4&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;取得 Mutex&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T5&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;UPDATE (找不到 Pending)&lt;/td&gt;
+					&lt;td&gt;Job A: Running&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T6&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+					&lt;td&gt;回傳 None&lt;/td&gt;
+					&lt;td&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;T7&lt;/td&gt;
+					&lt;td&gt;處理 Job A&lt;/td&gt;
+					&lt;td&gt;等待下一輪&lt;/td&gt;
+					&lt;td&gt;✅ 無重複處理&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;順手把-worker-程式碼變乾淨了&#34;&gt;順手把 Worker 程式碼變乾淨了&lt;/h3&gt;
+&lt;p&gt;意外的好處是：既然 &lt;code&gt;get_next_pending()&lt;/code&gt; 已經幫忙把任務標記好了，worker 那邊就不用再多此一舉，程式碼整個清爽不少：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 修正後
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; storage.get_next_pending() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(Some(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; job)) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 任務已經是 Running 狀態，直接處理
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; handler.handle(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;job.payload) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Ok(()) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; job.mark_completed(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Err(e) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; job.mark_failed(e),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        storage.update(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;job)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(None) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sleep(poll_interval).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;  &lt;span style=&#34;color:#75715e&#34;&gt;// 無任務，等待
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Err(e) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#75715e&#34;&gt;/* 處理錯誤 */&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;日誌與除錯&#34;&gt;日誌與除錯&lt;/h2&gt;
+&lt;h3 id=&#34;tracing-vs-println&#34;&gt;&lt;code&gt;tracing&lt;/code&gt; vs &lt;code&gt;println!&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;何時使用 &lt;code&gt;println!&lt;/code&gt;：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 使用者導向的輸出
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Job ID: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, job.id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Status: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, job.status);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;何時使用 &lt;code&gt;tracing&lt;/code&gt;：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 操作性日誌、除錯資訊
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tracing::&lt;span style=&#34;color:#a6e22e&#34;&gt;info!&lt;/span&gt;(job_id &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt;job.id, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Processing job&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;tracing::&lt;span style=&#34;color:#a6e22e&#34;&gt;error!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Database error: {}&amp;#34;&lt;/span&gt;, e);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;我的分法是這樣：兩個 CLI 工具各司其職——&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;producer&lt;/code&gt; 用 &lt;code&gt;println!&lt;/code&gt; 顯示命令結果，因為這是使用者主動下指令、預期會看到的輸出&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;worker&lt;/code&gt; 用 &lt;code&gt;tracing&lt;/code&gt; 記錄操作日誌，方便事後監控和除錯&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;初始化-tracing&#34;&gt;初始化 tracing&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[tokio::main]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;async&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;amp;&lt;/span&gt;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;(), Box&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;lt;&lt;span style=&#34;color:#66d9ef&#34;&gt;dyn&lt;/span&gt; std::error::Error&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 設定日誌格式與過濾級別
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    tracing_subscriber::fmt()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .with_env_filter(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            tracing_subscriber::EnvFilter::from_default_env()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                .add_directive(tracing::Level::&lt;span style=&#34;color:#66d9ef&#34;&gt;INFO&lt;/span&gt;.into()),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .init();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;使用方式：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 預設 INFO 級別&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;./worker
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 設定為 DEBUG 級別&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;RUST_LOG&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;debug ./worker&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;資料持久化設計&#34;&gt;資料持久化設計&lt;/h2&gt;
+&lt;h3 id=&#34;sqlite-schema&#34;&gt;SQLite Schema&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;CREATE&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;TABLE&lt;/span&gt; jobs (
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    id TEXT &lt;span style=&#34;color:#66d9ef&#34;&gt;PRIMARY&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;KEY&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    payload BLOB &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    priority INTEGER &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    status INTEGER &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    retry_count INTEGER &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    max_retries INTEGER &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    created_at TEXT &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    updated_at TEXT &lt;span style=&#34;color:#66d9ef&#34;&gt;NOT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;NULL&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    error_message TEXT
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;CREATE&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;INDEX&lt;/span&gt; idx_status_priority
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;ON&lt;/span&gt; jobs(status, priority &lt;span style=&#34;color:#66d9ef&#34;&gt;DESC&lt;/span&gt;, created_at &lt;span style=&#34;color:#66d9ef&#34;&gt;ASC&lt;/span&gt;);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這個索引的欄位順序是有講究的，不是隨便排的：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;status&lt;/code&gt; 擺最前面：先快速過濾出待處理的任務&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;priority DESC&lt;/code&gt;：優先順序高的先處理&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;created_at ASC&lt;/code&gt;：優先順序一樣時，就先進先出 (FIFO)，公平一點&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;狀態轉換&#34;&gt;狀態轉換&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;         ┌─────────────┐
+         │   Pending   │
+         └──────┬──────┘
+                │
+                ↓
+         ┌──────────────┐
+         │   Running    │
+         └──────┬───────┘
+                │
+        ┌───────┴────────┐
+        │                │
+        ↓ (成功)          ↓ (失敗)
+  ┌───────────┐    ┌─────────┐
+  │ Completed │    │ Failed  │
+  └───────────┘    └────┬────┘
+                        │
+                ┌───────┴────────┐
+                │                │
+                ↓ (可重試)        ↓ (超過最大重試)
+           [Pending]        ┌──────────────┐
+          (retry_count++)   │ DeadLetter   │
+                            └──────────────┘&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;失敗處理:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;mark_failed&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self, error: String) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.status &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; self.can_retry() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.retry_count &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        JobStatus::Pending  &lt;span style=&#34;color:#75715e&#34;&gt;// 重新排程
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        JobStatus::DeadLetter  &lt;span style=&#34;color:#75715e&#34;&gt;// 移至死信佇列
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.error_message &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(error);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    self.updated_at &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Utc::now();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;cli-設計&#34;&gt;CLI 設計&lt;/h2&gt;
+&lt;h3 id=&#34;producer生產者&#34;&gt;Producer（生產者）&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 提交任務&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;producer submit -p &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Hello, World!&amp;#34;&lt;/span&gt; -r high -m &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 查詢狀態&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;producer status --job-id &amp;amp;lt;uuid&amp;amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 統計資料&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;producer stats&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;使用 Clap 實作：&lt;/strong&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Parser)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[command(name = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;producer&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[command(about = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Job queue producer - submit and manage jobs&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Cli&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[arg(short, long, default_value = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;jobs.db&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    database: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;#[command(subcommand)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    command: &lt;span style=&#34;color:#a6e22e&#34;&gt;Commands&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Subcommand)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;enum&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Commands&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Submit {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;#[arg(short, long)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        payload: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;#[arg(short = &amp;#39;r&amp;#39;, long, default_value = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;normal&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        priority: String,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;#[arg(short, long, default_value = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;3&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        max_retries: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Status { &lt;span style=&#34;color:#75715e&#34;&gt;/* ... */&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Stats,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;worker消費者&#34;&gt;Worker（消費者）&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 啟動 4 個 workers&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;worker -w &lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 使用不同的資料庫&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;worker --database /path/to/jobs.db --workers &lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;效能考量&#34;&gt;效能考量&lt;/h2&gt;
+&lt;h3 id=&#34;輪詢-vs-事件驅動&#34;&gt;輪詢 vs 事件驅動&lt;/h3&gt;
+&lt;p&gt;worker 怎麼知道有新任務進來？我這版偷懶用了最簡單的輪詢：每隔一段時間就去問資料庫一次。&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;loop&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; storage.get_next_pending() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(Some(job)) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#75715e&#34;&gt;/* 處理 */&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Ok(None) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; sleep(poll_interval).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;,  &lt;span style=&#34;color:#75715e&#34;&gt;// 等待 1 秒
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Err(e) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; { &lt;span style=&#34;color:#75715e&#34;&gt;/* 錯誤處理 */&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;優點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;✅ 實作簡單&lt;/li&gt;
+&lt;li&gt;✅ 可靠性高（無需額外機制）&lt;/li&gt;
+&lt;li&gt;✅ 易於理解和維護&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;缺點：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;❌ 延遲：最多 &lt;code&gt;poll_interval&lt;/code&gt; 的延遲&lt;/li&gt;
+&lt;li&gt;❌ 資源浪費：無任務時仍在輪詢&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;想改善的話（事件驅動）：&lt;/strong&gt;
+可以改用 &lt;code&gt;tokio::sync::Notify&lt;/code&gt;，或是資料庫的 NOTIFY/LISTEN 機制，讓生產者主動敲門通知，而不是讓 worker 在那邊空轉：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 生產者插入任務後通知
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;notifier.notify_waiters();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Worker 等待通知
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;notifier.notified().&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;指數退避exponential-backoff&#34;&gt;指數退避（Exponential Backoff）&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; job.retry_count &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; backoff &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Duration::from_secs(&lt;span style=&#34;color:#ae81ff&#34;&gt;2_&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;u64&lt;/span&gt;.pow(job.retry_count.min(&lt;span style=&#34;color:#ae81ff&#34;&gt;5&lt;/span&gt;)));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sleep(backoff).&lt;span style=&#34;color:#66d9ef&#34;&gt;await&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;退避時間：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;第 1 次重試：2^1 = 2 秒&lt;/li&gt;
+&lt;li&gt;第 2 次重試：2^2 = 4 秒&lt;/li&gt;
+&lt;li&gt;第 3 次重試：2^3 = 8 秒&lt;/li&gt;
+&lt;li&gt;第 4 次重試：2^4 = 16 秒&lt;/li&gt;
+&lt;li&gt;第 5 次以上：2^5 = 32 秒（最大值）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;為什麼要這樣做？&lt;/strong&gt; 任務失敗常常是下游服務暫時掛了，這時候你還死命地每秒重試，只會雪上加霜。退一步、給對方喘口氣，反而比較快好。&lt;/p&gt;
+&lt;h2 id=&#34;我這趟學到的幾件事&#34;&gt;我這趟學到的幾件事&lt;/h2&gt;
+&lt;p&gt;下面這些算是我寫完之後的心得整理。當然啦，我不建議你盲目地照單全收，每個專案的取捨都不一樣，看著辦。&lt;/p&gt;
+&lt;h3 id=&#34;1-模組設計&#34;&gt;1. 模組設計&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;使用私有模組 + 公開重匯出控制 API&lt;/li&gt;
+&lt;li&gt;清晰的關注點分離&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;2-型別安全&#34;&gt;2. 型別安全&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;考慮使用 newtype 模式增加型別安全&lt;/li&gt;
+&lt;li&gt;平衡抽象與簡潔性&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;3-並發處理&#34;&gt;3. 並發處理&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;識別臨界區（critical section）&lt;/li&gt;
+&lt;li&gt;使用原子操作避免競爭條件&lt;/li&gt;
+&lt;li&gt;選擇適當的同步原語（Mutex、RwLock 等）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;4-錯誤處理&#34;&gt;4. 錯誤處理&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 &lt;code&gt;thiserror&lt;/code&gt; 定義清晰的錯誤類型&lt;/li&gt;
+&lt;li&gt;區分可恢復與不可恢復的錯誤&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;5-日誌策略&#34;&gt;5. 日誌策略&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;CLI 輸出用 &lt;code&gt;println!&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;操作日誌用 &lt;code&gt;tracing&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;使用環境變數控制日誌級別&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;6-非同步選擇&#34;&gt;6. 非同步選擇&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;評估是否真的需要 async/await&lt;/li&gt;
+&lt;li&gt;混合使用同步與非同步程式碼時要小心&lt;/li&gt;
+&lt;li&gt;理解 &lt;code&gt;std::sync&lt;/code&gt; 與 &lt;code&gt;tokio::sync&lt;/code&gt; 的差異&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;擴充方向&#34;&gt;擴充方向&lt;/h2&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;真正的非同步化：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 &lt;code&gt;sqlx&lt;/code&gt; 或 &lt;code&gt;tokio-rusqlite&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;非同步的 &lt;code&gt;JobHandler&lt;/code&gt; trait&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;分散式支援：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;使用 PostgreSQL 的 &lt;code&gt;SELECT FOR UPDATE SKIP LOCKED&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Redis 作為訊息佇列&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;監控與觀測：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Prometheus metrics&lt;/li&gt;
+&lt;li&gt;分散式追蹤&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;進階功能：&lt;/strong&gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;延遲任務（scheduled jobs）&lt;/li&gt;
+&lt;li&gt;任務優先順序調整&lt;/li&gt;
+&lt;li&gt;動態 worker 擴縮容&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;結論&#34;&gt;結論&lt;/h2&gt;
+&lt;p&gt;一個看似簡單的任務佇列，寫下來居然把 Rust 的好幾個招牌特性都用上了：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;型別系統&lt;/strong&gt;讓我在編譯期就攔下一堆錯誤&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;所有權模型&lt;/strong&gt;幫我顧好記憶體安全跟執行緒安全&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Trait 系統&lt;/strong&gt;提供零成本抽象，要彈性又不犧牲效能&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;並發原語&lt;/strong&gt;讓我能正面對決競爭條件&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;不過老實說，最有趣的還是那個競爭條件 bug——它提醒我，Rust 能保證你不會踩到記憶體和資料競爭的雷，但&lt;strong&gt;邏輯上&lt;/strong&gt;的競爭條件，編譯器可管不著，那還是得靠自己想清楚。常聽人說 Rust「編譯過了通常就能跑」，這話大致沒錯，只是別忘了，編譯器再聰明，也讀不出你腦袋裡的並發模型呢。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>9/11 The First Day of PDC 2005 Pre-Conference</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-09-12-286/</link>
+      <pubDate>Mon, 12 Sep 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-09-12-286/</guid>
+      <description>&lt;p&gt;這篇是我因為時差的關係，凌晨三點爬起來寫的東西：&lt;/p&gt;
+&lt;p&gt;第一天的巴士居然只有 6:45 - 7:15 的班次，不過這對還有時差的我是沒有任何問題。一大早坐巴士趕到會場完成報到手續後，我擺了烏龍掉了一些東西，幸虧有現場的 Microsoft 工作人員幫忙，事情雖然順利解決了，但是我的免費早餐也就來不及吃了。匆忙進入研討間時課程正好要開始，幾乎全部的座位都有人坐了，有些人覺得要穿越人群擠到中間去做太麻煩乾脆就坐在兩旁的走道上。雖然如此，我還是找到了一個座位，擠在兩個看起來有上百公斤的老外中間。&lt;/p&gt;
+&lt;p&gt;Jeffrey 首先自我介紹並談到了他是數本技術書籍的作者時：『我最新的 Applied .NET Framework Programming 有分成 C# 及 VB.NET 版本，但是 VB.NET 這一版總共只賣出了四本 (引起哄堂大笑)。』接下來他表示正在跟 Stanley Lippman 合作 C++/CLI 的版本，但這有可能是他最後的作品，因為要兼顧家庭及小孩的關係沒辦法花太多時間寫書 (我可以體會)。&lt;/p&gt;
+&lt;p&gt;接下來就進入主題 &amp;ldquo;What&amp;rsquo;s New in C# and the .NET Framework 2.0&amp;rdquo;，Jeffrey 的上課方式跟他寫書的風格一樣，非常善於用範例程式碼來輔助說明他要表達的東西，所以你可以看到他講了幾張投影片之後，就會切換到 Visual Studio 2005 來示範他剛講的東西，就算你之前不知道 C# 2.0 增加的新功能，應該也能很快地跟上他的節奏。C# 2.0 的這個部份沒有太多讓人驚訝的地方，因為新增的東西在之前就已經公開了並且有 beta 版可以測試，不過我自己很喜歡這些 2.0 新增的功能例如 Generics, Anonymous Method, Iterator, Nullable Types, Partial Types，因為他們補足了原來 C# 1.0 為人詬病的一些地方。當然這些新東西不只影響 C# 的編譯器，例如 Generics 及 Nullable Types 就需要底層的 CLR 做相對應的修改。這些改變的受惠者除了 C# programmer 外，FCL 也善用這些特性增加了不少的 Generics class 及  interface (這世界似乎越來越美好了)。&lt;/p&gt;
+&lt;p&gt;下一個主題主要是 &amp;ldquo;CLR Hosting&amp;rdquo; 及 &amp;ldquo;Writing Reliable Code&amp;rdquo;，Jeffrey 花了一點時間解釋什麼是 AppDomain 及其存在的目的，因為 SQL Server 及 ASP.NET 都需要 host CLR 並且有極高的穩定性要求，CLR 的 hosting API 做了一些不算小的改變讓 host application 可以控制更多的細節。而 &amp;ldquo;Writing Reliable Code&amp;rdquo; 就是比較有趣的課題了，比較技術性的解釋是『如何在有 Asynchronous Exception 的狀況下讓 CLR 可以卸載你的程式而不產生任何的 memory/resource leak？』，基本上這是頗難的一個問題，看得出來 CLR team 花了不少工夫在這件事上，但是目前提出來的解決方法我覺得不是很漂亮 (你需要知道太多細節才能做對)，應該在下個版本會有更多的改進吧。&lt;/p&gt;
+&lt;p&gt;之後 Jim Johnson 上台代班講了 &amp;ldquo;Transactions&amp;rdquo; 這個課題，不過感覺他準備的不是很好，有點呼嚨帶過。Jeffrey 最後談 Security, Performance, Debugging, Usability 方面的一些改進，內容零碎了一點，我整理了一下重點:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;PermCalc can estimate permissions required by whole app.&lt;/li&gt;
+&lt;li&gt;Debug-in-Zone allows you to debug app as though it ran from a specific zone&amp;rsquo;s permissions.&lt;/li&gt;
+&lt;li&gt;AppDomain.Create can accept Permissions param.&lt;/li&gt;
+&lt;li&gt;Classes that wrap Windows ACLs are provided.&lt;/li&gt;
+&lt;li&gt;Assembly will always check GAC first.&lt;/li&gt;
+&lt;li&gt;Assembly.ReflectionOnLoad can improve performance.&lt;/li&gt;
+&lt;li&gt;Dynamic methods (Light-weight code gen) can define static method at runtime &amp;amp; execute it. The JITted code will be GC&amp;rsquo;d.&lt;/li&gt;
+&lt;li&gt;You can examine IL code in a method body now.&lt;/li&gt;
+&lt;li&gt;Reflection Object Caching Performance.&lt;/li&gt;
+&lt;li&gt;New String methods and SecureString.&lt;/li&gt;
+&lt;li&gt;Prevent expensive exception handling with new TryXxx methods.&lt;/li&gt;
+&lt;li&gt;CLR v2 wraps a non-CLS exception into a CLS exception (RuntimeWrappedException).&lt;/li&gt;
+&lt;li&gt;Edit and Continue Debugging.&lt;/li&gt;
+&lt;li&gt;Managed Debugging Assistants enable additional checks in the CLR.&lt;/li&gt;
+&lt;li&gt;64-bit CLR&lt;/li&gt;
+&lt;li&gt;Many performance improvements.&lt;/li&gt;
+&lt;li&gt;Miscellaneous improvements.&lt;/li&gt;
+&lt;li&gt;You can disable ExecutionContext flow.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;整體來說，課程的節奏掌握的非常好、講話的速度雖快但不含糊 (我最怕碰到那些會含糊地自言自語的老師)、demo 一點也不拖泥帶水、許多技術細節也講解地很清楚，再加上 Jeffrey 三不五時就開 Microsoft 的玩笑，六個小時下來毫無冷場。這麼多的東西要在這麼短的時間講完又能讓大家吸收實在是不容易，不過 Jeffrey 他辦到了，結束時大家給了他非常熱烈的掌聲。我有點那麼衝動想要上前去跟他合照，無奈又有許多人圍上去跟他討論，只好作罷，還是回旅館補眠好了。&lt;/p&gt;
+&lt;p&gt;晚餐到旅館後面的咖喱屋吃飯，還是一堆的日本人，不過比昨天感覺好多了，因為 PDC 現場的東方臉孔還是很少啊，沒有人可以聊天真的是有點悶。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Cdecl Calling Convention for Delegates</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-06-15-248/</link>
+      <pubDate>Wed, 15 Jun 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-06-15-248/</guid>
+      <description>&lt;p&gt;如何使用 C# 建立 cdecl callback 給 unmanaged code 使用？&lt;/p&gt;
+&lt;p&gt;SQLite.NET 所採用的方法如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;用 ildasm 反組譯 DLL 產生 IL 碼&lt;/li&gt;
+&lt;li&gt;用 Perl script 為 delegate 的 Invoke() 加上 modopt([mscorlib]System.Runtime.CompilerServices.CallConvCdecl)&lt;/li&gt;
+&lt;li&gt;再用 ilasm 組譯出新的 DLL&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;參考下列詳細的方法 (摘自 SQLite.NET 的文件檔)：&lt;/p&gt;
+&lt;pre&gt;
+The C# does not allow you to specify the calling convention of the callback.
+It is just one of the C# limitations. IL, managed C++ and the runtime itself
+supports the cdecl calling convention for delegates through
+modopt([mscorlib]System.Runtime.CompilerServices.CallConvCdecl) on the
+internal Invoke method of the delegate. Run ildasm on a small example in
+managed C++ if you want to know the exact syntax.
+
+You can use the following trick if you want to write all your code in C#:
+
+- Create a private placeholder attribute to mark your C# delegates that
+needs cdecl calling convention
+- Compile your C# to an assembly
+- Use the ildasm dissasembler to store the resulting assembly as raw IL.
+- Modify the IL to change the calling convention on the delegates marked
+with the placeholder attribute
+- Use ilasm to compile the modified raw IL again.
+
+The whole process can be automated. You can find example of how to automate
+the process in the Shared Source CLI samples. The Shared Source CLI (aka
+Rotor) can be downloaded from http://msdn.microsoft.com/net/sscli . The
+following files have the interesting stuff about the cdecl calling
+convention for delegates:
+
+sscli\docs\techinfo\native_managed_interop.html
+sscli\samples\pigui\tk\makefile.inc
+sscli\samples\pigui\tk\callconvattribute.cs
+sscli\samples\pigui\tk\callconvhack.pl
+sscli\samples\pigui\tk\tclnative.cs
+
+You will need perl (e.g. from http://www.activestate.com) if you want to use
+the script as is. It should be fairly easy to rewrite callconvhack.pl in any
+other language though.
+
+Here are the code snipets if you are on a slow link and don&#39;t have time to
+download 10+MB Rotor tarball at the moment:
+
+makefile.inc:
+--------------------
+....
+csc /out:myassembly.dll callconvattribute.cs mydelegate.cs ...
+ildasm myassembly.dll /out:myassembly.il1
+perl callconvhack.pl myassembly.il2
+ilasm /DLL /QUIET myassembly.il2
+....
+--------------------
+
+mydelegate.cs:
+--------------------
+....
+[CallConvCdecl] internal delegate int MyDelegate(int param);
+....
+--------------------
+
+callconvattribute.cs:
+--------------------
+// cdecl calling convetion for delegates - the signature of delegates
+// marked with this attribute is changed to cdecl in callconvhack.pl
+
+using System;
+
+[Serializable, AttributeUsage (AttributeTargets.Delegate)]
+public sealed class CallConvCdeclAttribute : Attribute
+{
+    public CallConvCdeclAttribute()
+    {
+    }
+}
+--------------------
+
+callconvhack.pl:
+--------------------
+# change references to CallConvAttribute into
+modopt([mscorlib]System.Runtime.CompilerServices.*)
+
+while() {
+    if (m/\.class .* CallConv.*Attribute/) {
+        $incallconvattributeimpl=1;
+        next;
+    }
+    if (m/\/\/ end of class CallConv.*Attribute/) {
+        $incallconvattributeimpl=0;
+        next;
+    }
+
+    if (m/\.custom instance void CallConv(.*)Attribute/) {
+        $pendingcallconv = $1;
+        next;
+    }
+
+    if ($pendingcallconv) {
+        if (m/.*Invoke\(.*/) {
+            print &#34;modopt([mscorlib]System.Runtime.CompilerServices.CallConv&#34; . $pendingcallconv . &#34;)\n&#34;;
+            $pendingcallconv = &#34;&#34;;
+        }
+    }
+
+    print unless $incallconvattributeimpl;
+}
+--------------------
+
+This posting is provided &#34;AS IS&#34; with no warranties, and confers no rights.
+&lt;/pre&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>developer vs. programmer</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-09-45/</link>
+      <pubDate>Mon, 09 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-09-45/</guid>
+      <description>&lt;blockquote&gt;
+&lt;br&gt;Being a good developer in BCB requires that you remember you are a developer rather than a programmer - which is to say that you have responsibility for much more than the excellence of developed code. You are also responsible for the excellence of the design of the software and databases, the user interface, and for the reusability and maintainability of the result. And of course, an understanding and appreciation of the business context of your development effort is essential.&lt;br&gt;&lt;br&gt;&lt;a href=&#34;http://www.temporaldoorway.com/programming/cbuilder/philosophy/beingabetterprogrammer.htm&#34;&gt;Being A Better C++ Builder Developer&lt;/a&gt;&lt;br&gt;by Mark Cashman&lt;br&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Developer 應該要比 Programmer 看的更廣，更能綜觀全局。就我的觀察，大部分的 programmer 都太過侷限於自己熟悉的領域，甚少花時間去拓展自己專業知識的廣度，造成的結果就是對於許多問題的解決都採取了不恰當的方式，
+所謂『不洽當』指的是『就長期與通盤的考量而言，並非最佳』。&lt;/p&gt;
+&lt;p&gt;作者在這篇文章中對於 program design、UI design、及 database design 提出許多中肯及實用的建議；然而要做到這樣的程度，你需要的是『經驗』及『品味』。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

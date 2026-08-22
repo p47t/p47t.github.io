@@ -1,0 +1,903 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>MiniCompose - 手刻最小化 Jetpack Compose 渲染引擎、雙進程畫面隔離技術與 1000 節點微秒級動態基準測試</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-14-minicompose/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-14-minicompose/"/>
+  <meta property="og:title" content="MiniCompose - 手刻最小化 Jetpack Compose 渲染引擎、雙進程畫面隔離技術與 1000 節點微秒級動態基準測試"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-08-14 02:20:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="android"/>
+  
+  <meta property="og:article:tag" content="performance"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">246</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">32</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/08-12-voice-assistant/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            在 Rust 中實驗本機語音助理
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/08-16-herdr-sort-workspaces/">
+            用 C&#43;&#43;23 與 Cabin 開發 herdr 排序外掛
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">MiniCompose</h1>
+      
+      <div class="post-subtitle">手刻最小化 Jetpack Compose 渲染引擎、雙進程畫面隔離技術與 1000 節點微秒級動態基準測試</div>
+      
+      <div class="post-meta">
+        <span class="post-date">August 14, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        <a href="/categories/android"><span class="label label-info">android</span></a>
+        
+        
+        <a href="/tags/android"><span class="label label-primary">android</span></a>
+        
+        <a href="/tags/performance"><span class="label label-primary">performance</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>jetpack-compose</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Aug 14, 2026 - <a href="/posts/2026/08-14-minicompose/">MiniCompose</a></li>
+  
+    <li>Aug 11, 2026 - <a href="/posts/2026/08-11-jetpack-compose-rendering-architecture/">深入剖析 Jetpack Compose 渲染架構</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/08-14-minicompose/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在<a href="/posts/2026/08-11-jetpack-compose-rendering-architecture/">上一篇文章</a>中，我們從 AndroidX 原始碼的視角，深入剖析了 Jetpack Compose 的底層渲染管線與動畫硬體加速原理。</p>
+<p>不過，讀懂原始碼與自己真正掌握架構之間，往往隔著一層「動手做」的距離。為了驗證這些架構設計在真實運行時的表現，我用 Kotlin 從零手刻了一個最小化的教育型 Compose 渲染引擎：<strong>MiniCompose</strong>。</p>
+<p>這個專案不依賴任何 AndroidX Compose 函式庫，也不包含編譯器外掛（compiler plugin）或複雜的響應式狀態系統，而是專注於實現<strong>支撐 Compose 高效能渲染的 5 大關鍵架構決策</strong>。更進一步地，為了徹底排除同一執行緒排程干擾與虛擬機垃圾回收（GC）對效能比較的污染，MiniCompose 引入了 <strong>Android 跨進程畫面嵌入技術（Multi-Process Embedded Rendering）</strong>，在單一視窗中左右並排運行兩個<strong>完全隔離的 OS 獨立進程</strong>，進行千節點規模的微秒級（µs）即時基準測試。</p>
+<ul>
+<li>專案原始碼：<a href="https://github.com/p47t/minicompose">GitHub - p47t/minicompose</a></li>
+</ul>
+<h2 id="1-雙進程multi-process即時效能基準測試與實機展示">1. 雙進程（Multi-Process）即時效能基準測試與實機展示</h2>
+<p>在深入底層實作前，我們先來看這個實驗 App 的對比設計與最新實機動態演示。</p>
+<p>在 Android UI 開發中，移動一個元件通常有兩種常見方式：</p>
+<ol>
+<li><strong><code>Modifier.graphicsLayer</code></strong>：在繪製階段（Draw Phase）透過硬體層做幾何變換。</li>
+<li><strong><code>Modifier.offset</code></strong>：在排版階段（Layout Phase）修改座標位置。</li>
+</ol>
+<p>以往若在同一個 Activity 或同一個進程內同時跑兩種極端負載的動畫，右側高密度的排版計算與頻繁產生的短生命週期物件，容易引發全進程的 ART 虛擬機 GC 暫停（Stop-The-World），或者霸佔主執行緒的 Choreographer，進而拖累左側的幀率。</p>
+<p>為了解決這個干擾，MiniCompose 將左右兩側拆分為<strong>兩個獨立的 Linux OS 進程</strong>：</p>
+
+  <div class="mermaid">
+    flowchart LR
+    subgraph SingleWindow ["單一視窗：雙進程隔離即時基準測試"]
+        direction LR
+        subgraph LeftProc ["⚡ 左側進程 (:left_gpu / PID X)"]
+            direction TB
+            GPUCard["GPU 硬體繪製卡片<br/><b>100 / 500 / 1000 Nodes</b>"]
+            GPULayout["Layout Phase: <b>0 µs</b><br/>✓ 0 Passes / 秒（跳過 measureAndLayout）"]
+            GPUDraw["Draw Phase: <b>~280 µs</b><br/>✓ 鎖定 60~62 FPS 絲滑運作"]
+            GPUCard --> GPULayout --> GPUDraw
+        end
+
+        subgraph RightProc ["⚠️ 右側進程 (:right_cpu / PID Y)"]
+            direction TB
+            CPUCard["CPU 排版計算卡片<br/><b>100 / 500 / 1000 Nodes</b>"]
+            CPULayout["Layout Phase: <b>~14,700 µs</b><br/>⚠️ 44 Passes / 秒（每幀全樹重排重測）"]
+            CPUDraw["Draw Phase: <b>~6,580 µs</b><br/>⚠️ 總幀耗時 ~21 ms（幀率掉至 44 FPS）"]
+            CPUCard --> CPULayout --> CPUDraw
+        end
+
+        LeftProc ~~~ RightProc
+    end
+
+    style LeftProc fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style RightProc fill:#fff1f2,stroke:#f43f5e,stroke-width:2px,color:#881337
+    style GPUCard fill:#ffffff,stroke:#34d399,stroke-width:1.5px,color:#065f46
+    style CPUCard fill:#ffffff,stroke:#fb7185,stroke-width:1.5px,color:#881337
+    style GPULayout fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPULayout fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239
+    style GPUDraw fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPUDraw fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239
+  </div>
+
+
+
+
+
+
+
+<div class="video-container" style="text-align: center; margin: 24px auto;">
+  <video controls autoplay loop muted playsinline preload="auto" class="img-responsive" style="max-width: 100%; border-radius: 8px; margin: 0 auto; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+    
+      <source src="/posts/2026/08-14-minicompose/demo.mp4" type="video/mp4">
+    
+    
+      <source src="/posts/2026/08-14-minicompose/demo.webm" type="video/webm">
+    
+    
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+<h3 id="實驗設計與即時控制維度">實驗設計與即時控制維度</h3>
+<ul>
+<li><strong>OS 級進程隔離（Process Isolation）</strong>：左側運行於 <code>:left_gpu</code>（PID 32691），右側運行於 <code>:right_cpu</code>（PID 32714），兩者擁有獨立的 ART 虛擬機堆積、Main Looper 與 RenderThread。</li>
+<li><strong>多層級節點樹（Tree Complexity）</strong>：支援即時切換 <strong>100 節點</strong>、<strong>500 節點</strong> 與 <strong>1000 節點</strong> 的 <code>LayoutNode</code> 階層樹，每個節點包含文字量測（<code>Paint.measureText</code>）與 Flex 排版約束計算。</li>
+<li><strong>排版延遲注入（Layout Delay）</strong>：支援注入 <strong>0ms / 8ms / 20ms</strong> 的主執行緒排版負載，模擬重度業務計算。</li>
+<li><strong>繪製負載注入（Draw Load）</strong>：支援 <strong>Normal / +150 DL / +300 DL</strong>（Display List 繪製路徑），測試 GPU / CPU 繪製極限。</li>
+<li><strong>微秒級遙測抬頭顯示（HUD）</strong>：利用 <code>System.nanoTime()</code> 分別量測排版階段（Layout Phase）與繪製階段（Draw Phase）消耗的微秒時間，並跨進程透過 Binder IPC 即時匯總至主畫面。</li>
+</ul>
+<h3 id="實測數據與真實日誌分析">實測數據與真實日誌分析</h3>
+<p>在開啟 1000 節點、8ms Layout Delay 與 +300 DL 的重度壓力測試下，我們從實機 HUD 與 Logcat 擷取到微秒級效能數據：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">評測維度</th>
+					<th style="text-align: left">⚡ <code>Modifier.graphicsLayer</code> (<code>:left_gpu</code> / PID 32691)</th>
+					<th style="text-align: left">⚠️ <code>Modifier.offset</code> (<code>:right_cpu</code> / PID 32714)</th>
+					<th style="text-align: left">效能差異與架構洞察</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>運作幀率 (FPS)</strong></td>
+					<td style="text-align: left"><strong>62 FPS</strong>（穩定維持滿幀）</td>
+					<td style="text-align: left"><strong>44 FPS</strong>（掉幀、明顯卡頓）</td>
+					<td style="text-align: left">左側完全不受右側進程卡頓影響</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Layout Phase 耗時</strong></td>
+					<td style="text-align: left"><strong>0 µs</strong>（0 passes/s，完全跳過）</td>
+					<td style="text-align: left"><strong>14,733 µs (~14.7 ms)</strong>（44 passes/s）</td>
+					<td style="text-align: left"><code>graphicsLayer</code> 節省 100% 排版開銷</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Draw Phase 耗時</strong></td>
+					<td style="text-align: left"><strong>~275 – 280 µs</strong></td>
+					<td style="text-align: left"><strong>~6,581 µs (~6.6 ms)</strong></td>
+					<td style="text-align: left"><code>graphicsLayer</code> 重用 Display List，無額外重錄開銷</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>單幀總 CPU 耗時</strong></td>
+					<td style="text-align: left"><strong>~280 µs (0.28 ms)</strong></td>
+					<td style="text-align: left"><strong>~21,314 µs (21.3 ms)</strong></td>
+					<td style="text-align: left"><strong>每幀節省超過 21,000 µs (21 ms)</strong>！</td>
+			</tr>
+	</tbody>
+</table>
+<blockquote><p>📌 <strong>關鍵實測日誌洞察與基準測試說明</strong>：</p>
+<ul>
+<li><strong>跳過排版階段</strong>：<code>graphicsLayer</code> 在動畫期間完全跳過 <code>measureAndLayout()</code>（0 passes/s），Layout Phase 耗時嚴格為 <strong>0 µs</strong>；在 1000 節點規模下，僅需在 Draw Phase 耗時實測約 <strong>~280 µs</strong> 進行屬性更新與繪製分發。</li>
+<li><strong>基準測試路徑說明（Caveat）</strong>：在 MiniCompose 基準測試中，右側 <code>offset</code> 每一幀都會標記整棵子樹 Dirty 並遍歷重算；<strong>這是為了演示極限排版開銷上限而刻意設計的最壞路徑（Worst-case Demo Path），並非真實 Jetpack Compose 中 <code>Modifier.offset</code> 的局部排版（Localized Relayout）預設行為</strong>。</li>
+<li><strong>進程隔離帶來的純粹性</strong>：當右側進程被 1000 節點重排與延遲塞滿、單幀耗時飆至 21.3 ms（幀率跌至 44 FPS）時，左側進程依然絲滑地以 62 FPS 高速旋轉與移動，驗證了硬體加速圖層在多進程/多執行緒下的抗干擾能力。</li>
+</ul>
+</blockquote><h2 id="2-核心技術解析如何在單一視窗中以雙進程多-activity-隔離渲染畫面">2. 核心技術解析：如何在單一視窗中以雙進程／多 Activity 隔離渲染畫面？</h2>
+<p>許多讀者可能會好奇：<strong>Android 原生介面中，如何讓兩個完全不同的 Linux 進程，把各自的 UI 同時渲染在同一個 Activity 的同一個視窗畫面上？</strong></p>
+<p>MiniCompose 結合了 Android 11 (API 30+) 引入的 <strong><code>SurfaceControlViewHost</code></strong> 與傳統的 <strong><code>SurfaceView</code> + Binder IPC</strong>，實現了這套跨進程畫面無縫嵌入架構。</p>
+<h3 id="21-為什麼需要雙進程隔離">2.1 為什麼需要雙進程隔離？</h3>
+<p>在常規 Android 開發中，所有 View 都運行在同一個主執行緒（UI Thread）與同一個 ART 虛擬機進程中。若要公正地對比「高負載 CPU 計算」與「GPU 硬體加速」：</p>
+<ol>
+<li><strong>共享 UI Looper 污染</strong>：CPU 端的繁重排版會延遲 <code>Choreographer.doFrame()</code>，使同一畫面上的 GPU 動畫也被迫延遲掉幀。</li>
+<li><strong>共享 GC 暫停</strong>：大量短命物件的頻繁分配會觸發全進程的垃圾回收暫停（GC Pause），干擾微秒級量測。</li>
+</ol>
+<p>將兩者拆分至 <code>:left_gpu</code> 與 <code>:right_cpu</code> 獨立進程後，每個進程擁有自己的 Linux PID、獨立的虛擬機堆積、專屬的 Main Looper 與 RenderThread，達成了物理級別的效能隔離。</p>
+<h3 id="22-跨進程畫面嵌入架構surfacecontrolviewhost">2.2 跨進程畫面嵌入架構：<code>SurfaceControlViewHost</code></h3>
+<p>在 <code>AndroidManifest.xml</code> 中，我們宣告了兩個獨立進程：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- Process 1: 主介面與左側 GPU Activity (:left_gpu) --&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;activity</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;.MainActivity&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:process=</span><span style="color:#e6db74">&#34;:left_gpu&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:hardwareAccelerated=</span><span style="color:#e6db74">&#34;true&#34;</span> <span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- Process 2: 右側 CPU 渲染服務與獨立 Activity (:right_cpu) --&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;service</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;.RightCpuService&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:process=</span><span style="color:#e6db74">&#34;:right_cpu&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:exported=</span><span style="color:#e6db74">&#34;false&#34;</span> <span style="color:#f92672">/&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;activity</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:name=</span><span style="color:#e6db74">&#34;.RightCpuActivity&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:process=</span><span style="color:#e6db74">&#34;:right_cpu&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">android:resizeableActivity=</span><span style="color:#e6db74">&#34;true&#34;</span> <span style="color:#f92672">/&gt;</span></span></span></code></pre></div>
+
+<p>整個跨進程渲染與控制的 IPC 握手流程如下：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    autonumber
+    participant Host as MainActivity (:left_gpu)
+    participant SF as SurfaceFlinger (System Compositor)
+    participant Remote as RightCpuService (:right_cpu)
+
+    Note over Host: 1. 建立 SurfaceView 並取得 hostToken
+    Host->>Remote: bindService() + Binder.transact(TRANSACTION_CREATE_SURFACE, hostToken, w, h)
+    
+    Note over Remote: 2. 初始化 SurfaceControlViewHost(display, hostToken)
+    Note over Remote: 3. 將 MiniComposeView 設為 Root View
+    Note over Remote: 4. 取出 SurfacePackage (封裝 Remote SurfaceControl)
+    Remote-->>Host: Binder Parcel 回傳 (PID, SurfacePackage)
+
+    Note over Host: 5. surfaceView.setChildSurfacePackage(surfacePackage)
+    Host->>SF: 註冊跨進程圖層混合
+    Remote->>SF: :right_cpu RenderThread 直接送幀
+    Host->>SF: :left_gpu RenderThread 直接送幀
+    SF-->>Host: SurfaceFlinger 同步合成至單一螢幕！
+
+    rect rgb(240, 249, 255)
+    Note over Host, Remote: 6. 跨進程雙向互動與遙測同步 (Binder IPC)
+    Host->>Remote: transact(TRANSACTION_SET_COMPLEXITY / DELAY / LOAD)
+    Host->>Remote: transact(TRANSACTION_GET_STATS) -> 回傳 (FPS, LayoutUs, DrawUs)
+    end
+  </div>
+
+<h3 id="23-核心程式碼實作">2.3 核心程式碼實作</h3>
+<h4 id="步驟-1主端left_gpu配置-surfaceview-並發送-hosttoken">步驟 1：主端（<code>:left_gpu</code>）配置 <code>SurfaceView</code> 並發送 <code>hostToken</code></h4>
+<p>在 <code>MainActivity</code> 中，右半部配置一個 <code>SurfaceView</code>，當 Surface 就緒後，將它的 <code>hostToken</code> 透過 Binder 傳給遠端服務：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#75715e">// MainActivity.kt (:left_gpu process)
+</span></span></span><span style="display:flex;"><span>rightSurfaceView = SurfaceView(<span style="color:#66d9ef">this</span>).apply {
+</span></span><span style="display:flex;"><span>    setZOrderMediaOverlay(<span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>    holder.setFormat(<span style="color:#a6e22e">PixelFormat</span>.TRANSLUCENT)
+</span></span><span style="display:flex;"><span>    holder.addCallback(<span style="color:#66d9ef">object</span> <span style="color:#960050;background-color:#1e0010">: </span><span style="color:#a6e22e">SurfaceHolder</span>.Callback {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">surfaceCreated</span>(holder: SurfaceHolder) {
+</span></span><span style="display:flex;"><span>            attachSurfaceIfReady()
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">surfaceChanged</span>(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+</span></span><span style="display:flex;"><span>            attachSurfaceIfReady()
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">surfaceDestroyed</span>(holder: SurfaceHolder) {}
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">private</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">attachSurfaceIfReady</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> service = rightServiceBinder <span style="color:#f92672">?:</span> <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> hostToken = rightSurfaceView.hostToken <span style="color:#f92672">?:</span> <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> w = rightSurfaceView.width
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> h = rightSurfaceView.height
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (w <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">||</span> h <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> data = <span style="color:#a6e22e">Parcel</span>.obtain()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> reply = <span style="color:#a6e22e">Parcel</span>.obtain()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">data</span>.writeStrongBinder(hostToken)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">data</span>.writeInt(w)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">data</span>.writeInt(h)
+</span></span><span style="display:flex;"><span>        service.transact(<span style="color:#a6e22e">RightCpuService</span>.TRANSACTION_CREATE_SURFACE, <span style="color:#66d9ef">data</span>, reply, <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>        reply.readException()
+</span></span><span style="display:flex;"><span>        rightPid = reply.readInt()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">val</span> hasPackage = reply.readInt()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (hasPackage <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">val</span> surfacePackage = <span style="color:#a6e22e">SurfaceControlViewHost</span>.<span style="color:#a6e22e">SurfacePackage</span>.<span style="color:#a6e22e">CREATOR</span>.createFromParcel(reply)
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 將遠端進程的畫面包掛載進本地 SurfaceView！
+</span></span></span><span style="display:flex;"><span>            rightSurfaceView.setChildSurfacePackage(surfacePackage)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">finally</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">data</span>.recycle()
+</span></span><span style="display:flex;"><span>        reply.recycle()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="步驟-2遠端right_cpu建立-surfacecontrolviewhost-並回傳-surfacepackage">步驟 2：遠端（<code>:right_cpu</code>）建立 <code>SurfaceControlViewHost</code> 並回傳 <code>SurfacePackage</code></h4>
+<p>在 <code>RightCpuService</code> 內部，收到 <code>hostToken</code> 後建立 <code>SurfaceControlViewHost</code>，並將耗費 CPU 計算的 <code>MiniComposeView</code> 掛載進去：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#75715e">// RightCpuService.kt (:right_cpu process)
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">@RequiresApi</span>(<span style="color:#a6e22e">Build</span>.<span style="color:#a6e22e">VERSION_CODES</span>.R)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">private</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">createEmbeddedViewHierarchy</span>(
+</span></span><span style="display:flex;"><span>    hostToken: IBinder,
+</span></span><span style="display:flex;"><span>    width: Int,
+</span></span><span style="display:flex;"><span>    height: Int
+</span></span><span style="display:flex;"><span>): <span style="color:#a6e22e">SurfaceControlViewHost</span>.SurfacePackage? {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> displayManager = getSystemService(<span style="color:#a6e22e">Context</span>.DISPLAY_SERVICE) <span style="color:#66d9ef">as</span> DisplayManager
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> display = displayManager.getDisplay(<span style="color:#a6e22e">Display</span>.DEFAULT_DISPLAY)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 建立跨進程 View 宿主
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> newHost = SurfaceControlViewHost(<span style="color:#66d9ef">this</span>, display, hostToken)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.host = newHost
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> newComposeView = MiniComposeView(<span style="color:#66d9ef">this</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.composeView = newComposeView
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 將 Compose 樹掛載至遠端 Host
+</span></span></span><span style="display:flex;"><span>    newHost.setView(newComposeView, width, height)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    setupComposeTree(width, height)
+</span></span><span style="display:flex;"><span>    startAnimation()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 取得可跨進程序列化傳輸的 SurfacePackage
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> newHost.surfacePackage
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="步驟-3跨進程-binder-遙測與互動控制">步驟 3：跨進程 Binder 遙測與互動控制</h4>
+<p>為了讓主畫面的控制按鈕（如 100/500/1000 節點切換、延遲注入等）與 HUD 統計數據即時同步，兩進程間定義了一組輕量的 Binder Transaction：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#75715e">// 跨進程控制碼定義
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_CREATE_SURFACE = <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_SET_COMPLEXITY = <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_SET_LAYOUT_DELAY = <span style="color:#ae81ff">3</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_GET_STATS = <span style="color:#ae81ff">4</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_SET_DRAW_LOAD = <span style="color:#ae81ff">5</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">val</span> TRANSACTION_SET_ANIMATING = <span style="color:#ae81ff">6</span></span></span></code></pre></div>
+
+<p><code>MainActivity</code> 每秒定期呼叫 <code>TRANSACTION_GET_STATS</code>，跨進程讀取 <code>:right_cpu</code> 的 FPS 與微秒耗時，並繪製在主螢幕的 HUD 面板上。</p>
+<h4 id="補充多-activity-原生分割畫面split-screen">補充：多 Activity 原生分割畫面（Split-Screen）</h4>
+<p>除了 <code>SurfaceControlViewHost</code> 視窗內嵌入外，專案中也提供了獨立的 <a href="https://github.com/p47t/minicompose/blob/master/app/src/main/java/com/example/minicompose/RightCpuActivity.kt"><code>RightCpuActivity</code></a>。透過設定 <code>android:resizeableActivity=&quot;true&quot;</code> 與 <code>launchMode=&quot;singleTask&quot;</code>，在 Android 平板或多重視窗模式下，系統可以同時以左右分割畫面運行 <code>MainActivity</code> (:left_gpu) 與 <code>RightCpuActivity</code> (:right_cpu)，同樣享有 100% 的進程與繪製隔離。</p>
+<h2 id="3-minicompose-的-5-大核心架構實作">3. MiniCompose 的 5 大核心架構實作</h2>
+<p>除了雙進程隔離技術，MiniCompose 的核心價值在於用最精簡的 Kotlin 程式碼，完整還原 Jetpack Compose 團隊在渲染管線上的 5 大關鍵設計決策。</p>
+<h3 id="決策-1為什麼-composeview-與-androidcomposeview-必須是-viewgroup">決策 1：為什麼 <code>ComposeView</code> 與 <code>AndroidComposeView</code> 必須是 <code>ViewGroup</code>？</h3>
+<p>在傳統 View 系統中，如果我們要客製化一個純粹繪製內容的元件，通常繼承 <code>View</code> 即可。但 Compose 的進入點卻是兩個 <code>ViewGroup</code>：</p>
+
+  <div class="mermaid">
+    flowchart TD
+    AVTree["Android 原生 View 樹狀結構"] --> MCV["MiniComposeView (ViewGroup)<br/>• 對外公開的 API 容器<br/>• 攔截非法 addView()"]
+    MCV -->|唯一合法子 View| MACV["MiniAndroidComposeView (ViewGroup)<br/>• 內部核心 Bridge & 樹狀結構 Owner"]
+    MACV -->|持有與調度| RootNode["Root LayoutNode<br/>• Compose 元件樹根節點"]
+    MACV -->|持有與管理| AVHandler["AndroidViewsHandler<br/>• 託管 AndroidView 嵌入的原生元件"]
+
+    style AVTree fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+    style MCV fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style MACV fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
+    style RootNode fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style AVHandler fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155
+  </div>
+
+<p>其背後原因有兩個：</p>
+<ol>
+<li><strong>API 封裝</strong>：<code>MiniComposeView</code> 對外暴露給開發者使用，它必須是一個 <code>ViewGroup</code> 才能透過 <code>addView()</code> 將唯一的內部核心元件 <code>MiniAndroidComposeView</code> 掛載進去。同時，它覆寫了公開的 <code>addView()</code> 方法，禁止外部隨意新增一般 View：
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">addView</span>(child: View?) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (!creatingComposition) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">throw</span> UnsupportedOperationException(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;Cannot add views to MiniComposeView; use setContent {} instead.&#34;</span>
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">super</span>.addView(child)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+</li>
+<li><strong>互操作性（Interop）</strong>：當我們在 Compose 中使用 <code>AndroidView</code> 嵌入傳統原生元件（如 <code>WebView</code> 或 <code>MapView</code>）時，這些原生元件必須存在於 Android View 樹狀結構中。<code>MiniAndroidComposeView</code> 作為 <code>ViewGroup</code>，才能在內部建立一個 <code>AndroidViewsHandler</code> 來持有並管理這些原生子 View。</li>
+</ol>
+<h3 id="決策-2空的-ondraw-與攔截-dispatchdraw-的-z-order-奧秘">決策 2：空的 <code>onDraw()</code> 與攔截 <code>dispatchDraw()</code> 的 Z-Order 奧秘</h3>
+<p>在 Android 中，一個 <code>View</code> 的完整繪製流程如下：
+</p>
+$$\text{drawBackground()} \longrightarrow \text{onDraw()} \longrightarrow \text{dispatchDraw()} \longrightarrow \text{onDrawForeground()}$$<p>其中，<code>onDraw()</code> 是用來畫 View 自己的內容，而 <code>dispatchDraw()</code> 則是 <code>ViewGroup</code> 用來派發並繪製所有子 View。</p>
+<blockquote><p>💡 <strong>核心洞察</strong>：如果 Compose 選擇在 <code>onDraw()</code> 中繪製 <code>LayoutNode</code> 元件樹，那麼隨後在 <code>dispatchDraw()</code> 繪製的原生嵌入元件（如 <code>AndroidView</code>）將會<strong>永遠覆蓋在 Compose UI 之上</strong>，破壞畫面的圖層順序（Z-ordering）。</p>
+</blockquote><p>因此，<code>MiniAndroidComposeView</code> 採取了明確的繪製順序：</p>
+<ul>
+<li><strong>將 <code>onDraw()</code> 留空</strong>，不在這個階段做任何繪製。</li>
+<li><strong>覆寫 <code>dispatchDraw(canvas)</code></strong>：<strong>先畫完整棵 <code>LayoutNode</code> 樹，再調用 <code>super.dispatchDraw(canvas)</code> 繪製原生子 View</strong>：</li>
+</ul>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">MiniAndroidComposeView</span>(context: Context) : ViewGroup(context) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> root = LayoutNode(<span style="color:#e6db74">&#34;Root&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">private</span> <span style="color:#66d9ef">val</span> canvasHolder = CanvasHolder()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 刻意留空！防止內容被 dispatchDraw 繪製的子 View 覆蓋
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">onDraw</span>(canvas: Canvas) {}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">dispatchDraw</span>(canvas: Canvas) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 1. 若節點樹 Dirty，執行排版與量測計時
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (root.needsLayout <span style="color:#f92672">||</span> root.hasDirtyDescendants) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">val</span> startNs = <span style="color:#a6e22e">System</span>.nanoTime()
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">val</span> didWork = root.measureAndLayout(width, height)
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (didWork) {
+</span></span><span style="display:flex;"><span>                layoutPassCount<span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>                lastLayoutTimeUs = (<span style="color:#a6e22e">System</span>.nanoTime() - startNs) / <span style="color:#ae81ff">1000L</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 2. 在 dispatchDraw 中繪製整個 Compose LayoutNode 樹
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">val</span> drawStartNs = <span style="color:#a6e22e">System</span>.nanoTime()
+</span></span><span style="display:flex;"><span>        canvasHolder.drawInto(canvas) {
+</span></span><span style="display:flex;"><span>            root.draw(<span style="color:#66d9ef">this</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        lastDrawTimeUs = (<span style="color:#a6e22e">System</span>.nanoTime() - drawStartNs) / <span style="color:#ae81ff">1000L</span>
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 3. 接著讓 ViewGroup 繪製嵌入的原生 View
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">super</span>.dispatchDraw(canvas)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="決策-3canvasholder-帶來的零物件分配zero-allocation">決策 3：<code>CanvasHolder</code> 帶來的零物件分配（Zero-Allocation）</h3>
+<p>在 60 FPS 或 120 FPS 的高頻繪製迴圈中，任何短生命週期物件的頻繁分配，都會給垃圾回收器（Garbage Collector）帶來巨大壓力，導致 micro-stutter 卡頓。</p>
+<p>Android 原生傳入 <code>draw()</code> 的是 <code>android.graphics.Canvas</code>，而 Compose 內部使用的是跨平台的 Canvas 抽象封裝。如果每一幀、每個節點都 <code>new CanvasWrapper(canvas)</code>，GC 將不堪負荷。</p>
+<p>MiniCompose 透過 <a href="https://github.com/p47t/minicompose/blob/master/app/src/main/java/com/example/minicompose/CanvasHolder.kt"><code>CanvasHolder</code></a> 模式解決了這個問題：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">CanvasHolder</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 預先配置單一可重複使用的 MiniCanvas 實例
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">val</span> miniCanvas = MiniCanvas()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">inline</span> <span style="color:#66d9ef">fun</span> <span style="color:#a6e22e">drawInto</span>(targetCanvas: Canvas, block: <span style="color:#a6e22e">MiniCanvas</span>.() <span style="color:#f92672">-&gt;</span> Unit) {
+</span></span><span style="display:flex;"><span>        miniCanvas.internalCanvas = targetCanvas
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>            miniCanvas.block()
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">finally</span> {
+</span></span><span style="display:flex;"><span>            miniCanvas.internalCanvas = <span style="color:#66d9ef">null</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過 <code>inline</code> 函式與內部引用置換，整個繪製管線在每一幀的物件分配數量嚴格為 <strong>0</strong>。</p>
+<h3 id="決策-4graphicslayer-與硬體-rendernode-的記憶體分離">決策 4：<code>GraphicsLayer</code> 與硬體 <code>RenderNode</code> 的記憶體分離</h3>
+<p>在 Android 10 (API 29+) 中，Google 開放了原生 C++ <code>android.graphics.RenderNode</code> API。MiniCompose 的 <code>GraphicsLayer</code> 正是封裝了這顆硬體加速的核心。</p>
+<p>一個 <code>RenderNode</code> 在記憶體中被精確拆分為兩個獨立部分：</p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph RN ["RenderNode (Native C++ 物件結構)"]
+        direction TB
+        subgraph HP ["1. Header Properties (可變資料，更新耗時 < 1 µs)"]
+            direction TB
+            HPList["• translationX, translationY<br/>• scaleX, scaleY<br/>• rotationX, rotationY, rotationZ<br/>• alpha, elevation, pivotX, pivotY"]
+        end
+
+        subgraph DL ["2. Display List (繪製指令，錄製完成後不可變)"]
+            direction TB
+            DLList["• drawRect(0, 0, 100, 100)<br/>• drawText('Hello')<br/>• drawBitmap(...)"]
+        end
+    end
+
+    HP -.->|硬體矩陣變換| GPU["GPU RenderThread<br/>(直接套用 4x4 矩陣，重播 Display List)"]
+    DL -->|無需重新錄製| GPU
+
+    style RN fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a
+    style HP fill:#eff6ff,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a8a
+    style DL fill:#f1f5f9,stroke:#64748b,stroke-width:1.5px,color:#334155
+    style HPList fill:#ffffff,stroke:#93c5fd,stroke-width:1px,color:#1e3a8a
+    style DLList fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#334155
+    style GPU fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+  </div>
+
+<p>當我們在 MiniCompose 中使用 <code>graphicsLayer</code> 更新動畫時：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-kotlin" data-lang="kotlin"><span style="display:flex;"><span>node.graphicsLayerBlock = { layer <span style="color:#f92672">-&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 直接寫入 native RenderNode 的 C++ 記憶體欄位！
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 耗時 &lt; 1 微秒，不觸發 Display List 重錄，不觸發 Re-layout
+</span></span></span><span style="display:flex;"><span>    layer.translationY = currentY
+</span></span><span style="display:flex;"><span>    layer.rotationZ = animationProgress * <span style="color:#ae81ff">360f</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>繪製時，GPU 上的 <code>RenderThread</code> 可以直接套用新的 4×4 矩陣，重播完全沒有變動的 Display List。在動畫期間，<code>graphicsLayer</code> 做到<strong>不重排（跳過 Layout Phase）且不重錄 Display List</strong>；即使在 1000 節點的規模下，每一幀也僅需在 Draw Phase 消耗實測約 <strong>~280 µs</strong> 即可完成全部節點的屬性更新與繪製分發。</p>
+<h3 id="決策-5modifiergraphicslayer-vs-modifieroffset-的本質對比">決策 5：<code>Modifier.graphicsLayer</code> vs <code>Modifier.offset</code> 的本質對比</h3>
+<p>Compose 的渲染管線包含三個階段：
+</p>
+$$\text{Composition (組件組合)} \longrightarrow \text{Layout (量測與擺放)} \longrightarrow \text{Draw (畫布繪製)}$$<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">比較維度</th>
+					<th style="text-align: left"><code>Modifier.graphicsLayer</code></th>
+					<th style="text-align: left"><code>Modifier.offset</code></th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>執行階段</strong></td>
+					<td style="text-align: left"><strong>Draw Phase（繪製階段）</strong></td>
+					<td style="text-align: left"><strong>Layout Phase（排版階段）</strong></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>底層動作</strong></td>
+					<td style="text-align: left">直接更新 native <code>RenderNode</code> 的 Float 欄位</td>
+					<td style="text-align: left">標記 <code>needsLayout = true</code>，更新座標</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>節點樹負擔</strong></td>
+					<td style="text-align: left"><strong>0 節點遍歷</strong>（跳過全樹重新排版）</td>
+					<td style="text-align: left">遞迴遍歷整棵樹，重新量測子節點約束</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Display List</strong></td>
+					<td style="text-align: left"><strong>完全不重新錄製</strong>，Display List 保持重用</td>
+					<td style="text-align: left">標記 Dirty，整棵樹重新錄製繪製指令</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>1000 節點耗時</strong></td>
+					<td style="text-align: left"><strong>Layout: 0 µs / 總耗時: ~280 µs</strong>（節省 98%）</td>
+					<td style="text-align: left"><strong>Layout: ~14.7 ms / 總耗時: ~21.3 ms</strong></td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="4-minicompose-專案模組結構">4. MiniCompose 專案模組結構</h2>
+<p>整個 MiniCompose 專案結構清晰，模組分工如下：</p>
+
+  <pre tabindex="0"><code>app/src/main/
+├── AndroidManifest.xml      # 宣告 :left_gpu 與 :right_cpu 雙獨立進程
+└── java/com/example/minicompose/
+    ├── CanvasHolder.kt      # 零物件分配 Canvas 轉接器
+    ├── GraphicsLayer.kt     # 封裝 RenderNode 的硬體繪製圖層與 header 屬性更新
+    ├── LayoutNode.kt        # Compose 節點樹結構、Measure/Layout Policy 與繪製分發
+    ├── MiniComposeView.kt   # 對外公開的 MiniComposeView 與內部 Bridge MiniAndroidComposeView
+    ├── MainActivity.kt      # 雙進程協調器（運行於 :left_gpu，透過 SurfaceControlViewHost 嵌入右側畫面）
+    ├── RightCpuService.kt   # 遠端渲染服務（運行於 :right_cpu，提供 SurfacePackage 與 IPC 遙測數據）
+    └── RightCpuActivity.kt  # 獨立 CPU 測試 Activity（支援 Android 原生多重視窗分割畫面）</code></pre>
+
+<h2 id="5-結語與學習心得">5. 結語與學習心得</h2>
+<p>透過從零手刻 MiniCompose 並整合 Android 雙進程跨視窗渲染架構，我們獲得了兩個層面的深刻體悟：</p>
+<ol>
+<li><strong>Compose 架構設計的精準取捨</strong>：<code>ComposeView</code> 繼承 <code>ViewGroup</code> 與清空 <code>onDraw()</code>，是為了在享受宣告式 UI 開發體驗的同時，兼顧與傳統 View 系統 100% 的 Z-Order 互操作性；而 <code>CanvasHolder</code> 與 <code>GraphicsLayer</code> 則是對 Android HWUI / RenderThread 底層管線的極致效能榨取。</li>
+<li><strong>進程隔離帶來的純粹基準測試</strong>：透過 <code>SurfaceControlViewHost</code>，我們得以在單一視窗內將兩個截然不同的渲染策略隔絕在獨立的 Linux 進程中。無論右側的排版負載多麼沉重、引發多少 GC 暫停，左側的硬體加速動畫依然能以 60+ FPS 絲滑運轉。</li>
+</ol>
+<p>如果你也想親自把玩這套雙進程架構並體驗微秒級的效能數據，歡迎造訪 <a href="https://github.com/p47t/minicompose">GitHub - p47t/minicompose</a>，將專案 clone 下來在 Android Studio 中打開並運行於實機上！</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '17px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }
+    });
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>

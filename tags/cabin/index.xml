@@ -1,0 +1,981 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/cabin/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-08-16 10:50:00 -0700 -0700</updated>
+    
+    <item>
+      <title>用 C&#43;&#43;23 與 Cabin 開發 herdr 排序外掛</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-16-herdr-sort-workspaces/</link>
+      <pubDate>Sun, 16 Aug 2026 10:50:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-16-herdr-sort-workspaces/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-16-herdr-sort-workspaces/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;隨著 AI coding agent（如 Claude Code、Codex、Pi、Aider 等）的普及，現代軟體開發的工作模式正在經歷巨大轉變：我們不再只是單線程地在單一終端裡寫程式，而是傾向於&lt;strong&gt;同時將多個獨立子任務平行分派給多個 AI agent&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;在這個背景下，專為 AI agent 設計的現代終端多工器（terminal multiplexer）——&lt;a href=&#34;https://herdr.dev&#34;&gt;&lt;strong&gt;herdr&lt;/strong&gt;&lt;/a&gt;（被許多人稱為「AI agent 時代的 tmux」）應運而生。&lt;/p&gt;
+&lt;h2 id=&#34;1-痛點與核心設計目標&#34;&gt;1. 痛點與核心設計目標&lt;/h2&gt;
+&lt;h3 id=&#34;11-為什麼-herdr-會迅速累積大量工作區workspaces&#34;&gt;1.1 為什麼 herdr 會迅速累積大量工作區（workspaces）？&lt;/h3&gt;
+&lt;p&gt;在傳統開發中，我們頂多開 2 到 3 個 tmux 視窗；但在使用 herdr 時，使用者往往會同時開啟 &lt;strong&gt;10 到 30+ 個工作區（workspaces）&lt;/strong&gt;。這源於 herdr 的幾個核心架構特色：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;內建 Git worktree 原生隔離&lt;/strong&gt;：herdr 提供了原生的 worktree 整合（如 &lt;code&gt;herdr worktree create --branch &amp;lt;name&amp;gt;&lt;/code&gt;）。當你要讓 agent 處理一個 issue 或進行重構時，herdr 會在獨立的 Git worktree 中建立專屬 workspace。這讓多個 agent 能在各自獨立的目錄分支下並行編譯與測試，完全不會產生 Git 鎖定或分支衝突。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;多 agent 高並行分派（agent-first orchestration）&lt;/strong&gt;：開發者習慣為不同任務建立獨立 workspace，例如同時跑 &lt;code&gt;feat/issue-2&lt;/code&gt;、&lt;code&gt;feat/issue-10&lt;/code&gt;、&lt;code&gt;bugfix/auth&lt;/code&gt;、&lt;code&gt;docs/api&lt;/code&gt;、&lt;code&gt;refactor/db&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;程式化與 agent-to-agent 自動化開區&lt;/strong&gt;：herdr 提供本地 socket API 與 CLI。負責統籌的主 agent（lead agent）或自動化腳本能透過程式化指令（&lt;code&gt;herdr workspace create&lt;/code&gt; / &lt;code&gt;herdr worktree create&lt;/code&gt;）動態建立工作區、派發任務，並監聽 agent 的即時工作狀態。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;常駐背景守護（session persistence）&lt;/strong&gt;：herdr 的背景 daemon 會持續託管所有終端 session。即使筆電休眠、SSH 連線中斷或關閉前端視窗，所有執行中的 agent 依然在背景持續運作，導致工作區列表隨著多日專案持續累積。&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    D[&#34;🖥️ &lt;b&gt;herdr daemon (常駐背景服務)&lt;/b&gt;&lt;br/&gt;託管多個平行 session 與 Git worktree&#34;]
+    
+    W[&#34;📦 &lt;b&gt;20+ 平行工作區 (workspaces &amp;amp; worktrees)&lt;/b&gt;&lt;br/&gt;● working · ▲ blocked · ✓ done · ○ idle&#34;]
+    
+    P[&#34;⚠️ &lt;b&gt;工作區組織與切換痛點&lt;/b&gt;&lt;br/&gt;❌ 傳統字典序：issue-10 排在 issue-2 前面&lt;br/&gt;❌ 狀態混雜：等待輸入 (blocked) 難以察覺&lt;br/&gt;❌ 分支散落：不同 Git 倉庫缺乏層級整理&#34;]
+
+    D ==&gt;|背景持續運行| W
+    W ==&gt;|缺乏排序機制| P
+
+    classDef daemonNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef wsNode fill:#1e293b,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef probNode fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#fef2f2;
+
+    class D daemonNode;
+    class W wsNode;
+    class P probNode;
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+    linkStyle 1 stroke:#f43f5e,stroke-width:3px,fill:none;
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;12-排序與組織痛點&#34;&gt;1.2 排序與組織痛點&lt;/h3&gt;
+&lt;p&gt;當工作區膨脹到數十個時，側邊欄的瀏覽與切換體驗會急劇下降：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;傳統字典序混亂&lt;/strong&gt;：常規字母排序會將 &lt;code&gt;feat/issue-10&lt;/code&gt; 排在 &lt;code&gt;feat/issue-2&lt;/code&gt; 前面。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;agent 狀態難以一目了然&lt;/strong&gt;：正在處理（&lt;code&gt;working&lt;/code&gt;）或等待人類輸入（&lt;code&gt;blocked&lt;/code&gt;）的關鍵 agent 散落在列表中，與已經完成（&lt;code&gt;done&lt;/code&gt;）或閒置（&lt;code&gt;idle&lt;/code&gt;）的工作區混在一起。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;跨專案 worktree 分散&lt;/strong&gt;：不同專案的 Git worktrees 缺乏依倉庫名稱或工作路徑的層級整理。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;為了解決這個痛點，我用現代 &lt;a href=&#34;https://en.cppreference.com/w/cpp/23&#34;&gt;&lt;strong&gt;C++23&lt;/strong&gt;&lt;/a&gt; 開發了一個高效、穩健的 herdr 排序與工作區管理外掛：&lt;strong&gt;&lt;code&gt;herdr-sort-workspaces&lt;/code&gt;&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;在開發這個專案的過程中，有兩個體驗讓我非常驚艷：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Cabin 建置系統帶來如 Rust Cargo 般的現代開發體驗&lt;/strong&gt;：告別寫了幾十年依舊繁瑣且容易踩坑的 CMakeLists.txt，僅靠一份簡潔的聲明式 &lt;code&gt;cabin.toml&lt;/code&gt;，就能自動解析 ports 套件依賴、管理子模組，並以 &lt;code&gt;cabin build&lt;/code&gt; 與 &lt;code&gt;cabin test&lt;/code&gt; 一鍵編譯與測試。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;現代 C++23 與高品質開源生態的完美結合&lt;/strong&gt;：結合 &lt;code&gt;std::expected&lt;/code&gt;、&lt;code&gt;std::ranges&lt;/code&gt;、&lt;code&gt;std::lexicographical_compare_three_way&lt;/code&gt;、&lt;code&gt;std::format&lt;/code&gt;，並複用社群頂級函式庫（&lt;code&gt;CLI11&lt;/code&gt;、&lt;code&gt;nlohmann_json&lt;/code&gt;、&lt;code&gt;FTXUI&lt;/code&gt;、&lt;code&gt;Catch2 v3&lt;/code&gt;），在保證極致效能與零額外抽象開銷的同時，寫出具備高型別安全、高可讀性與完整測試覆蓋的現代系統程式。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;ul&gt;
+&lt;li&gt;專案原始碼：&lt;a href=&#34;https://github.com/p47t/herdr-sort-workspaces&#34;&gt;GitHub - p47t/herdr-sort-workspaces&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;13-五大核心需求與系統架構&#34;&gt;1.3 五大核心需求與系統架構&lt;/h3&gt;
+&lt;p&gt;在打造這款外掛時，我設定了幾個核心需求：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;自然字母數字排序（natural alphanumeric sort）&lt;/strong&gt;：數字區塊需視為整數比較，確保 &lt;code&gt;workspace-2&lt;/code&gt; 排在 &lt;code&gt;workspace-10&lt;/code&gt; 之前；同時支援不區分大小寫的初級比較與嚴格大小寫的平手裁決，且必須能處理任意長度的大數值而不發生整數溢位。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;多維度排序策略&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;natural&lt;/code&gt;：自然數字排序（預設）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;label&lt;/code&gt; / &lt;code&gt;alpha&lt;/code&gt;：純字典字母排序。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;status&lt;/code&gt;：依照 agent 工作狀態優先權排序（&lt;code&gt;working&lt;/code&gt; &amp;gt; &lt;code&gt;blocked&lt;/code&gt; &amp;gt; &lt;code&gt;done&lt;/code&gt; &amp;gt; &lt;code&gt;idle&lt;/code&gt; &amp;gt; &lt;code&gt;unknown&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;repo&lt;/code&gt;：依據 Git 倉庫根目錄分組，並整理旗下各 worktree 分支。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;path&lt;/code&gt;：依據工作目錄（CWD）層級排序。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;panes&lt;/code&gt; / &lt;code&gt;tabs&lt;/code&gt;：依據終端分割窗格或分頁數量排序（快速找出最活躍的工作區）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;reverse&lt;/code&gt;：反轉現有工作區順序。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;最小移動次數計算（minimal move reordering）&lt;/strong&gt;：herdr 的 RPC 提供 &lt;code&gt;workspace.move(id, insert_index)&lt;/code&gt; 介面。我們不能暴力重置所有工作區，而必須透過置換模擬演算法計算出最少的移動步驟，減少畫面閃爍與 IPC 負擔。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;宣告式互動 TUI（live preview terminal UI）&lt;/strong&gt;：利用 FTXUI 打造即時互動終端介面，支援快捷鍵 &lt;code&gt;[1-8]&lt;/code&gt; 切換策略、&lt;code&gt;[r]&lt;/code&gt; 反轉、&lt;code&gt;[f]&lt;/code&gt; 置頂當前焦點工作區，並以 ANSI 顏色徽章和位置偏移指示器（如 &lt;code&gt;+2&lt;/code&gt;, &lt;code&gt;-1&lt;/code&gt;, &lt;code&gt;0&lt;/code&gt;）提供即時重排預覽。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Unix domain socket IPC 與容錯機制&lt;/strong&gt;：優先透過 &lt;code&gt;/tmp/herdr.sock&lt;/code&gt; 或 &lt;code&gt;~/.config/herdr/herdr.sock&lt;/code&gt; 與 herdr 背景守護程序（daemon）通訊，若 socket 不可用則無縫退回呼叫 &lt;code&gt;herdr&lt;/code&gt; CLI。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;以下是整個系統的通訊與模組架構圖：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph UI [&#34;1. 使用者介面與觸發 (UI &amp; CLI)&#34;]
+        direction LR
+        Pal[&#34;herdr command palette&lt;br/&gt;(快捷鍵 / 外掛選單)&#34;] --&gt;|啟動| CLI[&#34;CLI 命令列 (CLI11)&lt;br/&gt;sort / list / hook / bench&#34;]
+        TUI[&#34;FTXUI 互動終端介面&lt;br/&gt;(即時預覽 / [1-8] 快捷鍵)&#34;]
+        BenchTool[&#34;bench-natural-sort&lt;br/&gt;(專屬效能評測二進位檔)&#34;]
+    end
+
+    subgraph Core [&#34;2. 核心排序與評測模組 (C++23 Sorter &amp;amp; Bench Engine)&#34;]
+        direction LR
+        Sorter[&#34;⚙️ Sorter 策略排程器&lt;br/&gt;(std::ranges::stable_sort / partition)&#34;]
+        NatSort[&#34;🔤 Natural Sort 比較器&lt;br/&gt;(自然字母數字分塊比對)&#34;]
+        Model[&#34;📦 資料模型映射&lt;br/&gt;(nlohmann_json 序列化)&#34;]
+        BenchCore[&#34;⚡ 效能基準評測引擎&lt;br/&gt;(do_not_optimize / 9 種資料分佈)&#34;]
+        
+        Sorter --- NatSort
+        Sorter --- Model
+        BenchCore --- NatSort
+        BenchCore --- Sorter
+    end
+
+    subgraph PlannerSub [&#34;3. 置換規劃模組 (Reorder Planner)&#34;]
+        Planner[&#34;📐 最小移動規劃器&lt;br/&gt;(前綴不變量置換狀態機演算法)&#34;]
+    end
+
+    subgraph Transport [&#34;4. 通訊傳輸層 (herdrClient)&#34;]
+        direction LR
+        Sock[&#34;⚡ Unix domain socket&lt;br/&gt;(JSON-RPC / 5 秒逾時保護)&#34;]
+        CliFallback[&#34;🐚 herdr CLI 子程序&lt;br/&gt;(popen 管道容錯回退)&#34;]
+        Sock -.-&gt;|連線失敗時回退| CliFallback
+    end
+
+    subgraph Daemon [&#34;5. herdr 執行時環境 (daemon)&#34;]
+        HerdrCore[&#34;🖥️ herdr core daemon&lt;br/&gt;(workspace.list / workspace.move / notification.show)&#34;]
+    end
+
+    CLI ==&gt;|傳入排序或壓測請求| Sorter
+    TUI ==&gt;|即時預覽與套用| Sorter
+    BenchTool ==&gt;|執行全場景基準評測| BenchCore
+    Sorter ==&gt;|輸出目標排序清單| Planner
+    Planner ==&gt;|生成最小移動指令序列| Sock
+    Sock ==&gt;|socket 通訊| HerdrCore
+    CliFallback ==&gt;|CLI 指令管道| HerdrCore
+
+    classDef uiNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef coreNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef planNode fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    classDef transNode fill:#431407,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef daemonNode fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#f8fafc;
+
+    class Pal,CLI,TUI,BenchTool uiNode;
+    class Sorter,NatSort,Model,BenchCore coreNode;
+    class Planner planNode;
+    class Sock,CliFallback transNode;
+    class HerdrCore daemonNode;
+
+    style UI fill:#022c22,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+    style Core fill:#082f49,stroke:#0284c7,stroke-width:2px,color:#7dd3fc
+    style PlannerSub fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#a5b4fc
+    style Transport fill:#271007,stroke:#ea580c,stroke-width:2px,color:#fdba74
+    style Daemon fill:#0f172a,stroke:#64748b,stroke-width:2px,color:#cbd5e1
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+    linkStyle 0 stroke:#6ee7b7,stroke-width:2px,fill:none;
+    linkStyle 1,2,3,4 stroke:#38bdf8,stroke-width:1.5px,stroke-dasharray:3 3,fill:none;
+    linkStyle 5 stroke:#fb923c,stroke-width:2px,stroke-dasharray:4 4,fill:none;
+    linkStyle 6,7,8 stroke:#34d399,stroke-width:2.5px,fill:none;
+    linkStyle 9 stroke:#38bdf8,stroke-width:2.5px,fill:none;
+    linkStyle 10 stroke:#818cf8,stroke-width:2.5px,fill:none;
+    linkStyle 11 stroke:#f97316,stroke-width:2.5px,fill:none;
+    linkStyle 12 stroke:#fb923c,stroke-width:2px,fill:none;
+  &lt;/div&gt;
+
+&lt;h2 id=&#34;2-亮點cabin-建置系統--c-如-rust-cargo-般的現代體驗&#34;&gt;2. 亮點：Cabin 建置系統 — C++ 如 Rust Cargo 般的現代體驗&lt;/h2&gt;
+&lt;p&gt;長期以來，C++ 專案的建置系統與依賴管理一直是開發者心中的痛。CMake 雖然功能強大，但其語法晦澀、歷史包袱沉重，要引入外部相依套件通常得在 &lt;code&gt;FetchContent&lt;/code&gt;、&lt;code&gt;find_package&lt;/code&gt;、vcpkg、Conan 或手動編譯之間痛苦掙扎，動輒數十行的樣板程式碼更讓人心力交瘁。&lt;/p&gt;
+&lt;p&gt;在這個專案中，我全面採用了新一代 C++ 套件管理與建置系統：&lt;strong&gt;Cabin&lt;/strong&gt;（&lt;code&gt;cabinpkg&lt;/code&gt;）。&lt;/p&gt;
+&lt;h3 id=&#34;21-簡潔優雅的-cabintoml&#34;&gt;2.1 簡潔優雅的 &lt;code&gt;cabin.toml&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Cabin 借鑑了 Rust Cargo 的設計哲學，使用單一 TOML 檔宣告專案資訊、編譯標準、相依套件與建置目標。看看 &lt;code&gt;herdr-sort-workspaces&lt;/code&gt; 的完整 &lt;code&gt;cabin.toml&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;package&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;name&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;herdr-sort-workspaces&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.1.0&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;cxx-standard&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;c++23&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;dependencies&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;nlohmann_json&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;port&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;^3.12.0&amp;#34;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;ftxui&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;path&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;third_party/ftxui&amp;#34;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;CLI11&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;port&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;^2.6.2&amp;#34;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;target&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;herdr-sort-workspaces&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;type&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;executable&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;sources&lt;/span&gt; = [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/main.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/model.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/natural_sort.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/sorter.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/client.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/tui.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/benchmark.cc&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;include-dirs&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;include&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;third_party/ftxui/include&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;deps&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;nlohmann_json&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;ftxui&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CLI11&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;target&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;test-sorter&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;type&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;test&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;sources&lt;/span&gt; = [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;tests/test_sorter.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/model.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/natural_sort.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/sorter.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/benchmark.cc&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;include-dirs&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;include&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;deps&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;nlohmann_json&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;catch2&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;target&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;bench-natural-sort&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;type&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;executable&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;sources&lt;/span&gt; = [
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;benchmarks/bench_main.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/benchmark.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/model.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/natural_sort.cc&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src/sorter.cc&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;include-dirs&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;include&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;deps&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;nlohmann_json&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CLI11&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;dev-dependencies&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;catch2&lt;/span&gt; = { &lt;span style=&#34;color:#a6e22e&#34;&gt;port&lt;/span&gt; = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;^3.15.1&amp;#34;&lt;/span&gt; }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;22-cabin-的關鍵優勢&#34;&gt;2.2 Cabin 的關鍵優勢&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;宣告式 ports 生態（&lt;code&gt;port = true&lt;/code&gt;）&lt;/strong&gt;：
+如 &lt;code&gt;nlohmann_json&lt;/code&gt;、&lt;code&gt;CLI11&lt;/code&gt; 和 &lt;code&gt;catch2&lt;/code&gt;，只需標註 &lt;code&gt;port = true&lt;/code&gt; 與版本範圍語意（如 &lt;code&gt;^3.12.0&lt;/code&gt;），Cabin 會自動從官方 ports 倉庫解析、下載、快取並編譯對應版本，完全不需手動配置 CMake 或下載標頭檔。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;多目標清晰隔離&lt;/strong&gt;：
+將主執行檔（&lt;code&gt;executable&lt;/code&gt;）、測試套件（&lt;code&gt;test&lt;/code&gt;）與專屬壓測目標（&lt;code&gt;bench-natural-sort&lt;/code&gt;）分開宣告，&lt;code&gt;dev-dependencies&lt;/code&gt;（如 Catch2）僅會在編譯測試目標時被拉取與鏈結，避免污染最終的發布二進位檔案。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;無縫整合本地子模組&lt;/strong&gt;：
+對於需要深度客製化或特定分支的函式庫（例如終端圖形庫 &lt;code&gt;ftxui&lt;/code&gt;），可以直接使用 &lt;code&gt;path = &amp;quot;third_party/ftxui&amp;quot;&lt;/code&gt; 引入，Cabin 會自動處理包含目錄與原始碼建置。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;標準化的命令列工作流&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;cabin build&lt;/code&gt;：一鍵以 Debug 模式編譯所有目標（背後以 Ninja 高速並行編譯）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;cabin build --release&lt;/code&gt;：產生極致最佳化的發布二進位檔案。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;cabin test&lt;/code&gt;：自動編譯並執行 Catch2 測試套件，直接在終端輸出美觀的測試進度與摘要。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;cabin run --release --bin bench-natural-sort&lt;/code&gt;：直接以 release 模式執行高效能基準測試。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;相較於傳統 CMake 專案動輒上百行的 &lt;code&gt;CMakeLists.txt&lt;/code&gt;，Cabin 讓 C++ 開發者終於擁有了與現代 Rust、Go 相同的極簡心智模型。&lt;/p&gt;
+&lt;h2 id=&#34;3-現代-c23-特性深度實踐&#34;&gt;3. 現代 C++23 特性深度實踐&lt;/h2&gt;
+&lt;p&gt;C++23 帶來了許多革命性的標準庫與語言特性，讓系統級程式碼在維持零執行期開銷的同時，表達力與安全性得到質的飛躍。&lt;/p&gt;
+&lt;h3 id=&#34;31-stdexpected-與-monadic-錯誤處理&#34;&gt;3.1 &lt;code&gt;std::expected&lt;/code&gt; 與 monadic 錯誤處理&lt;/h3&gt;
+&lt;p&gt;在 IPC 網路通訊、JSON 解析與排序選項驗證中，傳統的錯誤處理通常有兩種極端：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;C 風格錯誤碼 / 輸出參數&lt;/strong&gt;：型別不安全，呼叫端容易忽略錯誤檢查，且函式簽名冗長。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;C++ 例外（exceptions）&lt;/strong&gt;：隱式控制流、跨執行緒與 IPC 不易捕獲，且可能帶來額外的二進位體積與堆疊展開（stack unwinding）開銷。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;C++23 引入的 &lt;code&gt;std::expected&amp;lt;T, E&amp;gt;&lt;/code&gt; 提供了一種值語意（value-based）的 monadic 錯誤處理機制。當運算成功時回傳 &lt;code&gt;T&lt;/code&gt;，失敗時回傳包裝在 &lt;code&gt;std::unexpected&lt;/code&gt; 中的錯誤資訊 &lt;code&gt;E&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;include/herdr/sorter.hpp&lt;/code&gt; 與 &lt;code&gt;src/client.cc&lt;/code&gt; 中，所有可能出錯的操作均採用 &lt;code&gt;std::expected&lt;/code&gt; 簽名：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// include/herdr/sorter.hpp
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;[[nodiscard]]&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;expected&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;SortStrategy, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; parse_sort_strategy(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view sv
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;noexcept&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;[[nodiscard]]&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;expected&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; sort_workspaces(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;span&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; current,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; SortOptions&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; options
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在實作時，解析錯誤時回傳 &lt;code&gt;std::unexpected&lt;/code&gt;，呼叫端則以乾淨的值判斷進行處理：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// src/sorter.cc
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;expected&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;SortStrategy, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; parse_sort_strategy(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view sv) &lt;span style=&#34;color:#66d9ef&#34;&gt;noexcept&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;natural&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;nat&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;numeric&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;NaturalAsc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;status&amp;#34;&lt;/span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;agent&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;active&amp;#34;&lt;/span&gt;)  &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Status;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;repo&amp;#34;&lt;/span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;git&amp;#34;&lt;/span&gt;   &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;worktree&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Repo;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;panes&amp;#34;&lt;/span&gt;   &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; sv &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;pane-count&amp;#34;&lt;/span&gt;)              &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;PanesDesc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ... （其他策略如 label, path, tabs, reverse 等省略）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 返回攜帶清晰錯誤字串的 unexpected
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;unexpected(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Unknown sort strategy: &amp;#39;{}&amp;#39;&amp;#34;&lt;/span&gt;, sv));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在呼叫端（如 &lt;code&gt;main.cc&lt;/code&gt;）中，我們能以簡潔、型別安全的方式解包或傳播錯誤：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; strat_res &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; herdr&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;parse_sort_strategy(strategy_str);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;strat_res.has_value()) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;cerr &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[31mError:&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[0m {}&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, strat_res.error());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;SortStrategy strategy &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;strat_res;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;32-宣告式-stdranges-演算法管線&#34;&gt;3.2 宣告式 &lt;code&gt;std::ranges&lt;/code&gt; 演算法管線&lt;/h3&gt;
+&lt;p&gt;C++20/23 的 &lt;code&gt;std::ranges&lt;/code&gt; 演算法擺脫了傳統 &lt;code&gt;std::sort(vec.begin(), vec.end())&lt;/code&gt; 的繁瑣迭代器語法，直接接受容器或 view，並支援安全的原地排列與管線操作。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;src/sorter.cc&lt;/code&gt; 的 &lt;code&gt;sort_workspaces&lt;/code&gt; 核心流程中，我們運用了 &lt;code&gt;std::ranges::stable_sort&lt;/code&gt;、&lt;code&gt;std::ranges::reverse&lt;/code&gt; 與 &lt;code&gt;std::ranges::stable_partition&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;expected&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; sort_workspaces(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;span&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; current,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; SortOptions&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; options
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; result(current.begin(), current.end());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (result.empty()) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; result;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 根據策略執行穩定排序（保留同鍵值時的原有順序）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;switch&lt;/span&gt; (options.strategy) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;NaturalAsc:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(result, compare_natural_asc);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;NaturalDesc:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(result, [](&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; a, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; b) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;compare_natural_asc&lt;/span&gt;(b, a);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Status:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(result, compare_status);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Repo:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(result, compare_repo);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;PanesDesc:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(result, compare_panes_desc);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Reverse:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;reverse(result);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 全域反轉旗標處理
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (options.reverse &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; options.strategy &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; SortStrategy&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Reverse) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;reverse(result);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 置頂焦點工作區或特定前綴工作區（使用穩定分割演算法）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (options.pinned_first &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;options.pin_prefix.empty()) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_partition(result, [&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;](&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; w) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (options.pinned_first &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; w.focused) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; true;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;options.pin_prefix.empty() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; w.label.starts_with(options.pin_prefix)) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; true;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; false;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; result;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;std::ranges::stable_partition&lt;/code&gt; 確保被置頂的工作區移到前面時，其他工作區彼此之間的相對排序嚴格保持不變，展現了現代標準庫演算法的高度表達力。&lt;/p&gt;
+&lt;h3 id=&#34;33-三向比較運算子與-stdlexicographical_compare_three_way&#34;&gt;3.3 三向比較運算子與 &lt;code&gt;std::lexicographical_compare_three_way&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;在純字典字母排序中，我們希望達成：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;主要比較&lt;/strong&gt;：不區分大小寫（case-insensitive），例如 &lt;code&gt;&#39;a&#39;&lt;/code&gt; 與 &lt;code&gt;&#39;A&#39;&lt;/code&gt; 視為相同。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;平手仲裁（tie-breaker）&lt;/strong&gt;：若字母相同，以 ASCII 大小寫順序（大寫優先於小寫）作為平手仲裁，避免不同大小寫字串被判定為完全相等而產生未定義的隨機順序。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在 C++23 中，我們可以直接使用 &lt;code&gt;&amp;lt;compare&amp;gt;&lt;/code&gt; 標頭檔中的 &lt;code&gt;std::lexicographical_compare_three_way&lt;/code&gt; 與太空船運算子（&lt;code&gt;&amp;lt;=&amp;gt;&lt;/code&gt;）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;compare_label_asc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; a, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; b) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view sa &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; a.display_title_sv();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view sb &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; b.display_title_sv();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; cmp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;lexicographical_compare_three_way(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sa.begin(), sa.end(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sb.begin(), sb.end(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        [](&lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; c1, &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; c2) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; l1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; to_lower_char(c1);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; l2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; to_lower_char(c2);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (l1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; l2) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; l1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&amp;gt;&lt;/span&gt; l2; &lt;span style=&#34;color:#75715e&#34;&gt;// 主要不區分大小寫比較
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; c1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&amp;gt;&lt;/span&gt; c2;               &lt;span style=&#34;color:#75715e&#34;&gt;// 平手時以原始大小寫仲裁
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    );
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (cmp &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; cmp &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; a.workspace_id &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; b.workspace_id; &lt;span style=&#34;color:#75715e&#34;&gt;// 最終以 workspace_id 字典序作為唯一平手仲裁
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這段程式碼將原本需要寫十幾行雙迴圈、大小寫轉換與指標推進的繁瑣邏輯，濃縮成兼具極致編譯器最佳化與數學嚴謹性的三向比較表達式。&lt;/p&gt;
+&lt;h3 id=&#34;34-stdformat-型別安全字串格式化&#34;&gt;3.4 &lt;code&gt;std::format&lt;/code&gt; 型別安全字串格式化&lt;/h3&gt;
+&lt;p&gt;告別易引發記憶體安全問題的 &lt;code&gt;snprintf&lt;/code&gt; 與繁複且低效的 &lt;code&gt;std::ostringstream&lt;/code&gt;，C++23 的 &lt;code&gt;std::format&lt;/code&gt; 在編譯期檢查格式化字串型別，並提供極致的字串組合效率。&lt;/p&gt;
+&lt;p&gt;例如在終端列表輸出與 RPC 請求 ID 生成中：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 格式化請求序號與通知內容
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string req_id &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sort_req_{}&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;request_seq_);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string msg &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sorted {} workspace{} by {}.&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                              count, (count &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;s&amp;#34;&lt;/span&gt;), strategy_name);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 終端對齊輸出表格
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  {:2}. &lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[36m{:&amp;lt;4}&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[0m {} {:&amp;lt;10} {:&amp;gt;2}p/{:&amp;gt;1}t {:&amp;lt;32} &lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[90m{}&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\033&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;[0m&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    i &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, w.workspace_id, focus_mark, w.status_badge_ansi(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    w.pane_count, w.tab_count, w.display_title(), w.cwd
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;35-零拷貝檢視stdstring_view-與-stdspan-的生命週期管理&#34;&gt;3.5 零拷貝檢視：&lt;code&gt;std::string_view&lt;/code&gt; 與 &lt;code&gt;std::span&lt;/code&gt; 的生命週期管理&lt;/h3&gt;
+&lt;p&gt;在整個外掛的排序管線中，工作區標籤（label）、目錄路徑（CWD）與工作區 ID 需要頻繁進行字串比對與切片。為了徹底消除短命 &lt;code&gt;std::string&lt;/code&gt; 的堆積記憶體配置（heap allocation）：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;std::string_view&lt;/code&gt;&lt;/strong&gt;：在字串自然比對器 &lt;code&gt;natural_compare(std::string_view lhs, std::string_view rhs)&lt;/code&gt; 中，直接操作字串指標與長度，不產生任何記憶體複製。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;std::span&amp;lt;const Workspace&amp;gt;&lt;/code&gt;&lt;/strong&gt;：在接收工作區列表時，函式接收唯讀的非擁有式切片（span），無論底層是 &lt;code&gt;std::vector&lt;/code&gt; 還是靜態陣列，皆可零成本傳遞。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;同時，在 &lt;code&gt;Workspace&lt;/code&gt; 模型中，我們精確區分了檢視方法與產生字串的方法：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Workspace&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string workspace_id;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string label;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 零拷貝檢視（生命週期依附於 Workspace 實例）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view display_title_sv() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;noexcept&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;label.empty() &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view(label) &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view(workspace_id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 需產生 ANSI 格式化字串時才進行拷貝
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;[[nodiscard]]&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string status_badge_ansi() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;[[nodiscard]]&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string display_title() &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;4-開源生態的高品質複用&#34;&gt;4. 開源生態的高品質複用&lt;/h2&gt;
+&lt;p&gt;現代 C++ 開發絕非閉門造車。透過複用經過社群嚴格考驗的開源函式庫，我們能以極少的程式碼實現強大的工業級功能。&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;函式庫&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;角色與責任&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;為專案帶來的價值&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;&lt;code&gt;nlohmann_json&lt;/code&gt;&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;JSON 序列化與 RPC 通訊&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;透過 ADL &lt;code&gt;to_json&lt;/code&gt; / &lt;code&gt;from_json&lt;/code&gt; 實現 &lt;code&gt;Workspace&lt;/code&gt; 與 &lt;code&gt;WorktreeInfo&lt;/code&gt; 的自動雙向序列化，處理 herdr socket 回傳的複雜樹狀快照。&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;&lt;code&gt;CLI11&lt;/code&gt;&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;命令列解析與子命令架構&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;支援 &lt;code&gt;sort&lt;/code&gt;、&lt;code&gt;list&lt;/code&gt;、&lt;code&gt;interactive&lt;/code&gt;、&lt;code&gt;hook&lt;/code&gt; 四大子命令，提供豐富的參數校驗（如 &lt;code&gt;CLI::IsMember&lt;/code&gt; 檢查合法排序策略）與內建色彩 help 格式化。&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;&lt;code&gt;FTXUI&lt;/code&gt;&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;終端互動式 UI 元件&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;採用 Functional Reactive 模式構建全螢幕 TUI，包含 radio menu、checkbox、table、即時按鍵監聽器與 ANSI 彩色渲染。&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;&lt;code&gt;Catch2 v3&lt;/code&gt;&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;單元測試與微基準評測&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;提供強大的 &lt;code&gt;TEST_CASE&lt;/code&gt;、&lt;code&gt;SECTION&lt;/code&gt; 階層測試與 &lt;code&gt;BENCHMARK&lt;/code&gt; / &lt;code&gt;BENCHMARK_ADVANCED&lt;/code&gt; 微基準評測，涵蓋 &lt;strong&gt;185+ 斷言&lt;/strong&gt; 與隔離統計計時，驗證正確性與極致效能。&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;5-核心演算法與架構解析&#34;&gt;5. 核心演算法與架構解析&lt;/h2&gt;
+&lt;h3 id=&#34;51-自然字母數字排序演算法natural-sort-algorithm&#34;&gt;5.1 自然字母數字排序演算法（natural sort algorithm）&lt;/h3&gt;
+&lt;p&gt;常規字串比對是逐字元比較 ASCII 碼，導致 &lt;code&gt;&amp;quot;item10&amp;quot;&lt;/code&gt; 比 &lt;code&gt;&amp;quot;item2&amp;quot;&lt;/code&gt; 小（因為 &lt;code&gt;&#39;1&#39; &amp;lt; &#39;2&#39;&lt;/code&gt;）。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;src/natural_sort.cc&lt;/code&gt; 中，我實作了一套支援&lt;strong&gt;任意長度大數值&lt;/strong&gt;與&lt;strong&gt;前導零平手仲裁&lt;/strong&gt;的高效分塊演算法：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    Start[&#34;natural_compare(lhs, rhs)&#34;] --&gt; Loop{&#34;雙指標 i, j 尚未到底？&#34;}
+
+    subgraph Branch [&#34;每輪字元分塊比對&#34;]
+        direction TB
+        IsDigit{&#34;lhs[i] 與 rhs[j]&lt;br/&gt;皆為數字？&#34;}
+        
+        NumBranch[&#34;&lt;b&gt;🔢 數字區塊比較&lt;/b&gt;&lt;br/&gt;1. 計算並跳過前導零&lt;br/&gt;2. 量測有效數字長度 (長者大)&lt;br/&gt;3. 等長則逐位比較數值&lt;br/&gt;4. 完全相同則記錄前導零 bias&#34;]
+        
+        CharBranch[&#34;&lt;b&gt;🔤 非數字字元比較&lt;/b&gt;&lt;br/&gt;1. 轉小寫比對 (相異定勝負)&lt;br/&gt;2. 相同則記錄大小寫 bias&#34;]
+        
+        IsDigit -- 是 --&gt; NumBranch
+        IsDigit -- 否 --&gt; CharBranch
+    end
+
+    Diff{&#34;分塊是否相異？&#34;}
+    
+    RetDiff[&#34;🛑 回傳分塊勝負結果 (-1 / +1)&#34;]
+    Next[&#34;推進指標 i, j&#34;]
+
+    subgraph EndCheck [&#34;尾端長度與平手仲裁 (Loop 結束)&#34;]
+        direction TB
+        LenCheck{&#34;兩字串長度不同？&#34;}
+        RetLen[&#34;長度較長者為大 (±1)&#34;]
+        RetBias[&#34;回傳累積之 Bias (前導零 / 大小寫)&lt;br/&gt;若完全相同則回傳 0&#34;]
+        
+        LenCheck -- 是 --&gt; RetLen
+        LenCheck -- 否 --&gt; RetBias
+    end
+
+    Loop -- 是 --&gt; IsDigit
+    NumBranch --&gt; Diff
+    CharBranch --&gt; Diff
+
+    Diff -- 相異 --&gt; RetDiff
+    Diff -- 相同 --&gt; Next
+    Next --&gt; Loop
+
+    Loop -- 否 (比對完畢) --&gt; EndCheck
+
+    classDef startNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef decisionNode fill:#431407,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef procNode fill:#1e293b,stroke:#94a3b8,stroke-width:1.5px,color:#f8fafc;
+    classDef retNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef retNegNode fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#fef2f2;
+
+    class Start startNode;
+    class Loop,IsDigit,Diff,LenCheck decisionNode;
+    class NumBranch,CharBranch,Next procNode;
+    class RetLen,RetBias retNode;
+    class RetDiff retNegNode;
+
+    style Branch fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#7dd3fc
+    style EndCheck fill:#111827,stroke:#34d399,stroke-width:1.5px,color:#6ee7b7
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+  &lt;/div&gt;
+
+&lt;h4 id=&#34;演算法核心程式碼精華&#34;&gt;演算法核心程式碼精華&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// src/natural_sort.cc
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;natural_compare&lt;/span&gt;(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view lhs, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view rhs) &lt;span style=&#34;color:#66d9ef&#34;&gt;noexcept&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    size_t i &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, j &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; size_t len1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; lhs.size(), len2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rhs.size();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; bias &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; j &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len2) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; c1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; lhs[i], c2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; rhs[j];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (is_digit(c1) &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; is_digit(c2)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 統計並略過前導零
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t z1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, z2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; lhs[i] &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;0&amp;#39;&lt;/span&gt;) { &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;z1; &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;i; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (j &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len2 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; rhs[j] &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;0&amp;#39;&lt;/span&gt;) { &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;z2; &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;j; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 找出有效數字區塊長度
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t start1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; i;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; is_digit(lhs[i])) &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;i;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t num_len1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; i &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; start1;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t start2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; j;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (j &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len2 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; is_digit(rhs[j])) &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;j;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t num_len2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; j &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; start2;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 長度不同者，長度大者數值必大（支援任意超長數值，不發生整數溢位！）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (num_len1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; num_len2) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (num_len1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; num_len2) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 長度相同時，逐位元比對 ASCII 數值
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (size_t k &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;; k &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; num_len1; &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;k) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (lhs[start1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; k] &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; rhs[start2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; k]) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (lhs[start1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; k] &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; rhs[start2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; k]) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 4. 數值完全相等但前導零數量不同時，記錄平手仲裁 bias（較少前導零者優先：7 &amp;lt; 007）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (bias &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; z1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; z2) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                bias &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (z1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; z2) &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; l1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; to_lower(c1), l2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; to_lower(c2);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (l1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; l2) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; (l1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; l2) &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (bias &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; c1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; c2) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                bias &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (c1 &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; c2) &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; &lt;span style=&#34;color:#75715e&#34;&gt;// 大小寫平手仲裁
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;i; &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;j;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len1) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (j &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; len2) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; bias;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這個演算法不僅完美處理了 &lt;code&gt;&amp;quot;item2&amp;quot; &amp;lt; &amp;quot;item10&amp;quot;&lt;/code&gt;、&lt;code&gt;&amp;quot;v1.2&amp;quot; &amp;lt; &amp;quot;v1.10&amp;quot;&lt;/code&gt;，連多達 30 位的巨型數字字串（例如 Git SHA、長 issue ID）也能在微秒內完成精確比對。&lt;/p&gt;
+&lt;h3 id=&#34;52-最小移動置換演算法minimal-move-permutation-planner&#34;&gt;5.2 最小移動置換演算法（minimal move permutation planner）&lt;/h3&gt;
+&lt;p&gt;當我們計算出目標工作區順序後，必須將現有順序轉換為一組最小的 &lt;code&gt;workspace.move(id, insert_index)&lt;/code&gt; 操作序列。&lt;/p&gt;
+&lt;p&gt;因為每呼叫一次 &lt;code&gt;workspace.move(id, idx)&lt;/code&gt;，目標工作區會被抽出並插入到指定位置，進而改變後續工作區的索引偏移。&lt;/p&gt;
+&lt;p&gt;在 &lt;code&gt;src/sorter.cc&lt;/code&gt; 中，我實作了一套&lt;strong&gt;前綴不變量置換狀態機&lt;/strong&gt;（prefix-invariant permutation simulation）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// src/sorter.cc
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;ReorderMove&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; calculate_reorder_moves(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;span&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; current,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;span&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Workspace&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; target
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;ReorderMove&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; moves;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; state;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    state.reserve(current.size());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; w : current) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        state.push_back(w.workspace_id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 依序滿足 target[0], target[1], ..., target[N-1] 的位置
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (size_t i &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;; i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; target.size(); &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;i) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; target_id &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; target[i].workspace_id;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; it &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;find(state, target_id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (it &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; state.end()) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            size_t cur_idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;size_t&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;distance(state.begin(), it));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (cur_idx &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; i) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#75715e&#34;&gt;// 將元素從當前位置移動到索引 i
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string item &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;move(&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;it);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                state.erase(it);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                state.insert(state.begin() &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ptrdiff_t&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(i), item);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                moves.push_back(ReorderMove{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    .workspace_id &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; target_id,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    .insert_index &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;uint32_t&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(i),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    .label &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; target[i].label
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; moves;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;置換演算法工作原理演示&#34;&gt;置換演算法工作原理演示&lt;/h4&gt;
+&lt;p&gt;假設目前工作區順序為 &lt;code&gt;[w1, w2, w3, w4, w5]&lt;/code&gt;，排序後目標順序為 &lt;code&gt;[w5, w3, w1, w4, w2]&lt;/code&gt;：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;$i=0$&lt;/strong&gt;：目標是 &lt;code&gt;w5&lt;/code&gt;，當前 &lt;code&gt;w5&lt;/code&gt; 位於索引 4。執行 &lt;code&gt;move(w5, 0)&lt;/code&gt;，狀態變為 &lt;code&gt;[w5, w1, w2, w3, w4]&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;$i=1$&lt;/strong&gt;：目標是 &lt;code&gt;w3&lt;/code&gt;，當前 &lt;code&gt;w3&lt;/code&gt; 位於索引 3。執行 &lt;code&gt;move(w3, 1)&lt;/code&gt;，狀態變為 &lt;code&gt;[w5, w3, w1, w2, w4]&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;$i=2$&lt;/strong&gt;：目標是 &lt;code&gt;w1&lt;/code&gt;，當前 &lt;code&gt;w1&lt;/code&gt; 已經位於索引 2，無需移動。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;$i=3$&lt;/strong&gt;：目標是 &lt;code&gt;w4&lt;/code&gt;，當前 &lt;code&gt;w4&lt;/code&gt; 位於索引 4。執行 &lt;code&gt;move(w4, 3)&lt;/code&gt;，狀態變為 &lt;code&gt;[w5, w3, w1, w4, w2]&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;$i=4$&lt;/strong&gt;：目標是 &lt;code&gt;w2&lt;/code&gt;，當前 &lt;code&gt;w2&lt;/code&gt; 已經位於索引 4，無需移動。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;透過這個演算法，原本看似混亂的 5 元素完全亂序，僅用 &lt;strong&gt;3 次移動&lt;/strong&gt; 即達成目標，大幅減少了 IPC 通訊與 UI 重繪次數。&lt;/p&gt;
+&lt;h3 id=&#34;53-unix-domain-socket-ipc-通訊與-raii-守護&#34;&gt;5.3 Unix domain socket IPC 通訊與 RAII 守護&lt;/h3&gt;
+&lt;p&gt;在 Linux 與 macOS 環境下，與 herdr 守護程序通訊最快的方式是 Unix domain socket。&lt;/p&gt;
+&lt;p&gt;為了防止 socket 檔案描述符（file descriptor）洩漏，我們設計了 RAII 資源管理器 &lt;code&gt;SocketGuard&lt;/code&gt;，並透過 &lt;code&gt;poll&lt;/code&gt; 機制設定 5 秒逾時，確保不會因 daemon 無回應而導致 CLI 永久卡死：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// src/client.cc
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;SocketGuard&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; fd{&lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;~&lt;/span&gt;SocketGuard() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (fd &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;close(fd);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;expected&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;nlohmann&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;json, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; HerdrClient&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;send_socket_request(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string_view method,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; nlohmann&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;json&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; params
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; fd &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;socket(AF_UNIX, SOCK_STREAM, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (fd &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;unexpected(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;format(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Socket creation error: {}&amp;#34;&lt;/span&gt;, errno));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    SocketGuard guard{fd}; &lt;span style=&#34;color:#75715e&#34;&gt;// 函式退出時保證自動 close(fd)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ... 連線與發送 JSON-RPC 請求 ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;pollfd&lt;/span&gt; pfd{ .fd &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; fd, .events &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; POLLIN, .revents &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; pr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;poll(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;pfd, &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;5000&lt;/span&gt;); &lt;span style=&#34;color:#75715e&#34;&gt;// 5 秒逾時保護
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (pr &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;unexpected(pr &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Timeout waiting for herdr socket&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Poll error&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 接收並解析 JSON 回應
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;若 socket 連線失敗（例如 herdr 守護程序未以 socket 模式啟動），&lt;code&gt;HerdrClient&lt;/code&gt; 會自動無縫退回呼叫 &lt;code&gt;herdr workspace list&lt;/code&gt; 與 &lt;code&gt;herdr notification show&lt;/code&gt; 等 CLI 管道，保證外掛在任何環境下皆能 100% 正常運作。&lt;/p&gt;
+&lt;h2 id=&#34;6-ftxui-互動式終端介面與-herdr-外掛整合&#34;&gt;6. FTXUI 互動式終端介面與 herdr 外掛整合&lt;/h2&gt;
+&lt;p&gt;除了命令列指令，專案還透過 &lt;code&gt;FTXUI&lt;/code&gt; 提供了即時互動預覽介面（&lt;code&gt;herdr-sort-workspaces interactive&lt;/code&gt;）。&lt;/p&gt;
+&lt;h3 id=&#34;61-ftxui-介面特色&#34;&gt;6.1 FTXUI 介面特色&lt;/h3&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;┌─ Sorting Strategies ──────────────────┐┌─ Live Reorder Preview ──────────────────────────────┐
+│  ● 1. Natural Alphanumeric (A-Z)      ││ 1. w3 ★ ● working  2p/3t  alpha-2   /a/2         +2 │
+│  ○ 2. Pure Alphabetical (A-Z)         ││ 2. w2   ▲ blocked  4p/2t  alpha-10  /a/10         0 │
+│  ○ 3. Agent Status (Active first)     ││ 3. w4   ✓ done     5p/1t  beta      /b           -1 │
+│  ○ 4. Git Repo &amp;amp; Worktrees            ││ 4. w1   ○ idle     1p/1t  zebra     /z           -3 │
+│  [ ] Reverse order (Z-A)              │└─────────────────────────────────────────────────────┘
+│  [X] Pin focused workspace to top     │
+│       [ Apply &amp;amp; Reorder ] [ Cancel ]  │
+└───────────────────────────────────────┘
+ [1-8] Quick Strategy • [r] Reverse • [f] Pin • [Enter] Apply • [q] Exit&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;左側策略選單&lt;/strong&gt;：支援即時選取 8 種排序策略，並提供反轉與焦點置頂 checkbox。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;右側即時預覽表格&lt;/strong&gt;：每次變更選項，表格會即時計算重排後的結果，並在最右側以綠色 &lt;code&gt;+2&lt;/code&gt; 或紅色 &lt;code&gt;-1&lt;/code&gt; 標註每個工作區相對於原本位置的&lt;strong&gt;位置位移量（delta）&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;直覺快捷鍵&lt;/strong&gt;：按下數字鍵 &lt;code&gt;[1-8]&lt;/code&gt; 即可瞬間切換排序策略；按下 &lt;code&gt;[r]&lt;/code&gt; 快速切換升降序；按下 &lt;code&gt;[f]&lt;/code&gt; 切換焦點置頂；按下 &lt;code&gt;[Enter]&lt;/code&gt; 立即套用並向 herdr 派發重排指令。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;62-宣告式外掛清單herdr-plugintoml&#34;&gt;6.2 宣告式外掛清單：&lt;code&gt;herdr-plugin.toml&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;為了讓 herdr 的 command palette 能夠直接喚起排序功能，專案提供了標準的 &lt;code&gt;herdr-plugin.toml&lt;/code&gt; 清單：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-toml&#34; data-lang=&#34;toml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;id&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;herdr-sort-workspaces&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;name&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;herdr Workspace Sorter&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.1.0&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;min_herdr_version&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;0.7.0&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;description&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort herdr workspaces alphabetically, by status, path, active state, or custom criteria in modern C++23.&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;platforms&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;linux&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;macos&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[[&lt;span style=&#34;color:#a6e22e&#34;&gt;build&lt;/span&gt;]]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cabin&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;build&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--release&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[[&lt;span style=&#34;color:#a6e22e&#34;&gt;actions&lt;/span&gt;]]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;id&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sort-natural&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;title&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort Workspaces: Natural (A-Z)&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;contexts&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;workspace&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;global&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./build/release/packages/herdr-sort-workspaces/herdr-sort-workspaces&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sort&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--by&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;natural&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--notify&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[[&lt;span style=&#34;color:#a6e22e&#34;&gt;actions&lt;/span&gt;]]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;id&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sort-status&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;title&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort Workspaces: Agent Status (Active first)&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;contexts&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;workspace&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;global&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./build/release/packages/herdr-sort-workspaces/herdr-sort-workspaces&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sort&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--by&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;status&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--notify&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[[&lt;span style=&#34;color:#a6e22e&#34;&gt;actions&lt;/span&gt;]]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;id&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;interactive&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;title&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort Workspaces: Interactive Sorter&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;contexts&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;workspace&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;global&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./build/release/packages/herdr-sort-workspaces/herdr-sort-workspaces&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;interactive&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[[&lt;span style=&#34;color:#a6e22e&#34;&gt;panes&lt;/span&gt;]]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;id&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;picker&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;title&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort Workspaces&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;placement&lt;/span&gt; = &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;overlay&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; = [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;./build/release/packages/herdr-sort-workspaces/herdr-sort-workspaces&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;interactive&amp;#34;&lt;/span&gt;]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;透過 &lt;code&gt;herdr plugin link .&lt;/code&gt; 指令，herdr 會自動將這些 action 註冊到快捷鍵與命令面板中；排序完成後，還會呼叫 herdr 的桌面原生 toast 通知使用者。&lt;/p&gt;
+&lt;h2 id=&#34;7-效能基準測試與-ci-自動化&#34;&gt;7. 效能基準測試與 CI 自動化&lt;/h2&gt;
+&lt;p&gt;當開發者或背景排程 agent 在 herdr 中託管數十甚至上百個工作區時，每次建立 worktree、切換焦點或狀態變更，排序演算法都會在即時路徑（hot path）上被呼叫。&lt;/p&gt;
+&lt;h3 id=&#34;71-為什麼需要嚴格的基準測試&#34;&gt;7.1 為什麼需要嚴格的基準測試？&lt;/h3&gt;
+&lt;p&gt;自然字母數字排序（natural sort）與標準字串字典序比較不同：它需要&lt;strong&gt;動態辨識連續數字分塊&lt;/strong&gt;、&lt;strong&gt;去除前導零&lt;/strong&gt;、&lt;strong&gt;比較有效數字長度&lt;/strong&gt;與&lt;strong&gt;處理平手仲裁&lt;/strong&gt;。
+相較於 C++ 標準函式庫純逐字元比較的 &lt;code&gt;std::less&amp;lt;std::string_view&amp;gt;&lt;/code&gt;，自然排序邏輯較為複雜。為了確保演算法在任何極端情境下皆維持零動態記憶體配置（zero heap allocation）與極致輸送量，我們設計了全方位的&lt;strong&gt;雙軌基準測試體系&lt;/strong&gt;：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Catch2 v3 微基準測試（microbenchmark）&lt;/strong&gt;：整合於單元測試套件中，提供隔離的奈秒級微基準量測。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;自研 C++23 高輸送量評測引擎（&lt;code&gt;include/herdr/benchmark.hpp&lt;/code&gt; &amp;amp; &lt;code&gt;src/benchmark.cc&lt;/code&gt;）&lt;/strong&gt;：零外部相依、支援 9 種真實開發分佈、提供基線倍率對比（vs &lt;code&gt;std::less&lt;/code&gt;），並原生支援 ANSI 彩色終端表格、Markdown、JSON 與 CSV 多種輸出格式。&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph Engine [&#34;⚡ C++23 高輸送量評測引擎 (include/herdr/benchmark.hpp)&#34;]
+        direction TB
+        DataGen[&#34;🎲 9 種真實資料分佈&lt;br/&gt;(Shuffled, Branches, SemVer...)&#34;]
+        Warmup[&#34;🔥 暖身運行&lt;br/&gt;(Warmup Runs)&#34;]
+        Opt[&#34;🛡️ do_not_optimize&lt;br/&gt;(防止編譯器死碼消除)&#34;]
+        Timer[&#34;⏱️ steady_clock 奈秒級統計量測 (Mean / Median / P95 / P99)&#34;]
+
+        DataGen --&gt; Timer
+        Warmup --&gt; Timer
+        Opt --&gt; Timer
+    end
+
+    subgraph Scope [&#34;🎯 評測範疇 (3 大層級)&#34;]
+        direction LR
+        Micro[&#34;1️⃣ Micro (Pairwise)&lt;br/&gt;13 組極限字串兩兩比對&#34;]
+        Sort[&#34;2️⃣ Dataset Sort&lt;br/&gt;N=10 ~ 20,000 陣列排序&#34;]
+        E2E[&#34;3️⃣ Sorter E2E&lt;br/&gt;策略排序 + 最小移動置換&#34;]
+        Micro --&gt; Sort --&gt; E2E
+    end
+
+    subgraph Output [&#34;📊 多元輸出與 CI 整合&#34;]
+        direction LR
+        CLI_Out[&#34;🖥️ ANSI 終端表格&lt;br/&gt;(bench CLI 子命令)&#34;]
+        GHA[&#34;📈 GitHub Actions&lt;br/&gt;($GITHUB_STEP_SUMMARY)&#34;]
+        Art[&#34;📁 Artifacts 保存&lt;br/&gt;(JSON &amp;amp; CSV 報告)&#34;]
+    end
+
+    Engine ==&gt;|驅動基準評測| Scope
+    Scope ==&gt;|匯出評測報告| Output
+
+    classDef engNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef scpNode fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    classDef outNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+
+    class Warmup,Timer,Opt,DataGen engNode;
+    class Micro,Sort,E2E scpNode;
+    class CLI_Out,GHA,Art outNode;
+
+    style Engine fill:#082f49,stroke:#0284c7,stroke-width:2px,color:#7dd3fc
+    style Scope fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#a5b4fc
+    style Output fill:#022c22,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;72-雙軌評測設計catch2-benchmark_advanced-vs-自研引擎&#34;&gt;7.2 雙軌評測設計：Catch2 &lt;code&gt;BENCHMARK_ADVANCED&lt;/code&gt; vs 自研引擎&lt;/h3&gt;
+&lt;h4 id=&#34;1-catch2-benchmark_advanced-與-chronometer-隔離測量&#34;&gt;1. Catch2 &lt;code&gt;BENCHMARK_ADVANCED&lt;/code&gt; 與 Chronometer 隔離測量&lt;/h4&gt;
+&lt;p&gt;在微基準測試中，最常見的陷阱是&lt;strong&gt;把「資料準備與容器複製」的時間算入演算法耗時&lt;/strong&gt;。Catch2 v3 的 &lt;code&gt;Catch::Benchmark::Chronometer&lt;/code&gt; 允許我們在計時器啟動前預先配置與複製資料：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// tests/test_sorter.cc
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;BENCHMARK_ADVANCED(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sort 100 Shuffled Workspace Labels&amp;#34;&lt;/span&gt;)(Catch&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Benchmark&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Chronometer meter) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 預先在計時範圍外準備好 meter.runs() 份資料副本
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;string&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt; storage(meter.runs());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; s : storage) s &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; shuffled_100;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// meter.measure 僅量測真正的演算法核心區塊
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    meter.measure([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;](&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; i) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;ranges&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;stable_sort(storage[i], herdr&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;natural_less);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; storage[i].size();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;2-自研-c23-評測引擎與-do_not_optimize&#34;&gt;2. 自研 C++23 評測引擎與 &lt;code&gt;do_not_optimize&lt;/code&gt;&lt;/h4&gt;
+&lt;p&gt;自研引擎利用內嵌組合語言指令，防止 Clang/GCC 在 &lt;code&gt;-O3&lt;/code&gt; 發布最佳化時將純函式呼叫視為死碼（dead code elimination）而最佳化抹除：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// include/herdr/benchmark.hpp
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;inline&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; do_not_optimize(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; val) &lt;span style=&#34;color:#66d9ef&#34;&gt;noexcept&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#if defined(__GNUC__) || defined(__clang__)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;asm&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;volatile&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;g&amp;#34;&lt;/span&gt;(val) &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;memory&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#else
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;volatile&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;volatile&lt;/span&gt; p &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;static_cast&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&amp;gt;&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;val);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    (&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;)p;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#endif
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;73-涵蓋-9-大真實開發情境的資料集分佈&#34;&gt;7.3 涵蓋 9 大真實開發情境的資料集分佈&lt;/h3&gt;
+&lt;p&gt;為了真實反映 herdr 在不同工作流程下的負載，測試引擎內建了 9 種資料分佈產生器（&lt;code&gt;DataDistribution&lt;/code&gt;）：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;GitBranches&lt;/code&gt;&lt;/strong&gt;：模擬真實 Git 分支與 worktree 命名（如 &lt;code&gt;feat/issue-10&lt;/code&gt;, &lt;code&gt;feat/issue-2&lt;/code&gt;, &lt;code&gt;bugfix/auth-v2&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;SemVerTags&lt;/code&gt;&lt;/strong&gt;：語意化版本標籤（如 &lt;code&gt;v1.2.3&lt;/code&gt;, &lt;code&gt;v1.10.0&lt;/code&gt;, &lt;code&gt;v2.0.0-rc1&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;HierarchicalPaths&lt;/code&gt;&lt;/strong&gt;：多層級 POSIX 工作目錄路徑（如 &lt;code&gt;/var/log/audit/2026/08/node-1&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;LeadingZeros&lt;/code&gt;&lt;/strong&gt;：帶有補零編號的日誌或產出檔（如 &lt;code&gt;job_00042.log&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Shuffled&lt;/code&gt; / &lt;code&gt;AlreadySorted&lt;/code&gt; / &lt;code&gt;ReverseSorted&lt;/code&gt; / &lt;code&gt;NearlySorted90&lt;/code&gt; / &lt;code&gt;PureNumeric&lt;/code&gt;&lt;/strong&gt;：涵蓋最佳情況（0 次反序）、最差情況（$N(N-1)/2$ 次反序）、90% 局部有序以及純大數值比對。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;74-實測數據與效能分析&#34;&gt;7.4 實測數據與效能分析&lt;/h3&gt;
+&lt;p&gt;以下為在 x86_64 Linux 環境（&lt;code&gt;-O3 --release&lt;/code&gt;）測得的代表性基準數據：&lt;/p&gt;
+&lt;h4 id=&#34;1-兩兩字串比對micro-pairwise&#34;&gt;1. 兩兩字串比對（micro pairwise）&lt;/h4&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;測試場景&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;資料長度&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;平均耗時 (Mean)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;輸送量 (Throughput)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;vs 字典序 (std::less)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Numeric Suffix&lt;/strong&gt; (&lt;code&gt;workspace-2&lt;/code&gt; vs &lt;code&gt;workspace-10&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1 pair&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;46.51 ns&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;21.50 Mops/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;25.99x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Large Integer&lt;/strong&gt; (&lt;code&gt;run-999999999999999&lt;/code&gt; vs &lt;code&gt;1000000000000000&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1 pair&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;28.02 ns&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;35.69 Mops/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;15.70x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;SemVer Multi-Segment&lt;/strong&gt; (&lt;code&gt;v1.10.4-rc2&lt;/code&gt; vs &lt;code&gt;v1.2.18-rc1&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1 pair&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;13.21 ns&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;75.73 Mops/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;7.55x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Pure Numeric&lt;/strong&gt; (&lt;code&gt;123456789&lt;/code&gt; vs &lt;code&gt;123456790&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1 pair&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;11.70 ns&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;85.49 Mops/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;6.69x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Leading Zeros Bias&lt;/strong&gt; (&lt;code&gt;item007&lt;/code&gt; vs &lt;code&gt;item7&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1 pair&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;21.27 ns&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;47.00 Mops/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;12.17x&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;blockquote&gt;&lt;p&gt;💡 &lt;strong&gt;核心洞察&lt;/strong&gt;：單次自然比對僅需 &lt;strong&gt;11 ~ 46 奈秒（ns）&lt;/strong&gt;，每秒可處理 &lt;strong&gt;2,000 萬至 8,500 萬次&lt;/strong&gt; 比較！&lt;/p&gt;
+&lt;/blockquote&gt;&lt;h4 id=&#34;2-資料集排序dataset-sort與端到端排程sorter-e2e&#34;&gt;2. 資料集排序（dataset sort）與端到端排程（sorter E2E）&lt;/h4&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;評測場景&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;資料規模 $N$&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;排序平均耗時&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;換算輸送量&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;vs 字典序開銷比&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Workspaces (Shuffled)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;10&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;1.41 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;7.07 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;5.07x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Workspaces (Shuffled)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;50&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;13.04 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;3.83 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;6.34x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Git Branches / Worktrees&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;50&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;7.17 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;6.97 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;7.97x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Semantic Versions (SemVer)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;50&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;5.91 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;8.47 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;3.09x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;sort_workspaces (NaturalAsc)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;50&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;19.35 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;2.58 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;1.01x&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;calculate_reorder_moves&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;50&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;&lt;strong&gt;12.17 µs&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;4.11 M items/s&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;—&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;在一般的 herdr 使用情境（10 ~ 50 個工作區）下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;完整的自然排序僅耗時 &lt;strong&gt;13 ~ 19 微秒（µs）&lt;/strong&gt;（相當於每秒能完成 5 萬次以上完整工作區重排）。&lt;/li&gt;
+&lt;li&gt;最小置換路徑計算僅需 &lt;strong&gt;12 微秒（µs）&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;相較於 Unix domain socket 的 IPC 通訊延遲（約 100 ~ 500 µs）或終端渲染重繪時間（數毫秒），排序演算法本身的 CPU 開銷完全可以忽略不計（亞毫秒級別）。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;75-獨立-cli-工具與-github-actions-ci-自動化整合&#34;&gt;7.5 獨立 CLI 工具與 GitHub Actions CI 自動化整合&lt;/h3&gt;
+&lt;p&gt;專案將基準測試包裝為兩個靈活的入口：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;專屬評測二進位檔&lt;/strong&gt;：&lt;code&gt;cabin run --release --bin bench-natural-sort -- --category all&lt;/code&gt;（支援 &lt;code&gt;--markdown&lt;/code&gt;、&lt;code&gt;--json&lt;/code&gt;、&lt;code&gt;--csv&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;主程式子命令&lt;/strong&gt;：&lt;code&gt;herdr-sort-workspaces bench --sizes 10,50,200&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在 GitHub Actions CI（&lt;code&gt;.github/workflows/ci.yml&lt;/code&gt;）中，每次 PR 與 push 都會自動在 GCC 14 與 Clang 18 release 模式下執行評測管線：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# .github/workflows/ci.yml&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;- &lt;span style=&#34;color:#f92672&#34;&gt;name&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;Run Natural Sort performance benchmarks&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;run&lt;/span&gt;: |&lt;span style=&#34;color:#e6db74&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;    echo &amp;#34;## Natural Sort Benchmark Report (${{ matrix.compiler }})&amp;#34; &amp;gt;&amp;gt; $GITHUB_STEP_SUMMARY
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;    ./build/release/packages/herdr-sort-workspaces/bench-natural-sort --category all --sizes 10,50,200,1000 --markdown &amp;gt;&amp;gt; $GITHUB_STEP_SUMMARY
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;    ./build/release/packages/herdr-sort-workspaces/bench-natural-sort --category all --sizes 10,50,200,1000 --json &amp;gt; benchmark-results-${{ matrix.compiler }}.json
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;    ./build/release/packages/herdr-sort-workspaces/bench-natural-sort --category all --sizes 10,50,200,1000 --csv &amp;gt; benchmark-results-${{ matrix.compiler }}.csv&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;- &lt;span style=&#34;color:#f92672&#34;&gt;name&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;Run Catch2 benchmark microbenchmarks&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;run&lt;/span&gt;: |&lt;span style=&#34;color:#e6db74&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;    ./build/release/packages/herdr-sort-workspaces/test-sorter &amp;#34;[!benchmark]&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;- &lt;span style=&#34;color:#f92672&#34;&gt;name&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;Upload benchmark reports&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;uses&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;actions/upload-artifact@v4&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;with&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;name&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;benchmark-results-${{ matrix.compiler }}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;path&lt;/span&gt;: |&lt;span style=&#34;color:#e6db74&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;      benchmark-results-${{ matrix.compiler }}.json
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;      benchmark-results-${{ matrix.compiler }}.csv&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;CI 的自動化成果：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;$GITHUB_STEP_SUMMARY&lt;/code&gt; 即時儀表板&lt;/strong&gt;：自動將 Markdown 格式的完整評測表格附加在每輪 GitHub Actions 摘要頁面上，開發者無需點進 log 即可一目了然。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;歷史數據歸檔（artifacts）&lt;/strong&gt;：自動將 JSON 與 CSV 格式的評測數據打包上傳，方便追蹤跨編譯器（GCC 14 vs Clang 18）與版本演進時的效能趨勢。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;8-完整測試與跨編譯器-ci-gcc-14--clang-18&#34;&gt;8. 完整測試與跨編譯器 CI (GCC 14 + Clang 18)&lt;/h2&gt;
+&lt;p&gt;系統工具的穩定性至關重要。專案透過 Catch2 v3 建立了詳盡的單元測試套件（位於 &lt;code&gt;tests/test_sorter.cc&lt;/code&gt;），包含：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;自然排序測試&lt;/strong&gt;：驗證遞移律（Transitivity: $a &lt; b \land b &lt; c \implies a &lt; c$）、前導零仲裁、符號與分支路徑、以及超過 30 位的超長數值比對。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;策略排序測試&lt;/strong&gt;：驗證 8 種策略的升降序行為、多窗格與多分頁排序、Git worktree 歸屬排序。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;邊界情況測試&lt;/strong&gt;：空工作區列表、單一工作區、標籤為空時的 ID 回退機制、重複標籤時的穩定性。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;置換模擬測試&lt;/strong&gt;：驗證 10 元素反轉與隨機洗牌置換模擬，確保計算出的 &lt;code&gt;calculate_reorder_moves&lt;/code&gt; 在逐步套用後，狀態嚴格等於預期目標。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在 GitHub Actions CI（&lt;code&gt;.github/workflows/ci.yml&lt;/code&gt;）中，我們在 Ubuntu 24.04 上建立了雙編譯器矩陣：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# .github/workflows/ci.yml&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;strategy&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;matrix&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;compiler&lt;/span&gt;: [&lt;span style=&#34;color:#ae81ff&#34;&gt;gcc, clang]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;include&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      - &lt;span style=&#34;color:#f92672&#34;&gt;compiler&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;gcc&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;cc&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;gcc-14&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;cxx&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;g++-14&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      - &lt;span style=&#34;color:#f92672&#34;&gt;compiler&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;clang&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;cc&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;clang-18&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;cxx&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;/usr/local/bin/clang++-libcxx&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;# 使用 clang++-18 -stdlib=libc++ 封裝腳本&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;透過快取 Cabin 二進位檔與 ports 快取目錄（&lt;code&gt;~/.cache/cabin&lt;/code&gt;），整個 CI 矩陣在 GCC 14 與 Clang 18（搭配 LLVM libc++）下，從下載依賴、編譯到執行全部 185+ 測試斷言僅需不到 30 秒。&lt;/p&gt;
+&lt;h2 id=&#34;9-結語與反思&#34;&gt;9. 結語與反思&lt;/h2&gt;
+&lt;p&gt;透過開發 &lt;code&gt;herdr-sort-workspaces&lt;/code&gt;，我對現代 C++ 的開發體驗有了全新的體認：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;C++ 不再等於「繁瑣的 CMake」&lt;/strong&gt;：Cabin 證明了 C++ 也能擁有如同 Rust Cargo 般愉悅的相依套件管理與建置體驗。聲明式 TOML 讓專案設定清晰明瞭，新手與老手都能在幾秒鐘內輕鬆上手。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;C++23 讓系統程式更加安全且優雅&lt;/strong&gt;：&lt;code&gt;std::expected&lt;/code&gt; 終結了錯誤碼與例外之爭；&lt;code&gt;std::ranges&lt;/code&gt; 與 &lt;code&gt;std::lexicographical_compare_three_way&lt;/code&gt; 讓演算法更加精練；&lt;code&gt;std::string_view&lt;/code&gt; 與 &lt;code&gt;std::span&lt;/code&gt; 則在維持極致效能的同時避免了記憶體浪費。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;強大且成熟的開源生態&lt;/strong&gt;：從 &lt;code&gt;nlohmann_json&lt;/code&gt; 的優雅序列化，到 &lt;code&gt;CLI11&lt;/code&gt; 的健全命令列解析，再到 &lt;code&gt;FTXUI&lt;/code&gt; 的終端互動體驗，現代 C++ 社群的基礎設施已非常健全。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;如果你也在使用 herdr 管理你的日常開發與 AI agent 工作區，歡迎試用並將專案 clone 下來體驗：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;herdr 官方網站&lt;/strong&gt;：&lt;a href=&#34;https://herdr.dev&#34;&gt;https://herdr.dev&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;GitHub 倉庫&lt;/strong&gt;：&lt;a href=&#34;https://github.com/p47t/herdr-sort-workspaces&#34;&gt;https://github.com/p47t/herdr-sort-workspaces&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

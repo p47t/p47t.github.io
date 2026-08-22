@@ -1,0 +1,587 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/embedded/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-08-07 00:00:00 -0800 -0800</updated>
+    
+    <item>
+      <title>用 Rust 把 2D 相片變成 3D 列印浮雕</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/</link>
+      <pubDate>Fri, 07 Aug 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;你有沒有想過把一張普通的平面相片，變成立體、伸手就能摸到的 3D 浮雕（Bas-Relief）？&lt;/p&gt;
+&lt;p&gt;在傳統雕刻中，製作浮雕需要極高的工藝技術；而在 3D 列印領域，大家常玩的 Lithophane（光影透光相片）雖然漂亮，但必須背後有光源才能看清細節。如果我們想要的是一個&lt;strong&gt;真正的 3D 幾何實體&lt;/strong&gt;——有凸起的面貌、有起伏的山脈細節、可以直接拿在手上，甚至放到 OpenSCAD 裡面加上外框和掛鉤，該怎麼做？&lt;/p&gt;
+&lt;p&gt;這就是 &lt;strong&gt;&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/depth-relief&#34;&gt;depth-relief&lt;/a&gt;&lt;/strong&gt; 這個專案的起點。身為 &lt;em&gt;Rust 52 Projects&lt;/em&gt; 挑戰的一部分，我用 Rust + OpenCV 寫了一個命令列工具。它能將單張平面照片（透過 MiDaS 深度學習模型）或左右雙眼立體對（透過 StereoBM 塊匹配）轉換為 2D 深度圖（Depth Map），接著透過**高頻照片細節融合與後處理管線（High-Pass Detail Fusion &amp;amp; Post-Processing Pipeline）&lt;strong&gt;刻印出銳利的五官，最後自動三角化生成&lt;/strong&gt;完全封閉、無拓撲瑕疵（Watertight/Manifold）**的 3D STL 網格檔案，可以直接匯入 PrusaSlicer 或 Bambu Studio 進行 3D 列印！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;實戰成果展示-the-patrick-22-showcase&#34;&gt;實戰成果展示 (The &lt;code&gt;patrick-22&lt;/code&gt; Showcase)&lt;/h3&gt;
+&lt;p&gt;在深入技術細節之前，我們先來看看這套系統在真實照片上的轉換效果。以下是我使用自己的個人照 &lt;code&gt;patrick-22.jpg&lt;/code&gt; 進行 3D 浮雕生成的完整過程：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;1. 原始 2D 輸入照片 (&lt;code&gt;patrick-22.jpg&lt;/code&gt;)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;2. 後處理管線生成的深度圖 (&lt;code&gt;patrick-22-depth.png&lt;/code&gt;)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22.jpg&#34; alt=&#34;patrick-22.jpg&#34; width=&#34;288&#34; height=&#34;288&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-depth.png&#34; alt=&#34;patrick-22-depth.png&#34; width=&#34;256&#34; height=&#34;256&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;經由 &lt;code&gt;depth-relief&lt;/code&gt; 生成的 &lt;strong&gt;3D STL 模型 (&lt;code&gt;patrick-22.stl&lt;/code&gt;)&lt;/strong&gt; 與 3D 旋轉預覽效果：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;3D 浮雕 STL 靜態渲染圖 (&lt;code&gt;patrick-22-3d-render.png&lt;/code&gt;)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;3D 浮雕光影動態旋轉展示 (&lt;code&gt;patrick-22-3d.gif&lt;/code&gt;)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-3d-render.png&#34; alt=&#34;patrick-22-3d-render.png&#34; width=&#34;1150&#34; height=&#34;1102&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-3d.gif&#34; alt=&#34;patrick-22-3d.gif&#34; width=&#34;500&#34; height=&#34;479&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;可以看到，即便原始深度模型（MiDaS）只給出了大致的大頭形狀，但透過我們設計的 &lt;strong&gt;High-Pass Detail Fusion&lt;/strong&gt;，五官線條（眼睛、眉毛、鼻翼、嘴唇）、頭髮輪廓與五官立體感都被精準地刻印到了 3D 浮雕表面上！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;系統架構與處理流程&#34;&gt;系統架構與處理流程&lt;/h3&gt;
+&lt;p&gt;把一張 2D 圖片變成可 3D 列印的 STL 檔案，中間跨越了電腦視覺、圖像訊號處理與 3D 幾何建模三個領域。整個 &lt;code&gt;depth-relief&lt;/code&gt; 的處理管線如下：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    graph TD
+    A[&#34;輸入照片 patrick-22.jpg&#34;] --&gt; B{&#34;模式選擇&#34;}
+    B --&gt;|&#34;單張照片&#34;| C[&#34;MiDaS v2.1 ONNX 深度學習推理&#34;]
+    B --&gt;|&#34;立體對 left/right&#34;| D[&#34;StereoBM 視差匹配&#34;]
+    C --&gt; E[&#34;原始 2D 深度圖 Raw Depth&#34;]
+    D --&gt; E
+    E --&gt; F[&#34;深度圖後處理管線 DepthPostProcessOptions&#34;]
+    F --&gt; F1[&#34;1. 分位數裁切 Quantile Clipping&#34;]
+    F1 --&gt; F2[&#34;2. Gamma 非線性對比擴充&#34;]
+    F2 --&gt; F3[&#34;3. 高頻照片細節融合 High-Pass Detail Fusion&#34;]
+    F3 --&gt; F4[&#34;4. 雙邊邊界保持平滑 Bilateral Filtering&#34;]
+    F4 --&gt; F5[&#34;5. 自適應直方圖等化 CLAHE&#34;]
+    F5 --&gt; G[&#34;匯出 8-bit Grayscale PNG 預覽圖&#34;]
+    F5 --&gt; H[&#34;3D 網格三角化 Triangulation&#34;]
+    H --&gt; I[&#34;計算頂點 Z 軸與法向量 Normal&#34;]
+    I --&gt; J[&#34;縫合 Top / Bottom / 4 側邊牆面&#34;]
+    J --&gt; K[&#34;匯出 Binary STL patrick-22.stl&#34;]
+    K --&gt; L[&#34;切片專案 patrick-22.3mf / OpenSCAD&#34;]
+  &lt;/div&gt;
+
+&lt;p&gt;整個架構主要分為三大核心模組：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;depth.rs&lt;/code&gt;&lt;/strong&gt;：負責 OpenCV 影像處理、ONNX 神經網路推理、雙眼立體匹配，以及全新設計的 &lt;code&gt;DepthPostProcessOptions&lt;/code&gt; 深度後處理管線。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;stl.rs&lt;/code&gt;&lt;/strong&gt;：負責幾何運算、頂點生成、表面與側牆三角化，以及二進位 STL 格式寫入。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;main.rs&lt;/code&gt;&lt;/strong&gt;：CLI 命令列解析（Clap）、模型自動下載與各種後處理參數調控。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術一單圖深度估計-midas-onnx&#34;&gt;核心技術一：單圖深度估計 (MiDaS ONNX)&lt;/h3&gt;
+&lt;p&gt;在沒有深度相機（如 LiDaR 或 RealSense）的情況下，要從單張普通照片推算像素的遠近，傳統演算法幾乎做不到。但 AI 深度學習模型可以做到。&lt;/p&gt;
+&lt;p&gt;我們選用 Intel ISL 開源的 &lt;strong&gt;MiDaS v2.1 Small&lt;/strong&gt; 模型。這個模型非常輕量（約 58MB），既能在 CPU 上快速執行，又能預測出相當不錯的整體空間相對深度。&lt;/p&gt;
+&lt;h4 id=&#34;1-自動模型下載機制&#34;&gt;1. 自動模型下載機制&lt;/h4&gt;
+&lt;p&gt;為了提升 DX（開發者體驗），使用者不需要手動尋找並下載 ONNX 模型。如果程式偵測到本地缺少 &lt;code&gt;model-small.onnx&lt;/code&gt;，會自動啟動 subprocess 透過 &lt;code&gt;curl&lt;/code&gt;（若失敗則切換至 PowerShell &lt;code&gt;Invoke-WebRequest&lt;/code&gt;）從 Intel ISL 官方 GitHub Release 下載：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;check_and_download_model&lt;/span&gt;(model_path: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Path&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;()&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; model_path.exists() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; Ok(());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;MiDaS model file &amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39; not found.&amp;#34;&lt;/span&gt;, model_path.display());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Downloading model-small.onnx (approx. 58MB)...&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; url &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;https://github.com/intel-isl/MiDaS/releases/download/v2_1/model-small.onnx&amp;#34;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; status &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std::process::Command::new(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;curl&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .arg(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-L&amp;#34;&lt;/span&gt;).arg(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-o&amp;#34;&lt;/span&gt;).arg(model_path).arg(url)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .status();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 支援 Windows 預設環境的 PowerShell 備援機制
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; status.is_err() &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;status.unwrap().success() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// Invoke-WebRequest 備援...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;2-opencv-5-dnn-推理與-imagenet-標準化&#34;&gt;2. OpenCV 5 DNN 推理與 ImageNet 標準化&lt;/h4&gt;
+&lt;p&gt;在 OpenCV 5 中，&lt;code&gt;read_net_from_onnx&lt;/code&gt; 的 API 略有調整。MiDaS Small 模型要求輸入尺寸為 $256 \times 256$，且 RGB 像素值必須經過 ImageNet 的均值（Mean）與標準差（Std）歸一化：&lt;/p&gt;
+$$R_{norm} = \frac{R - 0.485}{0.229}, \quad G_{norm} = \frac{G - 0.456}{0.224}, \quad B_{norm} = \frac{B - 0.406}{0.225}$$&lt;p&gt;在 Rust 中的處理邏輯：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;estimate_depth_single&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    img: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Mat&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    model_path: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;DepthPostProcessOptions&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Mat&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; net &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; dnn::read_net_from_onnx_def(model_path)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. Resize 至 256x256
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; target_size &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;256&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;256&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::resize(img, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized, target_size, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;INTER_CUBIC&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. BGR 轉 RGB 並進行 ImageNet Normalization
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; preprocessed &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        target_size.height, target_size.width, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32FC3&lt;/span&gt;, Scalar::default()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    )&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.height {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.width {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bgr: &lt;span style=&#34;color:#a6e22e&#34;&gt;opencv&lt;/span&gt;::core::Vec3b &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;resized.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;opencv::core::Vec3b&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; g &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; b &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (r &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.485&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.229&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; g_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (g &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.456&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.224&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; b_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (b &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.406&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.225&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;preprocessed.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;opencv::core::Vec3f&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                opencv::core::Vec3f::from([r_norm, g_norm, b_norm]);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 轉為 4D Blob 並執行 Forward 推理
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; blob &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; dnn::blob_from_image(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;preprocessed, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;, target_size, Scalar::default(), &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    net.set_input(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;blob, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; out_blob_names &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; opencv::core::Vector::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;::new();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    net.forward(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; output, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;out_blob_names)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 4. 提取原始 Raw Depth 矩陣
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 5. 進入深度圖後處理管線
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    post_process_depth_map(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;raw_depth, Some(img), options)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術二高頻照片細節融合與-3d-人臉後處理管線-high-pass-detail-fusion&#34;&gt;核心技術二：高頻照片細節融合與 3D 人臉後處理管線 (High-Pass Detail Fusion)&lt;/h3&gt;
+&lt;p&gt;在專案的第一個版本中，直接將 MiDaS 輸出的原始深度圖做全域線性歸一化並轉成 STL。然而實測後發現一個重大問題：&lt;strong&gt;MiDaS 這類深度學習模型擅長預測「巨觀空間輪廓」（例如鼻子比耳朵突出、人頭在背景前面），但完全無法預測「微觀高頻細節」（例如眼睛、雙眼皮、鼻翼線條、唇線、頭髮紋理與五官邊線）。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;如果直接列印，出來的 3D 浮雕看起來會像一個&lt;strong&gt;平滑無表情的塑膠假人面具&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;為了徹底解決這個問題，我設計了全新的五階段深度後處理管線 &lt;code&gt;post_process_depth_map&lt;/code&gt;：&lt;/p&gt;
+&lt;h4 id=&#34;1-分位數極值裁切-quantile-outlier-clipping&#34;&gt;1. 分位數極值裁切 (Quantile Outlier Clipping)&lt;/h4&gt;
+&lt;p&gt;背景極深處或前景極近處的離群值（Outliers）常會拉大深度值的全域範圍，導致主體人臉的 $Z$ 軸起伏壓縮在很窄的區間。透過統計分位數（如 $1\%$ 至 $99\%$）：&lt;/p&gt;
+$$\text{clip\_min} = \text{Quantile}(0.01), \quad \text{clip\_max} = \text{Quantile}(0.99)$$&lt;p&gt;強行將邊緣極值裁切掉後再歸一化至 $[0.0, 1.0]$，能讓 $100\%$ 的浮雕高度振幅（$Z_{\text{relief}}$）完全貢獻給主體！&lt;/p&gt;
+&lt;p&gt;在 Rust 中的分位數排序與極值計算範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 1. 收集有效深度像素值
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; valid_vals: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Vec::with_capacity(total_pixels);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;raw_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; val.is_finite() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0.5&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            valid_vals.push(val);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 2. 分位數排序並計算 1% 與 99% 陣列索引
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;valid_vals.sort_by(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;a, b&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; num_valid &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals.len();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; min_idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ((num_valid &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; options.clip_min_quantile) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; max_idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ((num_valid &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; options.clip_max_quantile) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; v_min &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals[min_idx];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; v_max &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals[max_idx];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; range &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (v_max &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min).abs() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1e-6&lt;/span&gt; { v_max &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; };&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;2-gamma-非線性對比擴充-gamma-expansion&#34;&gt;2. Gamma 非線性對比擴充 (Gamma Expansion)&lt;/h4&gt;
+&lt;p&gt;人臉五官（如眼窩、鼻樑、面頰）的中間調變化非常微妙。透過套用 Gamma 曲線：&lt;/p&gt;
+$$Z_{\text{gamma}} = (Z_{\text{norm}})^\gamma \quad (\text{預設 } \gamma = 0.7)$$&lt;p&gt;當 $\gamma &lt; 1.0$ 時，曲線會在低中間調區間產生陡峭的斜率，非線性地拉開五官的中間調高度差，使原本平坦的面部立體感大幅躍升。&lt;/p&gt;
+&lt;p&gt;在 Rust 中的裁切 (Clamp)、歸一化與 Gamma 轉換範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; norm_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(h, w, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;raw_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0.5&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; clamped &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; val.clamp(v_min, v_max);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (clamped &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; range;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 套用 powf 進行 Gamma 對比擴充
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; final_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; norm.powf(options.gamma);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; final_val;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;3-高頻照片細節融合-high-pass-detail-fusion&#34;&gt;3. 高頻照片細節融合 (High-Pass Detail Fusion)&lt;/h4&gt;
+&lt;p&gt;這是我覺得整個改善中最精采的亮點！我們從小照片的原始灰階影像中，透過高通濾波（High-Pass Filter）提取出邊緣與紋理資訊：&lt;/p&gt;
+$$\text{HighPass}(x, y) = \text{Photo}_{\text{gray}}(x, y) - \text{GaussianBlur}(\text{Photo}_{\text{gray}}, \text{ksize}=15)$$&lt;p&gt;然後以加權參數 $\text{detail\_weight}$（預設 $0.4$）將這個高頻信號直接疊加回 3D 深度圖上：&lt;/p&gt;
+$$Z_{\text{final}}(x, y) = \text{Clamp}\left(Z_{\text{gamma}}(x, y) + w \cdot \text{HighPass}(x, y), \, 0.0, \, 1.0\right)$$&lt;p&gt;這樣一來，原始照片中眼神的輪廓、嘴唇的紋理、頭髮的髮絲甚至衣領褶痕，都會被直接**刻印（Engrave）**到 3D 浮雕網格表面！&lt;/p&gt;
+&lt;p&gt;在 Rust 中的高通殘差計算與細節疊加範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 高通細節提取函式
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;extract_high_pass_detail&lt;/span&gt;(img: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Mat&lt;/span&gt;, target_size: &lt;span style=&#34;color:#a6e22e&#34;&gt;Size&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Mat&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::cvt_color(img, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gray, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;COLOR_BGR2GRAY&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, AlgorithmHint::&lt;span style=&#34;color:#66d9ef&#34;&gt;ALGO_HINT_DEFAULT&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized_gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::resize(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gray, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized_gray, target_size, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;INTER_CUBIC&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    resized_gray.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_gray, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 低頻模糊層
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; blurred &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::gaussian_blur(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;f32_gray, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; blurred, Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;15&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;15&lt;/span&gt;), &lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;BORDER_DEFAULT&lt;/span&gt;, AlgorithmHint::&lt;span style=&#34;color:#66d9ef&#34;&gt;ALGO_HINT_DEFAULT&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 計算高通殘差：原圖 - 低頻模糊 = 高頻細節
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; detail_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(target_size.height, target_size.width, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.height {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.width {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;f32_gray.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;blurred.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;detail_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; hp;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(detail_map)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 融合高頻細節至深度圖
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(src_img) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; opt_source_img {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.detail_weight &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp_detail &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extract_high_pass_detail(src_img, Size::new(w, h))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; weight &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; options.detail_weight;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; base_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;hp_detail.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; blended &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (base_val &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; weight &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; hp_val).clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; blended;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;4-雙邊濾波保邊平滑-bilateral-filtering&#34;&gt;4. 雙邊濾波保邊平滑 (Bilateral Filtering)&lt;/h4&gt;
+&lt;p&gt;最後，為了避免照片噪點導致 3D 浮雕表面過於粗糙，我們套用 OpenCV 的 &lt;code&gt;bilateral_filter&lt;/code&gt;（雙邊濾波器）。雙邊濾波能在平滑微小噪點的同時，完全保留高頻融合進來的銳利邊緣：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; smooth_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.smooth_radius &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; dst &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; d &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; options.smooth_radius &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::bilateral_filter(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;norm_map,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; dst,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        d,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#ae81ff&#34;&gt;0.1&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt;,                       &lt;span style=&#34;color:#75715e&#34;&gt;// sigmaColor: 色彩/深度差異容許度
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        options.smooth_radius &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt;, &lt;span style=&#34;color:#75715e&#34;&gt;// sigmaSpace: 空間濾波半徑
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;BORDER_DEFAULT&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    )&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    dst
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;} &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    norm_map
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;5-自適應直方圖等化-clahe-enhancement&#34;&gt;5. 自適應直方圖等化 (CLAHE Enhancement)&lt;/h4&gt;
+&lt;p&gt;若開啟 &lt;code&gt;--clahe&lt;/code&gt; 選項，程式會對深度圖進行 Contrast Limited Adaptive Histogram Equalization，提升局部區域的深度動態範圍：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.enable_clahe {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; u8_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    smooth_map.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; u8_map, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;CV_8U&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_obj &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; imgproc::create_clahe_def()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.set_clip_limit(&lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.set_tiles_grid_size(Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_out &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.apply(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;u8_map, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_out)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_clahe &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_out.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_clahe, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    smooth_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; f32_clahe;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術三雙眼立體對比-stereo-photo-mode&#34;&gt;核心技術三：雙眼立體對比 (Stereo Photo Mode)&lt;/h3&gt;
+&lt;p&gt;除了 AI 估算，如果我們手上有校正過的左右雙眼照片（Stereo Pair），也可以使用經典的視差演算法 &lt;strong&gt;StereoBM（Block Matching）&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;人眼看世界之所以有立體感，是因為左右眼位置不同造成的「視差」（Disparity）。物件離越近，視差越大；物件離越遠，視差越小。同樣地，StereoBM 計算完視差圖後，也會通過同一個 &lt;code&gt;post_process_depth_map&lt;/code&gt; 後處理管線增強細節。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術四建構-watertight-3d-stl-實體網格&#34;&gt;核心技術四：建構 Watertight 3D STL 實體網格&lt;/h3&gt;
+&lt;p&gt;這整個專案最硬核、也最有成就感的部分，就是&lt;strong&gt;如何把這張 2D 的深度灰階圖轉成真正的 3D Watertight 實體模型&lt;/strong&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;為什麼-watertight-封閉實體-這麼重要&#34;&gt;為什麼 Watertight (封閉實體) 這麼重要？&lt;/h4&gt;
+&lt;p&gt;3D 列印切片軟體（Slicer）把 3D 模型切成一層層 G-code 時，必須明確知道這個模型哪裡是「內部（Solid inside）」，哪裡是「外部（Outside）」。&lt;/p&gt;
+&lt;p&gt;如果只是把 2D 深度圖畫成一片薄薄的 3D 地形曲面（Heightfield Surface），它是一張沒有厚度的「紙」。Slicer 看到這張紙會無法計算體積，甚至直接報錯或印出空心碎片。&lt;/p&gt;
+&lt;p&gt;因此，我們必須像做豆腐塊一樣，幫這片頂層曲面加上&lt;strong&gt;封閉底座（Flat Base）&lt;strong&gt;與&lt;/strong&gt;四周四面側牆（Side Walls）&lt;/strong&gt;！&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;     頂層高度曲面 (Top Surface Z = base + depth * relief)
+         /\__/\/\__
+        /          \
+       |            |   &amp;lt;--- 四周側牆 (Side Walls)
+       +------------+
+     平整底面 (Bottom Base Z = 0)&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;1-頂點與座標軸變換&#34;&gt;1. 頂點與座標軸變換&lt;/h4&gt;
+&lt;p&gt;在影像座標系中，$Y$ 軸是向下延伸的（原點在左上角）；而在 3D 列印座標系中，$Z$ 軸朝上，$Y$ 軸朝後。為了讓印出來的照片頂部朝向印床後方，我們需要翻轉 $Y$ 軸：&lt;/p&gt;
+$$p_x = x \cdot s_x, \quad p_y = (H - 1 - y) \cdot s_y, \quad p_z = Z_{base} + \text{depth}(x, y) \cdot Z_{relief}$$&lt;h4 id=&#34;2-三角化與法向量-winding-order--normal-calculation&#34;&gt;2. 三角化與法向量 (Winding Order &amp;amp; Normal Calculation)&lt;/h4&gt;
+&lt;p&gt;STL 檔案由一個個三角面組成。每個三角面都必須遵守&lt;strong&gt;右手定則（Counter-Clockwise Winding Rule）&lt;/strong&gt;，確保法向量（Normal Vector）精準指向模型外側：&lt;/p&gt;
+&lt;p&gt;法向量透過向量外積計算：&lt;/p&gt;
+$$\vec{N} = \frac{(V_2 - V_1) \times (V_3 - V_1)}{\|(V_2 - V_1) \times (V_3 - V_1)\|}$$
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;calculate_normal&lt;/span&gt;(v1: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;, v2: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;, v3: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.x &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.x; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.y &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.y; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.z &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.z;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.x &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.x; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; by &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.y &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.y; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bz &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.z &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.z;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; nx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bz &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; by;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bx &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bz;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; nz &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; by &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bx;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; len &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (nx &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; nx &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; nz &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; nz).sqrt();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; len &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1e-6&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Vertex { x: &lt;span style=&#34;color:#a6e22e&#34;&gt;nx&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len, y: &lt;span style=&#34;color:#a6e22e&#34;&gt;ny&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len, z: &lt;span style=&#34;color:#a6e22e&#34;&gt;nz&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Vertex { x: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, y: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, z: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;對於網格中的每個方格，我們切成兩個三角形。特別注意的是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;頂面（Top Surface）&lt;/strong&gt;：頂點順序採用逆時針（CCW），法向量朝上。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;底面（Bottom Base）&lt;/strong&gt;：頂點順序採用順時針（CW），法向量朝下（指向 $Z = 0$ 外部）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;側邊牆面（Side Walls）&lt;/strong&gt;：對左、右、前、後四個邊緣，將頂面的邊界頂點與底面的邊界頂點組合成 Rectangle Quad，再切成兩個三角形，法向量分別朝向 $-X, +X, -Y, +Y$ 外側。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這樣產生的 STL 檔案 100% 保證水密（Watertight），完全不需要在 Blender 或 MeshLab 裡面修理破面。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術五純-rust-手寫-binary-stl-導出&#34;&gt;核心技術五：純 Rust 手寫 Binary STL 導出&lt;/h3&gt;
+&lt;p&gt;雖然 Rust 生態系中有一些 3D 繪圖 crate，但 STL 檔案的二進位規格其實非常簡單精巧：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Header (80 bytes)&lt;/strong&gt;：任意標頭文字。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Number of Triangles (4 bytes u32, Little-Endian)&lt;/strong&gt;：三角形總數。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Triangles Data (每個三角形 50 bytes)&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;Normal Vector ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 1 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 2 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 3 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Attribute Byte Count ($\text{u16} = 2 \text{ bytes}$)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;完全不依赖大型 3D 引擎，只需利用 Rust 標準庫的 &lt;code&gt;std::io::BufWriter&lt;/code&gt; 和 &lt;code&gt;.to_le_bytes()&lt;/code&gt; 即可快速寫出高檔位的二進位 STL。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;命令行實戰與-3mf-切片專案&#34;&gt;命令行實戰與 3MF 切片專案&lt;/h3&gt;
+&lt;p&gt;你可以直接使用這行命令對自己的照片生成 STL 檔案：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo run --release -- --mode single --input patrick-22.jpg --output-stl patrick-22.stl --width &lt;span style=&#34;color:#ae81ff&#34;&gt;100&lt;/span&gt; --detail-weight 0.4 --gamma 0.7&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;產生出 &lt;code&gt;patrick-22.stl&lt;/code&gt; 之後，專案中也附帶了預先設定好的 &lt;strong&gt;&lt;code&gt;patrick-22.3mf&lt;/code&gt;&lt;/strong&gt; 3D 列印切片專案檔！&lt;/p&gt;
+&lt;h4 id=&#34;3d-列印切片設定建議&#34;&gt;3D 列印切片設定建議&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;列印方向&lt;/strong&gt;：匯入 PrusaSlicer 或 Bambu Studio 後，模型的平整底面會自動貼合在列印鋼板上（$Z = 0$）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;層高（Layer Height）&lt;/strong&gt;：建議設定 &lt;strong&gt;0.12 mm&lt;/strong&gt; 或 &lt;strong&gt;0.16 mm&lt;/strong&gt;。極力推薦開啟 &lt;strong&gt;可變層高（Variable Layer Height）&lt;/strong&gt;——讓平整的底座用 0.28 mm 快速印完，頂層細緻的浮雕起伏用 0.08 mm 精細堆疊。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;填充（Infill）&lt;/strong&gt;：10% ~ 15% 的 &lt;strong&gt;Gyroid（陀螺儀）&lt;/strong&gt; 填充即可提供極佳強度。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;耗材選擇&lt;/strong&gt;：啞光（Matte）單色 PLA 能呈現出最棒的光影輪廓；若使用半透明 PLA，還能兼具 Lithophane 光影透光效果！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h4 id=&#34;openscad-整合範例&#34;&gt;OpenSCAD 整合範例&lt;/h4&gt;
+&lt;p&gt;因為輸出的 STL 座標精確且原點位於左下角底面，你可以輕鬆將它匯入 OpenSCAD 進行 CSG 布林運算，例如幫浮雕加上相框與掛牆螺絲孔：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-openscad&#34; data-lang=&#34;openscad&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// OpenSCAD 浮雕加框與掛鉤腳本
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;difference() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    union() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 外圍相框底座
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cube([&lt;span style=&#34;color:#ae81ff&#34;&gt;110&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;110&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;], center &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;true&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 匯入 depth-relief 產生的 STL 並置中
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        translate([&lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.5&lt;/span&gt;]) 
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            import(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;patrick-22.stl&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 挖出後方壁掛螺絲孔
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    translate([&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;])
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cylinder(h &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;, r &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2.5&lt;/span&gt;, center &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;true&lt;/span&gt;, $fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;32&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;兩種模式對比總結&#34;&gt;兩種模式對比總結&lt;/h3&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;特性&lt;/th&gt;
+					&lt;th&gt;單圖模式 (MiDaS ONNX)&lt;/th&gt;
+					&lt;th&gt;立體對模式 (StereoBM)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;輸入需求&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;單張普通照片/手機照片 (&lt;code&gt;patrick-22.jpg&lt;/code&gt;)&lt;/td&gt;
+					&lt;td&gt;校正過的左右雙眼照片對&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;技術原理&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;深度學習神經網路推理&lt;/td&gt;
+					&lt;td&gt;傳統視差塊匹配 (Block Matching)&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;微觀細節&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;透過 High-Pass Photo Fusion 刻印高頻五官線條&lt;/td&gt;
+					&lt;td&gt;依賴視差匹配精度與高頻融合&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;硬體需求&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;需載入 58MB ONNX 模型&lt;/td&gt;
+					&lt;td&gt;純幾何運算，極輕量&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;適用場景&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;人像、風景、隨手拍生活照&lt;/td&gt;
+					&lt;td&gt;雙鏡頭相機、立體繪圖、工業檢測&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;結語與學習心得&#34;&gt;結語與學習心得&lt;/h3&gt;
+&lt;p&gt;從最初只用 MiDaS 生成平滑但略顯呆板的 3D 地形，到引入 &lt;strong&gt;分位數裁切、Gamma 中間調擴充、高頻照片細節融合&lt;/strong&gt; 的後處理管線，再到實際用 &lt;code&gt;patrick-22.jpg&lt;/code&gt; 驗證生成 &lt;code&gt;patrick-22.stl&lt;/code&gt; 和 &lt;code&gt;patrick-22.3mf&lt;/code&gt;，&lt;code&gt;depth-relief&lt;/code&gt; 實現了質的飛躍。&lt;/p&gt;
+&lt;p&gt;這個改善過程展現了工程設計中「結合多種技術」的力量：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;AI 深度學習（MiDaS）&lt;/strong&gt; 負責給出宏觀、正確的整體空間 depth 骨架；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;古典數位影像處理（High-Pass Filter &amp;amp; Gamma Curve）&lt;/strong&gt; 負責補足微觀、銳利的細節紋理；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;計算機幾何（Triangulation &amp;amp; Normals）&lt;/strong&gt; 負責構建無瑕疵的 Watertight 實體。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;三者結合，才讓一張平淡無奇的平面照片，真正蛻變成 3D 列印床上充滿細節、令人驚豔的實體浮雕作品！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;參考資源&#34;&gt;參考資源&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/depth-relief&#34;&gt;depth-relief 專案原始碼&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/intel-isl/MiDaS&#34;&gt;Intel ISL MiDaS 深度估計模型&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://docs.opencv.org/master/dd/ffc/group__stereo.html&#34;&gt;OpenCV Stereo Block Matching 官方文件&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/twistedfall/opencv-rust&#34;&gt;opencv-rust Crate&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ARM Architecture for Mobile Developers</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/</link>
+      <pubDate>Sat, 24 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/</guid>
+      <description>&lt;p&gt;目前幾乎市場上所有的 mobile device 用的 processor 都是基於 &lt;a href=&#34;http://en.wikipedia.org/wiki/ARM_architecture&#34;&gt;ARM Architecture&lt;/a&gt; 的，而做為一位 Android 或是 iOS 平台的應用程序開發人員對於 ARM 有一定的認識雖非必要，但多了解一點對優化程序及偵錯問題是有很大幫助的。關於 ARM 的基本介紹，可以參考 Pierre Lebeaupin 的 &lt;a href=&#34;http://wanderingcoder.net/2010/07/19/ought-arm/&#34;&gt;A few things iOS developers ought to know about the ARM architecture&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;最基本要知道的是 ARM Architecture 是有分版本的:&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/ARM-Architecture-Evolution.png&#34; alt=&#34;ARM Revision History&#34;&gt;&lt;/p&gt;
+&lt;p&gt;目前主流的 Smartphone 都是採用 ARMv7a 的架構。&lt;/p&gt;
+&lt;p&gt;而另一個需要了解的觀念是 &lt;a href=&#34;http://en.wikipedia.org/wiki/Application_binary_interface&#34;&gt;ABI&lt;/a&gt; (Application Binary Interface)，要了解 ARM 的 ABI 最快的就是參考 &lt;a href=&#34;http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.subset.swdev.abi/index.html&#34;&gt;Application Binary Interface for the ARM Architecture&lt;/a&gt; 裡的這張圖：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/2011-12-25-8.49.34.png&#34; alt=&#34;ABI 地圖&#34;&gt;&lt;/p&gt;
+&lt;p&gt;從圖上可以看到在 ABI for the ARM Architecure 實際涵蓋了許多範圍，各個平台的 ABI 通常就是參考標準的 ARM ABI 然後把不明確的地方或是有差異的部份定義清楚。&lt;/p&gt;
+&lt;p&gt;Android 開發人員可以參考 &lt;a href=&#34;http://www.google.com.tw/codesearch#cZwlSNS7aEw/ndk/docs/CPU-ARCH-ABIS.html&amp;amp;q=CPU-ARCH-ABIS.html&amp;amp;type=cs&#34;&gt;docs/CPU-ARCH-ABIS.html&lt;/a&gt;，使用 Android NDK 開發的話，目前就有分 armeabi 及 armeabi-v7a。iOS 的話除了第一代 iPhone 外目前都是 ARMv7 架構，但目前似乎只找的到這份 &lt;a href=&#34;http://developer.apple.com/library/ios/#documentation/Xcode/Conceptual/iPhoneOSABIReference/Introduction/Introduction.html&#34;&gt;iOS ABI Function Call Guide&lt;/a&gt; 可以一窺 iOS上的一些實作細節。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Michael Barr </title>
+      <link>https://blog.simplypatrick.com/posts/2007/2007-09-03-399/</link>
+      <pubDate>Mon, 03 Sep 2007 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2007/2007-09-03-399/</guid>
+      <description>&lt;p&gt;初次知道 &lt;a href=&#34;http://en.wikipedia.org/wiki/Michael_Barr_%28software_engineer%29&#34;&gt;Michael Barr&lt;/a&gt; 是因為讀了他寫的 &lt;a href=&#34;http://books.google.com.tw/books?id=eYU9xcWktRoC&amp;amp;dq=&amp;amp;pg=PP1&amp;amp;ots=zbMg6dMd9D&amp;amp;sig=Yx6S4spi5V6FFuiZR84RlpeVUPA&amp;amp;prev=http://www.google.com.tw/search%3Fsourceid%3Dnavclient%26ie%3DUTF-8%26rls%3DGGLJ,GGLJ:2006-38,GGLJ:en%26q%3D%2522Programming%2BEmbedded%2BSystems%2Bin%2BC%2Band%2BC%252B%252B%2522&amp;amp;sa=X&amp;amp;oi=print&amp;amp;ct=title&#34;&gt;Programming Embedded Systems in C and C++&lt;/a&gt; 這本關於 embedded system programming 的書。後來陸陸續續在網路上找到蠻多他寫的技術文章，才發現他是 &lt;a href=&#34;http://www.embedded.com/mag.htm&#34;&gt;Embedded Systems Programming magazine&lt;/a&gt; (現已改名叫 Embedded Systems Design) 的前總編輯，難怪文筆相當不錯。我還蠻喜歡看他寫的東西，主要是他的文章都有假設讀者的程度，因此不會有一堆太基本的內容，或是過於複雜難懂的技術細節。&lt;/p&gt;
+&lt;p&gt;現在任職於顧問公司的 Michael 將他以前的一些文章&lt;a href=&#34;http://www.netrino.com/Articles/index.php&#34;&gt;集結整理起來在這裡&lt;/a&gt;，裡面內容對於從事 embedded system programming 的技術人員應該都頗有幫助。尤其是今天看完這篇 &lt;a href=&#34;http://www.netrino.com/Articles/RTOSAlternatives/index.php&#34;&gt;The Perils of Preemption&lt;/a&gt;配合下面這張圖，雖然內容都是已經熟悉的東西，經由 Michael 這樣的整理與講解，還是讓整個人有打通任督二脈的感覺：&lt;/p&gt;
+&lt;img border=&#34;0&#34; width=&#34;425&#34; src=&#34;preemption-figure1.jpg&#34; height=&#34;284&#34; /&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ARM&#39;s way</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-09-24-341/</link>
+      <pubDate>Sun, 24 Sep 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-09-24-341/</guid>
+      <description>&lt;p&gt;ARM 除了產品的設計優異之外，主要的成功之道大家都曉得是在於他們只提供 IP core 的授權，而不從事實體 chip 的製造。這篇刊登於  &lt;a href=&#34;http://www.electronicsweekly.co.uk/&#34;&gt;Electronics Weekly&lt;/a&gt; 1998 四月號的文章描述了 ARM 的起源：&lt;a href=&#34;http://www.atterer.net/acorn/arm.html&#34; title=&#34;About Advanced RISC Machines (ARM)&#34;&gt;ARM&amp;rsquo;s way&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Embedded Programming with Eclipse</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-09-24-340/</link>
+      <pubDate>Sun, 24 Sep 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-09-24-340/</guid>
+      <description>&lt;p&gt;James P. Lynch 寫了一本圖文並茂、詳細到不行的 ARM 與 Eclipse 開發指南：&lt;a href=&#34;http://www.olimex.com/dev/pdf/ARM%20Cross%20Development%20with%20Eclipse%20version%203.pdf&#34;&gt;ARM Cross Development with Eclipse&lt;/a&gt;，主要著重在開發環境的安裝、設置、與使用。由於 Eclipse 具有免費、跨平台、開放的架構、強大的開發社群，embedded system 的開發環境慢慢移至 Eclipse 平台相信將會是大勢所趨。&lt;/p&gt;
+&lt;p&gt;不管你是從事甚麼樣的軟體開發工作，精通手頭上的開發工具絕對是做好事情的必要條件，而 Eclipse 就是個值得投資時間去熟習的工具，強力推薦這篇文章給有興趣於 embedded programming 的初學者。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Books on Embedding System Programming</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-04-01-329/</link>
+      <pubDate>Sat, 01 Apr 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-04-01-329/</guid>
+      <description>&lt;img class=&#34;photo&#34; src=&#34;//images.amazon.com/images/P/1578201039.01._BO2,204,203,200_PIsitb-dp-500-arrow,TopRight,45,-64_AA240_SH20_SCLZZZZZZZ_.jpg&#34; border=&#34;0&#34;/&gt;
+&lt;p&gt;在辭掉工作短暫休息的這段時間，我讀完了這本《&lt;a href=&#34;http://www.amazon.com/gp/product/1578201039/ref=sr_11_1/103-2664401-8916640?%5Fencoding=UTF8&#34;&gt;MicroC OS II: The Real Time Kernel &lt;/a&gt;》。會想要去讀它的原因是因為既然要做嵌入式系統的開發，那就必須對 RTOS 的特性有相當程度的掌握，而最快的方式莫過於直接去深入了解一個 RTOS 的實作，而短小精幹的 MicroC/OS-II 因為有原作者的詳細解說，當然是最適合學習的目標。老實說，讀這本書前，自己對於即時系統的一些概念是似懂非懂，但是看完這本書之後卻是豁然開朗。我覺得這本書更適合作為一般學校基礎 OS 的教材，之前大學上的 OS 課程都太理論性了，有點後悔當時沒有去修即時系統的課。強力推薦這本給想要自修學習 RTOS 的人。&lt;/p&gt;
+&lt;img class=&#34;photo&#34; src=&#34;//ec1.images-amazon.com/images/P/020161569X.01._BO2,204,203,200_PIlitb-dp-500-arrow,TopRight,32,-59_AA240_SH20_SCLZZZZZZZ_.jpg&#34; border=&#34;0&#34;/&gt;
+&lt;p&gt;另外一本的入門好書則是 David E. Simon 寫的《&lt;a href=&#34;http://www.amazon.com/gp/product/020161569X/qid=1144321641/sr=11-1/ref=sr_11_1/103-2664401-8916640?n=283155&#34;&gt;An Embedded Software Primer&lt;/a&gt;》。這本書關於 RTOS 的部分我是覺得沒有前一本講的清楚，但是可讀性倒是高了些，畢竟這本書就是要給入門者看的。後面關於 embedded software design, development, 及 debugging 的觀念我覺得寫的相當不錯，一樣推薦給想要了解 embedded system programming 的人。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Pragmatic Starter Kit</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-12-26-111/</link>
+      <pubDate>Fri, 26 Dec 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-12-26-111/</guid>
+      <description>&lt;p&gt;驚喜地發現 Andy 跟 Dave 出新書了，不需要多考慮，掏錢買就對了。&lt;/p&gt;
+&lt;p&gt;看《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/vc/&#34;&gt;Pragmatic Version Control using CVS&lt;/a&gt;》的目錄感覺內容有點單薄，當成入門書籍還說的過去。我個人比較期待《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/ut/index.html&#34;&gt;Pragmatic Unit Testing&lt;/a&gt;》及《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/au/index.html&#34;&gt;Pragmatic Project Automation&lt;/a&gt; 》。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;Software development is difficult enough; if you try to build on a shaky foundation it can make development almost impossible; (which might account for the fact that about 50% of software projects fail).&lt;br&gt;&lt;br&gt;The Starter Kit fixes that. It&#39;s a set of three books covering basic practices that are applicable in all software development situations. It doesn&#39;t matter if you&#39;re using Extreme Programming or RUP, developing web services or code embedded in a cell phone. The practices of version control, unit testing, and project automation are crucial to your success!&lt;br&gt;
+&lt;/blockquote&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Programming Embedded Systems</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-11-24-94/</link>
+      <pubDate>Mon, 24 Nov 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-11-24-94/</guid>
+      <description>&lt;p&gt;最近剛讀完《&lt;a title=&#34;Amazon.com: Books: Programming Embedded Systems in C and C++&#34; href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/1565923545/002-1545132-4855230?v=glance&#34;&gt;Programming Embedded Systems in C and C++&lt;/a&gt;》，讓完全不懂 embedded system 的我很快地就對嵌入式系統有了一定程度的了解。推薦給任何對 embedded system programming 有興趣的人。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Hardware breakpoints</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-10-46/</link>
+      <pubDate>Tue, 10 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-10-46/</guid>
+      <description>&lt;p&gt;嗯，VC++ 的確有提供 data breakpoint，但是使用起來卻不大方便，原因是你必須知道資料的位址然後填入例如 *((DWORD*)0x12345678) 的表示式才行。&lt;/p&gt;
+&lt;p&gt;現在，試試 &lt;a href=&#34;mailto:mike@morearty.com&#34;&gt;Mike Morearty&lt;/a&gt; 的 &lt;a href=&#34;http://www.morearty.com/code/breakpoint/&#34;&gt;CBreakpoint&lt;/a&gt;，你可以這樣做：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c++&#34; data-lang=&#34;c++&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;DWORD x &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; CBreakpoint bp; bp.Set(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;x, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(x), CBreakpoint&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Write);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;相當地酷！&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
