@@ -1,0 +1,1271 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>深入解構非同步核心：C&#43;&#43;20/23 協程與 Rust Async/Future 的設計哲學與架構差異 - 從 Push-driven 與 Pull-driven 模型、記憶體佈局、取消語義、自我引用位址到 io_uring / epoll I/O 架構適應矛盾的全面對比</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-18-cpp-vs-rust-coroutines/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-18-cpp-vs-rust-coroutines/"/>
+  <meta property="og:title" content="深入解構非同步核心：C&#43;&#43;20/23 協程與 Rust Async/Future 的設計哲學與架構差異 - 從 Push-driven 與 Pull-driven 模型、記憶體佈局、取消語義、自我引用位址到 io_uring / epoll I/O 架構適應矛盾的全面對比"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-08-18 18:45:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="c&#43;&#43;"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="async"/>
+  
+  <meta property="og:article:tag" content="concurrency"/>
+  
+  <meta property="og:article:tag" content="performance"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/08-18-cpp23-coroutine-ai-gateway/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            使用 C&#43;&#43;23 與協程打造極簡高效的 OpenAI 相容 AI Gateway
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/08-30-omarchy-linux-architecture/">
+            探索 Omarchy Linux：鍵盤驅動、平鋪優先與 AI 原生的現代化桌面架構實戰
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">深入解構非同步核心：C&#43;&#43;20/23 協程與 Rust Async/Future 的設計哲學與架構差異</h1>
+      
+      <div class="post-subtitle">從 Push-driven 與 Pull-driven 模型、記憶體佈局、取消語義、自我引用位址到 io_uring / epoll I/O 架構適應矛盾的全面對比</div>
+      
+      <div class="post-meta">
+        <span class="post-date">August 18, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/c&#43;&#43;"><span class="label label-primary">c&#43;&#43;</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/async"><span class="label label-primary">async</span></a>
+        
+        <a href="/tags/concurrency"><span class="label label-primary">concurrency</span></a>
+        
+        <a href="/tags/performance"><span class="label label-primary">performance</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>Modern C++</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/08-18-cpp-vs-rust-coroutines/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在現代系統級程式設計中，面對高並發、I/O 密集型以及分散式微服務等場景，傳統的「一執行緒對一連線（Thread-per-Connection）」模型因其高昂的堆疊記憶體佔用與 OS context switch 開銷已無法滿足百萬級連線（C1000K）的需求。為了實現高吞吐量與低延遲，現代語言紛紛在無垃圾回收（Zero-GC）的前提下，引進了語言級別的非同步抽象：</p>
+<ul>
+<li><strong>C++ 在 C++20 引入了無堆疊協程（Stackless Coroutines）</strong>，並在 C++23 進一步完善標準庫（如 <code>std::generator</code>、<code>std::expected</code>），奠定了現代高效能網路伺服器與運算管線的基石。</li>
+<li><strong>Rust 自 1.39 穩定化了 <code>async/await</code> 語法</strong>，以標準庫核心 trait <code>core::future::Future</code> 為契約，配合 Tokio、smol 等社群 runtime，成為構建雲原生網路基礎設施的熱門選擇。</li>
+</ul>
+<p>表面上看，兩者都提供了直觀的 <code>co_await</code> / <code>.await</code> 語法，讓開發者能以撰寫線性同步程式碼的思維來處理複雜的非同步流程。然而，<strong>在語法糖的表象之下，C++ 與 Rust 的底層架構、記憶體佈局、執行調度模型與哲學取捨截然相反</strong>。</p>
+<p>本文將從計算機系統底層與語言編譯器實作的角度，深度拆解這兩大現代系統級語言在非同步設計上的核心分歧。</p>
+<hr>
+<h2 id="1-架構全景push-driven-與-pull-driven-的核心對決">1. 架構全景：Push-Driven 與 Pull-Driven 的核心對決</h2>
+<p>理解兩者差異的第一把鑰匙，在於其<strong>驅動協程狀態機前進的控制流方向</strong>：</p>
+
+  <div class="mermaid">
+    flowchart TB
+    subgraph CPP["⚡ C++20/23 Coroutines (Push-Driven / Resumption)"]
+        direction TB
+        CP_Suspend["1. co_await awaitable<br/>協程暫停，儲存狀態至 Frame"]
+        CP_Register["2. await_suspend(handle)<br/>將 coroutine_handle 註冊給 EventLoop / Driver"]
+        CP_Push["3. Event Ready ➜ handle.resume() / 對稱轉移<br/><b>精確直接喚醒</b>：直接跳轉至中斷點續行"]
+        CP_Suspend --> CP_Register --> CP_Push
+    end
+
+    subgraph Rust["🦀 Rust Async / Future (Pull-Driven / Polling)"]
+        direction TB
+        RS_Poll["1. Executor 呼叫頂層 Future::poll(cx)<br/>狀態機由上而下遞迴評估"]
+        RS_Pending["2. 未就緒 ➜ 回傳 Poll::Pending<br/>底層 Leaf Future 將 Waker 註冊至 Reactor (epoll)"]
+        RS_Pull["3. Event Ready ➜ waker.wake()<br/><b>重新拉取</b>：Task 放回佇列，Executor 再次從頂層 poll"]
+        RS_Poll --> RS_Pending --> RS_Pull
+    end
+
+    classDef cppBox fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef rustBox fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef stepNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class CPP cppBox;
+    class Rust rustBox;
+    class CP_Suspend,CP_Register,CP_Push,RS_Poll,RS_Pending,RS_Pull stepNode;
+  </div>
+
+<ul>
+<li><strong>C++ 是 Push-Driven（推動式 / 延續傳遞模型）</strong>：當 I/O 事件就緒或子任務完成時，執行期持有目標協程的 <code>coroutine_handle</code>，直接呼叫 <code>handle.resume()</code> 或透過 <strong>對稱轉移（Symmetric Transfer）</strong> 將控制權「推（Push）」給目標協程。協程從中斷處精確甦醒，無需自頂向下重新遍歷呼叫樹。</li>
+<li><strong>Rust 是 Pull-Driven（拉取式 / 輪詢模型）</strong>：Future 本身是不具備自驅動力的純粹資料結構。只有當外部 Executor 呼叫 <code>poll()</code> 時，它才會嘗試向前推進一步。若遇到未就緒的 I/O，則回傳 <code>Poll::Pending</code> 並在底層註冊 <code>Waker</code>；當事件就緒時，<code>Waker</code> 僅通知 Executor「該 Task 已準備好」，由 Executor 再次從頂層 Future 重新發起 <code>poll()</code>「拉（Pull）」出最新進度。</li>
+</ul>
+<hr>
+<h2 id="2-核心執行模型深度剖析">2. 核心執行模型深度剖析</h2>
+<h3 id="21-c-協程基於-co_awaitawaiter-與對稱轉移的精確恢復">2.1 C++ 協程：基於 <code>co_await</code>、Awaiter 與對稱轉移的精確恢復</h3>
+<p>在 C++ 中，協程被編譯器轉譯為包含 <code>promise_type</code> 與暫停點索引的狀態機。每一次暫停與恢復，都是透過標準的 <strong>Awaiter 概念</strong> 精確控制：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// C++ Awaiter 概念與對稱轉移
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SocketReadAwaiter</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fd;
+</span></span><span style="display:flex;"><span>    EventLoop<span style="color:#f92672">*</span> loop;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> buffer[<span style="color:#ae81ff">1024</span>]{};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">await_ready</span>() <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">noexcept</span> { <span style="color:#66d9ef">return</span> false; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 當 await_ready 回傳 false 時呼叫
+</span></span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>coroutine_handle<span style="color:#f92672">&lt;&gt;</span> await_suspend(std<span style="color:#f92672">::</span>coroutine_handle<span style="color:#f92672">&lt;&gt;</span> coroutine) <span style="color:#66d9ef">noexcept</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 將當前協程的 handle 直接註冊到底層 epoll / driver
+</span></span></span><span style="display:flex;"><span>        loop<span style="color:#f92672">-&gt;</span>register_read_event(fd, coroutine);
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 回傳 noop_coroutine() 暫停當前執行緒控制權回給呼叫者，
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 或回傳另一個 handle 進行零堆疊開銷的對稱轉移 (Symmetric Transfer)
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> std<span style="color:#f92672">::</span>noop_coroutine();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    ssize_t <span style="color:#a6e22e">await_resume</span>() <span style="color:#66d9ef">noexcept</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 喚醒時直接從此處執行，回傳結果
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#f92672">::</span>read(fd, buffer, <span style="color:#66d9ef">sizeof</span>(buffer));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<h4 id="對稱轉移symmetric-transfer的威力">對稱轉移（Symmetric Transfer）的威力</h4>
+<p>在早期的協程實作中，子協程完成後喚醒父協程往往透過直接遞迴呼叫 <code>parent_handle.resume()</code>。若有一連串連續完成的非同步鏈結，呼叫堆疊會不斷加深，最終導致 Stack Overflow。</p>
+<p>如同 Lewis Baker 在其經典專文 <a href="https://lewissbaker.github.io/2020/05/11/understanding_symmetric_transfer"><em>C++20 Coroutines: Understanding Symmetric Transfer</em></a> 中所深入解析，C++20 引入了 <strong>對稱轉移（Symmetric Transfer）</strong>：<code>await_suspend</code> 可以回傳一個 <code>std::coroutine_handle&lt;&gt;</code>。編譯器會將其優化為一條簡單的組合語言 <code>tail jump</code>（尾跳躍），直接切換暫存器指向的 Frame，在保持常數呼叫堆疊深度的同時完成協程切換。</p>
+
+  <div class="mermaid">
+    flowchart LR
+    Child["📦 <b>子協程 Frame</b><br/>final_suspend()"] -->|await_suspend 回傳 parent_h| TailJump["⚡ <b>Symmetric Transfer</b><br/>Tail Call / JMP 暫存器切換"]
+    TailJump --> Parent["🎯 <b>父協程 Frame</b><br/>直接恢復 (零多餘堆疊開銷)"]
+
+    classDef cNode fill:#f0f9ff,stroke:#0284c7,stroke-width:1.5px,color:#0c4a6e;
+    classDef tNode fill:#f5f3ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
+    classDef pNode fill:#ecfdf5,stroke:#059669,stroke-width:1.5px,color:#064e3b;
+
+    class Child cNode;
+    class TailJump tNode;
+    class Parent pNode;
+  </div>
+
+<h4 id="實戰案例ai-gateway-中的-push-driven-協程執行時序">實戰案例：AI Gateway 中的 Push-Driven 協程執行時序</h4>
+<p>為了具體理解 Push-Driven 模型的運作細節，以我們先前介紹的 <a href="/posts/2026/08-18-cpp23-coroutine-ai-gateway/"><strong>C++23 AI Gateway</strong></a> 專案為例：當 Gateway 處理來自下游客戶端的 SSE 串流轉發請求時，從 Linux <code>epoll</code> 事件就緒、伺服器協程解析請求、啟動上游客戶端子協程、到接收上游 LLM（如 Ollama / vLLM）Token 串流並透過對稱轉移結束協程，整體控制流時序如下：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    autonumber
+    actor Client as 📱 Downstream Client
+    participant EL as 🔄 Linux epoll / EventLoop
+    participant Parent as 📦 Server Coroutine (handle_request)
+    participant Child as 📦 Client Coroutine (stream_request)
+    participant Upstream as 🦙 Upstream LLM (Ollama/vLLM)
+
+    Note over EL,Parent: 【Push 1: 連線事件就緒，直接精確喚醒伺服器協程】
+    Client->>EL: POST /v1/chat/completions (stream: true)
+    EL->>Parent: h_server.resume() (O(1) 直接跳轉至暫停點)
+    activate Parent
+    Parent->>Parent: picohttpparser 解析請求 & std::expected 路由比對
+
+    Note over Parent,Child: 【對稱轉移：父協程切換至子協程，零堆疊增長】
+    Parent->>Child: co_await stream_request()<br/>(設定 continuation_ = h_server，回傳 h_child 尾跳躍)
+    deactivate Parent
+    activate Child
+    Child->>Upstream: 轉發 HTTP POST 請求至上游 LLM
+    Child->>EL: co_await AsyncReadable{upstream_fd}<br/>(註冊 upstream_fd & h_child，暫停出讓控制權)
+    deactivate Child
+
+    Note over EL,Child: 【Push 2: 上游 Token 就緒，EventLoop 直接推入子協程 Frame】
+    Upstream-->>EL: 傳送 SSE Token Chunk (Linux Kernel epoll_wait 喚醒)
+    EL->>Child: h_child.resume() (精確直達 stream_request 中斷點，無需自頂向下 re-poll)
+    activate Child
+    Child->>Client: 即時 Pass-Through 轉發 SSE Chunk
+
+    Note over Child,Parent: 【Push 3: 串流結束，final_suspend 對稱轉移交回父協程】
+    Upstream-->>Child: SSE [DONE] (上游連線關閉 / 完成)
+    Child->>Parent: final_suspend() 尾呼叫跳轉 (return continuation_)
+    deactivate Child
+    activate Parent
+    Parent->>Client: 結束 HTTP 串流回應
+    deactivate Parent
+  </div>
+
+<p><strong>時序關鍵解構：</strong></p>
+<ol>
+<li><strong>精確推動喚醒（Push Resumption）</strong>：當 <code>epoll_wait</code> 捕獲 <code>upstream_fd</code> 的 I/O 事件時，<code>EventLoop</code> 透過暫停時註冊的 <code>coroutine_handle</code>，直接呼叫 <code>h_child.resume()</code>。CPU 暫存器瞬間切換回 <code>stream_request</code> 的 Frame，跳過整個上層呼叫樹的遍歷（$O(1)$ 開銷）。</li>
+<li><strong>對稱轉移無縫交接（Symmetric Transfer）</strong>：父協程喚醒子協程、以及子協程在 <code>final_suspend()</code> 結束後喚醒父協程時，皆透過回傳目標 handle 執行 tail jump，控制權直接「推（Push）」給下一個協程，既不產生遞迴呼叫堆疊，也無需回流至 EventLoop 重新排程。</li>
+</ol>
+<hr>
+<h3 id="22-rust-async基於-futurepollcontext-與-waker-的輪詢機制">2.2 Rust Async：基於 <code>Future::poll</code>、<code>Context</code> 與 <code>Waker</code> 的輪詢機制</h3>
+<p>Rust 的非同步抽象極其精簡，核心定義於 <code>core::future::Future</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> Future {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 核心輪詢介面
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span>&#39;_<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>Self::Output<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    Ready(T),
+</span></span><span style="display:flex;"><span>    Pending,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>一個 <code>async fn</code> 函式在編譯期會被展開為一個包含所有局部變數的 enum 狀態機：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 概念上的編譯展開偽代碼
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">MyTaskStateMachine</span> {
+</span></span><span style="display:flex;"><span>    Start,
+</span></span><span style="display:flex;"><span>    WaitingOnSocket {
+</span></span><span style="display:flex;"><span>        socket: <span style="color:#a6e22e">TcpStream</span>,
+</span></span><span style="display:flex;"><span>        buf: [<span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">1024</span>],
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    WaitingOnTimer {
+</span></span><span style="display:flex;"><span>        timer: <span style="color:#a6e22e">Sleep</span>,
+</span></span><span style="display:flex;"><span>        read_bytes: <span style="color:#66d9ef">usize</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    Done,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> Future <span style="color:#66d9ef">for</span> MyTaskStateMachine {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span> <span style="color:#f92672">=</span> Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(<span style="color:#66d9ef">mut</span> self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span>&#39;_<span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>Self::Output<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> <span style="color:#f92672">*</span>self {
+</span></span><span style="display:flex;"><span>                State::Start <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                    <span style="color:#75715e">// 進入第一階段...
+</span></span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>                State::WaitingOnSocket { <span style="color:#66d9ef">ref</span> <span style="color:#66d9ef">mut</span> socket, <span style="color:#f92672">..</span> } <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">match</span> socket.poll_read(cx) {
+</span></span><span style="display:flex;"><span>                        Poll::Ready(n) <span style="color:#f92672">=&gt;</span> { <span style="color:#75715e">/* 轉移至 WaitingOnTimer */</span> },
+</span></span><span style="display:flex;"><span>                        Poll::Pending <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Poll::Pending, <span style="color:#75715e">// 原路返回
+</span></span></span><span style="display:flex;"><span>                    }
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="waker-與-reactor-喚醒鏈">Waker 與 Reactor 喚醒鏈</h4>
+<p>當底層 I/O（如 Socket）尚未就緒時，<code>poll_read</code> 會將 <code>cx.waker()</code> 複製並註冊至作業系統事件驅動器（如 Linux <code>epoll</code> 的 Mio Reactor）。當網路封包抵達時：</p>
+<ol>
+<li><code>epoll_wait</code> 喚醒 Reactor 執行緒。</li>
+<li>Reactor 找到對應的 <code>Waker</code> 並呼叫 <code>waker.wake()</code>。</li>
+<li><code>Waker</code> 將對應的 <code>Task</code>（通常由 <code>Arc&lt;Task&gt;</code> 包裝）推入 Tokio Executor 的排程佇列（Run Queue）。</li>
+<li>Worker Thread 提取 Task，呼叫最外層頂級 Future 的 <code>poll()</code>。</li>
+<li>頂級 Future 沿著巢狀組合的 <code>.await</code> 樹狀路徑由上而下重新 <code>poll()</code>，直到抵達就緒節點。</li>
+</ol>
+<h4 id="實戰案例tokio--rust-中的-pull-driven-協程執行時序">實戰案例：Tokio / Rust 中的 Pull-Driven 協程執行時序</h4>
+<p>為了與 C++ Push 模型進行對稱比較，我們來看在 Rust（以 Tokio 生態為例）處理相同的 HTTP 請求轉發與 SSE 串流時，Pull-Driven 模型的完整執行時序：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    autonumber
+    actor Client as 📱 Downstream Client
+    participant Reactor as 📡 Tokio Mio Reactor (epoll)
+    participant Exec as ⚙️ Tokio Executor (Run Queue)
+    participant Parent as 🦀 Root Future (handle_request)
+    participant Child as 🦀 Leaf Future (stream_request)
+    participant Upstream as 🦙 Upstream LLM (Ollama/vLLM)
+
+    Note over Reactor,Parent: 【Pull 1: 連線就緒 ➜ 排入佇列 ➜ 自頂向下發起首次 Poll】
+    Client->>Reactor: POST /v1/chat/completions (stream: true)
+    Reactor->>Exec: waker.wake() ➜ 將 Task 推入 Run Queue
+    Exec->>Parent: 1. Executor 呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Parent: 解析請求 & 路由比對
+    Parent->>Child: 2. 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child->>Upstream: 發送 HTTP POST 請求至上游 LLM
+    Child->>Reactor: 3. poll_read() 未就緒 ➜ 註冊 cx.waker() 至 Reactor
+    Child-->>Parent: 4. 回傳 Poll::Pending (原路沿呼叫鏈向上返回)
+    deactivate Child
+    Parent-->>Exec: 5. 回傳 Poll::Pending (Task 讓出 Worker 執行緒)
+    deactivate Parent
+
+    Note over Reactor,Child: 【Pull 2: 上游 Token 就緒 ➜ 再次從根節點遍歷重評估 O(D)】
+    Upstream-->>Reactor: 傳送 SSE Token Chunk (epoll_wait 喚醒)
+    Reactor->>Exec: waker.wake() ➜ Task 重新放回 Run Queue
+    Exec->>Parent: 1. Executor 再次呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Child: 2. 狀態機轉發 ➜ 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child->>Upstream: 3. poll_read() 成功讀取 Token Chunk (Poll::Ready)
+    Child->>Client: 即時轉發 SSE Chunk
+    deactivate Child
+    Parent-->>Exec: 4. 再次返回 Poll::Pending (等待下一個 Chunk)
+    deactivate Parent
+
+    Note over Reactor,Parent: 【Pull 3: 串流結束 ➜ 向上回傳 Poll::Ready(()) 完成任務】
+    Upstream-->>Reactor: SSE [DONE] / EOF
+    Reactor->>Exec: waker.wake()
+    Exec->>Parent: 1. Executor 呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Child: 2. 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child-->>Parent: 3. 串流完畢，回傳 Poll::Ready(())
+    deactivate Child
+    Parent->>Client: 結束 HTTP 回應
+    Parent-->>Exec: 4. 頂層回傳 Poll::Ready(()) (Task 完成並銷毀)
+    deactivate Parent
+  </div>
+
+<p><strong>時序關鍵解構：</strong></p>
+<ol>
+<li><strong>二階段間接喚醒（Reactor ➜ Queue ➜ Executor）</strong>：當 I/O 事件就緒時，Reactor 無法直接跳入中斷點，而是透過 <code>waker.wake()</code> 將整個 Task 排入執行佇列，等待 Worker Thread 領取。</li>
+<li><strong>自頂向下重新評估（$O(D)$ Top-down Re-polling）</strong>：每一次喚醒，Executor 都必須從最外層的 Root Future 開始呼叫 <code>poll(cx)</code>，並由狀態機依序向下轉發至內層 Future，直到抵達就緒節點。</li>
+<li><strong>無棧回退（Unwinding on Pending）</strong>：遇到未就緒的 I/O 時，狀態機逐層回傳 <code>Poll::Pending</code> 讓出執行緒；完成時則逐層回傳 <code>Poll::Ready(T)</code>，無需維護顯式的 Continuation 指標鏈。</li>
+</ol>
+<hr>
+<h3 id="23-執行模型對比精確恢復-vs-頂層向下重評估">2.3 執行模型對比：精確恢復 vs. 頂層向下重評估</h3>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">維度</th>
+					<th style="text-align: left">C++20/23 協程 (Push 模型)</th>
+					<th style="text-align: left">Rust Async (Pull 模型)</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>推進機制</strong></td>
+					<td style="text-align: left">事件發生時，直接 <code>resume()</code> 指定的 handle</td>
+					<td style="text-align: left">事件發生時，<code>wake()</code> 通知排程器重新 <code>poll()</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>呼叫路徑開銷</strong></td>
+					<td style="text-align: left"><strong>$O(1)$ 常數開銷</strong>：直接跳轉至暫停點指令</td>
+					<td style="text-align: left"><strong>$O(D)$ 深度開銷</strong>：從根節點遍歷巢狀 Future 呼叫鏈</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>組合子開銷</strong></td>
+					<td style="text-align: left">複雜組合子（如 <code>when_all</code>）需自行維護計數與 Continuation 鏈</td>
+					<td style="text-align: left"><code>join!</code> / <code>select!</code> 天然由單一 <code>poll()</code> 聚合分發</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>執行緒安全依賴</strong></td>
+					<td style="text-align: left">Handle 可跨執行緒傳遞，需由自訂 Promise 確保同步</td>
+					<td style="text-align: left">依賴 <code>Send</code> / <code>Sync</code> 編譯期自動推導保證執行緒安全</td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h2 id="3-記憶體佈局與配置coroutine-frame-vs-匿名-state-machine">3. 記憶體佈局與配置：Coroutine Frame vs. 匿名 State Machine</h2>
+<p>記憶體配置是 C++ 與 Rust 非同步架構最具實質效能與資源差異的戰場。</p>
+
+  <div class="mermaid">
+    flowchart LR
+    subgraph CP_Mem["⚡ C++ Coroutine Frame (動態配置)"]
+        direction TB
+        CF1["🏷️ 函式指標 (Resume / Destroy Fn)"]
+        CF2["🎯 promise_type 實例 (結果、Continuation 指標)"]
+        CF3["💾 捕獲之函式參數與跨暫停點區域變數"]
+        CF4["🔢 狀態機暫停點索引 (Suspend Index)"]
+        CF_Note["📌 <b>預設配置於 Heap (operator new)</b><br/>可透過 HALO 最佳化內聯至 Stack (Best-Effort)"]
+        CF1 --- CF2 --- CF3 --- CF4 --- CF_Note
+    end
+
+    subgraph RS_Mem["🦀 Rust 匿名 State Machine (編譯期確定)"]
+        direction TB
+        RF1["🏷️ Variant 0 (初始狀態)"]
+        RF2["⏸️ Variant 1 (暫停點 1 + 局部變數)"]
+        RF3["⏸️ Variant 2 (暫停點 2 + 局部變數)"]
+        RF4["🔢 Discriminant 標籤 (Tag)"]
+        RF_Note["📌 <b>編譯期確定大小 (Zero Heap 保證)</b><br/>大小由最大 Variant 決定 (空間可能膨脹)"]
+        RF1 --- RF2 --- RF3 --- RF4 --- RF_Note
+    end
+
+    CP_Mem ~~~ RS_Mem
+
+    classDef cppMem fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef rustMem fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef itemNode fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#1e293b;
+    classDef noteNode fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,stroke-dasharray:3 3,color:#334155;
+
+    class CP_Mem cppMem;
+    class RS_Mem rustMem;
+    class CF1,CF2,CF3,CF4,RF1,RF2,RF3,RF4 itemNode;
+    class CF_Note,RF_Note noteNode;
+  </div>
+
+<h3 id="31-c-coroutine-frame動態分配生命週期脫離與-halo-限制">3.1 C++ Coroutine Frame：動態分配、生命週期脫離與 HALO 限制</h3>
+<h4 id="為什麼-c-協程-frame-預設必須配置在-heap">為什麼 C++ 協程 Frame 預設必須配置在 Heap？</h4>
+<p>在 C++ 中，協程函式在呼叫後會立即回傳一個 <code>Task&lt;T&gt;</code> 物件給呼叫者，而協程本體則可能被排程到背景 EventLoop 繼續執行。這意味著<strong>協程內部局部變數的生命週期，天然長於啟動它的呼叫端堆疊訊框（Caller Stack Frame）</strong>。</p>
+<p>因此，C++ 編譯器預設會在呼叫協程時，透過 <code>operator new</code> 在堆積上分配一塊 <strong>Coroutine Frame</strong>：</p>
+
+  <div class="mermaid">
+    flowchart TB
+    subgraph Frame["📦 Coroutine Frame (堆積記憶體佈局)"]
+        direction TB
+        F1["🏷️ <b>Function Pointers</b><br/>Resume Function · Destroy Function"]
+        F2["🎯 <b>promise_type 實例</b><br/>結果儲存 · continuation_ 鏈結 · exception_ptr"]
+        F3["💾 <b>Captured Parameters</b><br/>傳入之函式引數 (值或參照捕獲)"]
+        F4["🗄️ <b>跨越暫停點之區域變數</b><br/>跨 co_await 存活之局部變數與臨時物件"]
+        F5["🔢 <b>Suspend Index</b><br/>狀態機暫停點索引"]
+        F1 --- F2 --- F3 --- F4 --- F5
+    end
+
+    classDef frameBox fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef fieldNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+    class Frame frameBox;
+    class F1,F2,F3,F4,F5 fieldNode;
+  </div>
+
+<h4 id="haloheap-allocation-elision-optimization的現實限制">HALO（Heap Allocation eLision Optimization）的現實限制</h4>
+<p>C++ 標準允許編譯器在能夠證明「協程的生命週期完全嚴格包含在 Caller 生命週期之內」時，將 Coroutine Frame 內聯到 Caller 的堆疊上，消除 Heap 分配。這項技術由 Gor Nishanov 提出，正式定義於提案 <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0981r0.html">P0981R0: Halo (Coroutine Heap Allocation eLision Optimization)</a>。</p>
+<p>然而在實務上：</p>
+<ol>
+<li><strong>HALO 只是 Best-Effort 最佳化，不是語言標準保證</strong>。</li>
+<li><strong>編譯器支援不一</strong>：截至目前，GCC 尚未實作 coroutine elision；Clang 雖然有 <code>CoroElide</code> pass，但要求協程本體、<code>get_return_object</code>、awaiter 與解構邏輯必須在<strong>同一個編譯單元（TU）內被完整內聯（Inlined）</strong>，一旦跨編譯單元或出現未內聯的虛擬函式呼叫，HALO 就會立即失效並退化為 Heap <code>new</code>。</li>
+<li>業界正在透過屬性（如 <code>[[clang::coro_inplace_task]]</code>）推動確定性的堆疊內聯提案，但尚未正式入標。</li>
+</ol>
+<hr>
+<h3 id="32-rust-匿名-state-machine零-heap-保證與-enum-空間膨脹">3.2 Rust 匿名 State Machine：零 Heap 保證與 Enum 空間膨脹</h3>
+<h4 id="編譯期確定大小的保證">編譯期確定大小的保證</h4>
+<p>Rust 的 <code>async fn</code> 完全不進行任何隱式的 Heap 分配。編譯器會為每個 <code>async</code> 區塊生成一個具體的、未命名的 <code>impl Future</code> 結構體（實質上是一個 <code>enum</code>）。</p>
+<p>當你在 Rust 中寫下巢狀 async 呼叫時：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">step_one</span>() { <span style="color:#75715e">/* ... */</span> }
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">step_two</span>() { <span style="color:#75715e">/* ... */</span> }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">parent_task</span>() {
+</span></span><span style="display:flex;"><span>    step_one().<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>    step_two().<span style="color:#66d9ef">await</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>parent_task</code> 的狀態機大小就是 <code>sizeof(step_one_future)</code>、<code>sizeof(step_two_future)</code> 與自身局部變數聯集的總和。<strong>所有的記憶體在最外層被 <code>tokio::spawn</code>（或在 Stack 上定義）時一次性分配完畢，整個執行過程 0 次額外 Heap Allocation。</strong></p>
+<h4 id="致命代價enum-記憶體浪費與-stack-overflow-風險">致命代價：Enum 記憶體浪費與 Stack Overflow 風險</h4>
+<p>因為 Rust 將所有暫停點表示為 <code>enum</code> 的 Variant，<strong>整個 Future 的大小取決於體積最大（Largest Variant）的那一個暫停點</strong>。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">dangerous_task</span>() {
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> huge_buffer <span style="color:#f92672">=</span> [<span style="color:#ae81ff">0</span><span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">64</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>]; <span style="color:#75715e">// 64KB
+</span></span></span><span style="display:flex;"><span>        do_io(<span style="color:#f92672">&amp;</span>huge_buffer).<span style="color:#66d9ef">await</span>; <span style="color:#75715e">// 暫停點 1：佔用 64KB + overhead
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> small_val <span style="color:#f92672">=</span> <span style="color:#ae81ff">42</span>;
+</span></span><span style="display:flex;"><span>        other_io(small_val).<span style="color:#66d9ef">await</span>; <span style="color:#75715e">// 暫停點 2：此時雖然只需要 4 bytes，但 enum 依然佔用 64KB！
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>若一個深層呼叫鏈中有多個含有較大緩衝區的 <code>async fn</code> 彼此組合，整個頂層 Future 的體積可能達到數百 KB。當在執行緒堆疊上直接傳遞時，極易引發 <strong>Stack Overflow</strong>。在 Rust 中，開發者必須具備高度意識，主動使用 <code>Box::pin(huge_future)</code> 將大型狀態機移至堆積。</p>
+<hr>
+<h2 id="4-自我引用與記憶體位址穩定性">4. 自我引用與記憶體位址穩定性</h2>
+<p>在同步函式中，變數儲存在 CPU 堆疊上，若建立一個指向區域變數的指標（如 <code>let p = &amp;local_buf;</code>），函式結束前堆疊訊框不會被移動，指標永遠安全。</p>
+<p>但在非同步世界中，協程暫停時資料必須留存於狀態機中。若協程在跨越 <code>await</code> 點時保留了一個<strong>指向自己內部其他欄位的參照</strong>，這個狀態機就變成了 <strong>自我引用結構（Self-Referential Struct）</strong>：</p>
+
+  <div class="mermaid">
+    flowchart LR
+    subgraph SelfRef["📦 Self-Referential Struct (自我引用狀態機)"]
+        direction TB
+        Buf["💾 <b>buf: [u8; 1024]</b><br/>自身內部緩衝區 (位址 0x1000)"]
+        Ptr["🔗 <b>ptr: *const u8</b><br/>內部指標欄位 (指向 0x1000)"]
+        Ptr -->|指向同結構內部欄位| Buf
+    end
+
+    classDef srBox fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef innerNode fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#1e293b;
+
+    class SelfRef srBox;
+    class Buf,Ptr innerNode;
+  </div>
+
+<p>如果這個狀態機在記憶體中被移動（Move / Copy），<code>ptr</code> 指向的仍是<strong>舊的記憶體位址</strong>，一旦解參照就會造成記憶體損壞（Use-After-Free / Invalid Access）。</p>
+
+  <div class="mermaid">
+    flowchart LR
+    subgraph MoveHazard["⚠️ 自我引用記憶體移動陷阱"]
+        direction TB
+        Old["舊記憶體位址 0x1000<br/>buf: [Data]<br/>ptr: 指向 0x1000 (自身 buf)"]
+        New["移動至新位址 0x2000 (memcpy)<br/>buf: [Data]<br/>ptr: <b>仍指向 0x1000 (懸空損壞！)</b>"]
+        Old -->|未固定移動| New
+    end
+
+    classDef warnBox fill:#fef2f2,stroke:#ef4444,stroke-width:2px,color:#991b1b;
+    classDef nodeBox fill:#ffffff,stroke:#f87171,stroke-width:1px,color:#7f1d1d;
+    class MoveHazard warnBox;
+    class Old,New nodeBox;
+  </div>
+
+<h3 id="41-c-的處理方式天然的-frame-位址穩定性">4.1 C++ 的處理方式：天然的 Frame 位址穩定性</h3>
+<p>C++ 在這方面非常自然：</p>
+<ol>
+<li>Coroutine Frame 一旦在 Heap（或透過 HALO 分配在特定 Stack）上生成，其位址在整個協程生命週期內<strong>絕對不會移動</strong>。</li>
+<li>外部持有的 <code>std::coroutine_handle&lt;P&gt;</code> 實質上就是一個指向 Frame 的不可變裸指標（Pointer-to-Frame）。</li>
+<li>協程內部的局部變數指針與參照天然具備位址穩定性，因此 C++ 不需要引入任何額外的型別系統標記來處理自我引用問題。</li>
+</ol>
+<hr>
+<h3 id="42-rust-的處理方式pinmut-self-與-unpin-的型別安全保證">4.2 Rust 的處理方式：<code>Pin&lt;&amp;mut Self&gt;</code> 與 <code>Unpin</code> 的型別安全保證</h3>
+<p>Rust 的根本設計哲學是 <strong>所有型別預設都是可移動的（Movable by default via <code>memcpy</code>）</strong>。為了在不破壞所有權體系的前提下支援自我引用狀態機，Rust 核心團隊（由 withoutboats 主導設計）在標準庫中引進了最精妙但也最令人頭疼的抽象：<a href="https://doc.rust-lang.org/std/pin/index.html"><code>std::pin::Pin</code></a>（詳見 withoutboats 的經典專文 <a href="https://without.boats/blog/pin/"><em>Pin</em></a>）。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// core::pin::Pin 定義
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;</span>Ptr<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    pointer: <span style="color:#a6e22e">Ptr</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<ol>
+<li><strong><code>Unpin</code> auto trait</strong>：絕大多數一般 Rust 型別（<code>i32</code>、<code>String</code>、<code>Vec</code>）都自動實作了 <code>Unpin</code>，代表它們即便被 Pin 住也可以隨意移動。</li>
+<li><strong><code>!Unpin</code>（非非固定）</strong>：編譯器生成的 <code>async fn</code> 狀態機自動被標記為 <code>!Unpin</code>。</li>
+<li><strong>安全契約</strong>：一旦一個 <code>!Unpin</code> 的 Future 被包裝進 <code>Pin&lt;&amp;mut F&gt;</code>，Rust 的型別系統便<strong>完全剝奪了獲取 <code>&amp;mut F</code> 可變參照的能力</strong>（除非使用 <code>unsafe</code>）。沒有了 <code>&amp;mut F</code>，開發者就無法呼叫 <code>std::mem::swap</code> 或 <code>std::mem::replace</code> 將其移出，從而在編譯期徹底杜絕了移動自我引用結構的可能性！</li>
+</ol>
+<blockquote><p><strong>代價</strong>：<code>Pin</code> 帶來了龐大的心智負擔。任何手動實作 <code>Future</code>、操作底層串流（<code>Stream</code>）或撰寫自訂組合子的開發者，都必須與 <code>pin_project</code>、<code>Pin&lt;&amp;mut Self&gt;</code> 與 <code>unsafe</code> projection 進行艱苦的博弈。</p>
+</blockquote><hr>
+<h2 id="5-取消語義協同式檢查-vs-drop-to-cancel">5. 取消語義：協同式檢查 vs. Drop-to-Cancel</h2>
+<p>非同步任務的取消在分散式系統、逾時控制與競態處理（Race / Select）中無處不在。兩種語言在此處體現了「顯式協同」與「隱式結構化」的哲學對立。</p>
+<h3 id="51-c-協同式取消cooperative-cancellation">5.1 C++ 協同式取消（Cooperative Cancellation）</h3>
+<p>C++20/23 採用以 <code>std::stop_token</code> / <code>std::stop_source</code> 為基礎的顯式協同取消模型：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>Task<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">void</span><span style="color:#f92672">&gt;</span> handle_request(std<span style="color:#f92672">::</span>stop_token stoken, Socket sock) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span>stoken.stop_requested()) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">auto</span> data <span style="color:#f92672">=</span> <span style="color:#66d9ef">co_await</span> sock.async_read();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>data) <span style="color:#66d9ef">co_return</span>;
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 必須主動感知取消請求並乾淨退出
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">co_await</span> sock.async_write(process(data));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<ul>
+<li><strong>優點</strong>：協程狀態轉移永遠受控，資源清理邏輯與一般控制流完全一致，不會在任意未知的暫停點突兀暴斃。</li>
+<li><strong>缺點</strong>：非強制性。若協程內部深層迴圈或某個 Awaiter 漏掉了檢查 <code>stoken.stop_requested()</code>，取消請求將被完全忽視（Hang 住）。</li>
+</ul>
+<hr>
+<h3 id="52-rust-結構性取消drop-to-cancel-與取消安全性陷阱">5.2 Rust 結構性取消：Drop-to-Cancel 與「取消安全性」陷阱</h3>
+<p>Rust 的取消機制相當直接：<strong>直接 Drop 該 Future</strong>。</p>
+<p>在 Rust 中，當 <code>tokio::select!</code> 的某一個分支先完成，或者 <code>tokio::time::timeout</code> 觸發時，尚未完成的 Future 會直接脫離作用域，觸發其解構函式（<code>Drop::drop</code>）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 典型的 select! 結構
+</span></span></span><span style="display:flex;"><span>tokio::<span style="color:#a6e22e">select!</span> {
+</span></span><span style="display:flex;"><span>    res <span style="color:#f92672">=</span> read_socket_packet(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> socket) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        process(res);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    _ <span style="color:#f92672">=</span> tokio::time::sleep(Duration::from_secs(<span style="color:#ae81ff">5</span>)) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;逾時！read_socket_packet 的 Future 直接被 Drop 清理！&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="致命暗坑取消安全性">致命暗坑：取消安全性</h4>
+<p>Drop-to-Cancel 雖然優雅，卻在非同步生態中埋下了無數難以察查的 Bug。</p>
+<p><strong>什麼是取消不安全（Cancellation Unsafe）？</strong>
+若一個 Future 的操作跨越了多個內部 <code>.await</code> 暫停點，當它在中間某個點被 Drop 時，已讀取或已計算的中間狀態直接蒸發，導致資料損壞或協定不同步！</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// ❌ 取消不安全範例：LinesCodec / AsyncReadExt::read_exact
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">process_command</span>(stream: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> TcpStream) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> header <span style="color:#f92672">=</span> [<span style="color:#ae81ff">0</span><span style="color:#66d9ef">u8</span>; <span style="color:#ae81ff">4</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 若 select! 在此處 read_exact 讀完 header 後、下一步讀 body 之前發生逾時並 Drop：
+</span></span></span><span style="display:flex;"><span>    stream.read_exact(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> header).<span style="color:#66d9ef">await</span>.unwrap(); 
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> body <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[<span style="color:#ae81ff">0</span><span style="color:#66d9ef">u8</span>; <span style="color:#66d9ef">u32</span>::from_be_bytes(header) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 下一次外部再次呼叫 process_command 時，TCP stream 中的 Header 已經不見了！協定解析直接崩潰！
+</span></span></span><span style="display:flex;"><span>    stream.read_exact(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> body).<span style="color:#66d9ef">await</span>.unwrap(); 
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>在 Rust 非同步生態中，所有函式庫（特別是 Tokio）都必須在其官方文件中嚴格標註每個 API 是否具備 <a href="https://tokio.rs/tokio/tutorial/select#cancellation-safety">Cancellation Safety</a>。若非安全，開發者必須手動在迴圈外保存狀態，或改用背景 Task 搭配 <code>mpsc</code> 通道解耦。</p>
+<hr>
+<h2 id="6-核心-io-模型適應性矛盾epoll-readiness-與-io_uring-completion">6. 核心 I/O 模型適應性矛盾：epoll (Readiness) 與 io_uring (Completion)</h2>
+<p>作業系統核心的非同步 I/O 設計可分為兩大流派：</p>
+<ol>
+<li><strong>Readiness 模型（反應器 Reactor）</strong>：如 Linux <code>epoll</code>、macOS <code>kqueue</code>。核心只通知「檔案描述符何時<strong>可讀/可寫</strong>」，實際的資料搬移由應用層在就緒後呼叫 <code>read()</code>/<code>write()</code> 完成。</li>
+<li><strong>Completion 模型（前導器 Proactor）</strong>：如 Linux <code>io_uring</code>、Windows <code>IOCP</code>。應用層預先提供 Buffer 將操作提交至核心佇列，核心於背景完成資料搬移後，才通知應用層「<strong>I/O 已完成</strong>」（詳見 Linux 核心維護者 Jens Axboe 的權威白皮書 <a href="https://kernel.dk/io_uring.pdf"><em>Efficient IO with io_uring</em></a>）。</li>
+</ol>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph Readiness["📡 Readiness 模型 (Linux epoll / macOS kqueue)"]
+        direction TB
+        E1["1. 註冊 fd 至 epoll"] --> E2["2. epoll_wait 通知: fd 可讀！"]
+        E2 --> E3["3. 應用程式呼叫 read(fd, &mut buf) 抓取資料"]
+    end
+
+    subgraph Completion["📥 Completion 模型 (Linux io_uring / Windows IOCP)"]
+        direction TB
+        C1["1. 應用程式提交 SQE: 請核心把資料讀入 buf 指標"]
+        C1 --> C2["2. Linux 核心接管 Buffer，非同步進行 DMA 寫入"]
+        C2 --> C3["3. 核心完成寫入，向 CQE 發送完成通知"]
+    end
+
+    E3 ==>|天生契合| Pull["🦀 <b>Rust Pull 模型 (Future::poll)</b><br/>短暫借用 &mut [u8]，隨時可安全 Drop"]
+    C3 ==>|天生契合| Push["⚡ <b>C++ Push 模型 (co_await await_suspend)</b><br/>Buffer 於 Frame 中位址固定，直接交給核心"]
+
+    classDef rBox fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+    classDef cBox fill:#f5f3ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
+    classDef rustTarget fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef cppTarget fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef innerNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class Readiness rBox;
+    class Completion cBox;
+    class Pull rustTarget;
+    class Push cppTarget;
+    class E1,E2,E3,C1,C2,C3 innerNode;
+  </div>
+
+<h3 id="61-epoll-與-rust-pull-模型的天然契合">6.1 epoll 與 Rust Pull 模型的天然契合</h3>
+<p>Rust 的 <code>poll()</code> 與 <code>epoll</code> 是一對天作之合：</p>
+<ul>
+<li><code>poll()</code> 實質上就是「嘗試讀取一次」。</li>
+<li>若得到 <code>EAGAIN</code> / <code>WouldBlock</code>，就回傳 <code>Poll::Pending</code>，並將 <code>Waker</code> 掛上 <code>epoll</code>。</li>
+<li><code>epoll</code> 通知可讀時喚醒 Task，再次呼叫 <code>poll()</code>，執行 non-blocking <code>read()</code>。</li>
+<li><strong>此時 Buffer 的所有權全程在應用層堆疊上，隨時可以安全 Drop。</strong></li>
+</ul>
+<hr>
+<h3 id="62-io_uring-與-rust-drop-to-cancel-的巨大災難">6.2 io_uring 與 Rust Drop-to-Cancel 的巨大災難</h3>
+<p>然而，當面對代表 Linux 未來的新一代高效能 I/O 介面 <strong><code>io_uring</code></strong> 時，Rust 的 Pull + Drop 模型遭遇到嚴重的<strong>底層架構衝突（I/O 模型相容性矛盾）</strong>：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    autonumber
+    actor App as 🦀 Rust Future
+    participant Kernel as 🐧 Linux 核心 (io_uring)
+    participant Mem as 💾 記憶體 (Buffer: 0x1000)
+
+    App->>Kernel: 提交 SQE 讀取請求 (傳入 buffer: 0x1000 指標)
+    Note over App,Mem: 觸發 select! 逾時 ➜ Future 立即被 Drop！<br/>Buffer 所在的 0x1000 記憶體被釋放回收
+    Kernel-->>Mem: 核心非同步完成 DMA 傳輸，直接寫入 0x1000
+    Note over Mem: 💥 <b>Use-After-Free 記憶體毀損！</b> (Undefined Behavior)
+  </div>
+
+<ol>
+<li>在 <code>io_uring</code> 中，當你發起非同步讀取時，<strong>Linux 核心在操作完成前實質擁有該 Buffer 記憶體的寫入權</strong>。</li>
+<li>若在核心完成傳輸之前，外層 Rust Future 觸發了 <code>select!</code> 逾時被 <strong>Drop</strong>，Buffer 所在的記憶體會被立即回收甚至重新分配給其他資料結構。</li>
+<li>稍後 Linux 核心將網路封包寫入該記憶體位址，直接造成 <strong>記憶體損壞（Memory Corruption）與 Undefined Behavior</strong>！</li>
+</ol>
+<h4 id="rust-的妥協與代價">Rust 的妥協與代價</h4>
+<p>為了解決這個問題，Rust 傳統的 <code>AsyncRead::poll_read(&amp;mut self, buf: &amp;mut [u8])</code> 介面在 <code>io_uring</code> 下完全無法使用。以 <code>tokio-uring</code>、<code>monoio</code> 為代表的函式庫被迫大幅重構：</p>
+<ul>
+<li>放棄借用參照，全面改用 <strong>所有權轉移介面（Owned Buffer）</strong>：
+<code>async fn read&lt;B: IoBufMut&gt;(self, buf: B) -&gt; (Result&lt;usize&gt;, B)</code></li>
+<li>建立專屬的運行時緩衝池（Buffer Pool）與內核取消佇列，強行阻止被 Drop 的 Buffer 提早釋放，帶來了顯著的複雜度與生態割裂。</li>
+</ul>
+<ol>
+<li><strong>核心直接操作 User Space Buffer</strong>：<code>io_uring</code> 是 Proactor 完成模型。當你提交 <code>io_uring_prep_read</code> 時，核心持有 Buffer 指標並開始背景 DMA 傳輸。</li>
+<li><strong>Drop-to-Cancel 導致 Use-After-Free 災難</strong>：若 Future 在 I/O 尚未完成時被 <code>tokio::select!</code> Drop 銷毀，Buffer 所在的記憶體會被立刻釋放或重用！隨後 Linux 核心完成 DMA 寫入時，將直接覆寫已被回收的記憶體區域，引發嚴重的記憶體毀損或安全漏洞。</li>
+<li><strong>Rust 生態的妥協與修補</strong>：
+<ul>
+<li>傳統方案：強制將 Buffer 搬移至 Heap（<code>Box</code> / <code>Arc</code>）並將所有權轉移給 I/O 驅動，待完成時再傳回（帶來 Heap 分配開銷與借用檢查摩擦）。</li>
+<li>現代方案：如 <a href="https://github.com/compio-rs/compio">compio</a> 框架，不得不放棄標準 <code>Future</code> 抽象，改為專屬的 Proactor 運作模式。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="63-io_uring-與-c-push-協程的天然共生">6.3 io_uring 與 C++ Push 協程的天然共生</h3>
+<p>相反地，C++20/23 協程的設計原生完美適配 <code>io_uring</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// 典型的 C++ io_uring Awaiter 模式
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">UringReadAwaiter</span> {
+</span></span><span style="display:flex;"><span>    io_uring<span style="color:#f92672">*</span> ring;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fd;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> buf;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">unsigned</span> nbytes;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> cqe_res <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">await_ready</span>() <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">noexcept</span> { <span style="color:#66d9ef">return</span> false; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">await_suspend</span>(std<span style="color:#f92672">::</span>coroutine_handle<span style="color:#f92672">&lt;&gt;</span> h) <span style="color:#66d9ef">noexcept</span> {
+</span></span><span style="display:flex;"><span>        io_uring_sqe<span style="color:#f92672">*</span> sqe <span style="color:#f92672">=</span> io_uring_get_sqe(ring);
+</span></span><span style="display:flex;"><span>        io_uring_prep_read(sqe, fd, buf, nbytes, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 直接將協程 handle 位址作為 user_data
+</span></span></span><span style="display:flex;"><span>        io_uring_sqe_set_data(sqe, h.address());
+</span></span><span style="display:flex;"><span>        io_uring_submit(ring);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">await_resume</span>() <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">noexcept</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> cqe_res;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<ol>
+<li><code>buf</code> 存放在穩定的 Coroutine Frame 內，位址永不位移。</li>
+<li>提交 <code>sqe</code> 時，直接將 <code>coroutine_handle</code> 作為 <code>user_data</code> 傳給核心。</li>
+<li>C++ 沒有語言級隱式的 Drop-to-cancel，Buffer 不會在核心未知的情況下被自動釋放（但開發者仍需注意：若手動銷毀 Frame，必須確保核心在途 I/O 已透過 <code>IORING_OP_ASYNC_CANCEL</code> 取消或等待 CQE 回收）。</li>
+<li>當核心完成 I/O 產生 <code>cqe</code> 時，EventLoop 取得 <code>user_data</code>，直接一條指令 <code>coroutine_handle::from_address(cqe-&gt;user_data).resume()</code> 恢復協程。</li>
+<li><strong>架構簡潔、零摩擦、零所有權搬移包裝，高度契合現代 Completion I/O 模型。</strong></li>
+</ol>
+<hr>
+<h2 id="7-標準庫與生態哲學的對決">7. 標準庫與生態哲學的對決</h2>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph CPPEco["⚡ C++ 生態：底層積木 · 標準庫留白"]
+        direction TB
+        C_Core["C++20: 核心機制 (co_await, promise_type, handle)"]
+        C_Std["標準庫留白 (無官方 Task 與 EventLoop)"]
+        C_Frag["生態分散：Boost.Asio / cppcoro / libcoro / Folly"]
+        C_Color["彩色函式痛點：多重 Task 型別互不相容"]
+        C_Future["C++26: P2300 std::execution 統一大一統抽象"]
+        C_Core --> C_Std --> C_Frag --> C_Color --> C_Future
+    end
+
+    subgraph RustEco["🦀 Rust 生態：核心契約 · 社群事實標準"]
+        direction TB
+        R_Core["Rust 1.39: core::future::Future 核心契約"]
+        R_Tokio["Tokio 成為事實標準 Runtime"]
+        R_Rich["繁榮相容生態 (Hyper, Axum, Tonic, Reqwest)"]
+        R_Lockin["代價：Tokio Runtime 鎖定"]
+        R_Color["彩色函式痛點：async fn 語法傳染性"]
+        R_Core --> R_Tokio --> R_Rich --> R_Lockin --> R_Color
+    end
+
+    classDef c1 fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef r1 fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef subNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class CPPEco c1;
+    class RustEco r1;
+    class C_Core,C_Std,C_Frag,C_Color,C_Future,R_Core,R_Tokio,R_Rich,R_Lockin,R_Color subNode;
+  </div>
+
+<h3 id="71-c極簡語言機制與遲來的-stdexecution-p2300">7.1 C++：極簡語言機制與遲來的 <code>std::execution</code> (P2300)</h3>
+<p>C++ 委員會在 C++20 採取了「<strong>先提供最底層語言機制，將上層抽象留給社群探索</strong>」的策略。</p>
+<ul>
+<li><strong>代價</strong>：C++20 出爐時，標準庫甚至沒有提供一個官方的 <code>std::task&lt;T&gt;</code>（僅有 C++23 補上的 <code>std::generator&lt;T&gt;</code>）。每個函式庫（Boost.Asio、Seastar、Folly、cppcoro）都各自實作了一套互不相容的 <code>Task</code> 與 <code>EventLoop</code>，導致生態極度碎片化。</li>
+<li><strong>未來展望</strong>：C++26 正在推進劃時代的 <a href="https://wg21.link/p2300"><strong>P2300 <code>std::execution</code>（Senders / Receivers 模型）</strong></a>，試圖為 C++ 提供統一的非同步執行拓撲、排程器抽象與演算法管線，讓協程能與 GPU 運算（CUDA/HIP）、執行緒池以及分散式排程器無縫融合。</li>
+</ul>
+<h3 id="72-rust統一的-future-契約與-tokio-的天下">7.2 Rust：統一的 <code>Future</code> 契約與 Tokio 的天下</h3>
+<p>Rust 在語言誕生之初就確立了 <code>core::future::Future</code> 作為唯一的通用契約。</p>
+<ul>
+<li><strong>優勢</strong>：任何第三方函式庫只要針對 <code>Future</code> 撰寫，就能無縫組合。這造就了 Rust 繁榮且高度一致的非同步生態系（Axum, Reqwest, Tonic, Tower）。</li>
+<li><strong>代價</strong>：<strong>Runtime Lock-in</strong>。雖然理論上 Runtime 可替換（async-std, smol），但 Tokio 幾乎壟斷了生態，非 Tokio 生態的庫寸步難行。</li>
+</ul>
+<hr>
+<h3 id="73-無堆疊協程的共同宿命彩色函式">7.3 無堆疊協程的共同宿命：彩色函式</h3>
+<p>Bob Nystrom 於 2015 年發表的傳世名文 <a href="https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/"><strong>《What Color is Your Function?》</strong></a>，精闢揭示了非同步語言中函式被染色的痛苦現象。這個問題並非任何單一語言的特產，而是<strong>所有無堆疊協程（Stackless Coroutines）架構與生俱來的物理約束</strong>（相較於 Go 的 Goroutine 或 Java 的 Virtual Threads 等具備獨立堆疊的綠色執行緒）：</p>
+
+  <div class="mermaid">
+    flowchart LR
+    subgraph SyncWorld["🔵 藍色世界 (同步函式)"]
+        direction TB
+        S1["一般同步函式<br/><code>void do_work() / fn do_work()</code>"]
+        S2["❌ <b>無法直接呼叫 co_await / .await</b><br/>因為缺乏獨立堆疊，無法跨一般函式訊框暫停"]
+        S1 --- S2
+    end
+
+    subgraph AsyncWorld["🔴 紅色世界 (非同步協程)"]
+        direction TB
+        A1["非同步協程函式<br/><code>Task&lt;void&gt; / async fn</code>"]
+        A2["⚡ <b>型別傳染性 (Viral Propagation)</b><br/>呼叫端必須一路向上改寫為協程，或透過 Blocking Runner 接管"]
+        A1 --- A2
+    end
+
+    SyncWorld -.->|必須透過 block_on / sync_wait 橋接| AsyncWorld
+
+    classDef syncBox fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef asyncBox fill:#fef2f2,stroke:#ef4444,stroke-width:2px,color:#991b1b;
+    classDef innerN fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class SyncWorld syncBox;
+    class AsyncWorld asyncBox;
+    class S1,S2,A1,A2 innerN;
+  </div>
+
+<ul>
+<li><strong>Rust 的染色（語法與型別單一染色）</strong>：
+在 Rust 中，函式標記為 <code>async fn</code> 後，回傳型別被包裝為 <code>impl Future</code>。普通同步函式不能直接 <code>.await</code> 它，必須一路將上層呼叫鏈都改寫為 <code>async fn</code>，直到 main 函式透過 <code>#[tokio::main]</code> 啟動 Runtime。其優點在於所有非同步函式都共享同一個 <code>Future</code> 契約，彼此無縫相容。</li>
+<li><strong>C++ 的染色（型別感染與「多重色系碎片化」）</strong>：
+在 C++ 中，函式本體只要出現 <code>co_await</code>，其回傳型別就<strong>必須</strong>改寫為對應的協程型別（如 <code>Task&lt;T&gt;</code>）。普通同步函式同樣不能直接 <code>co_await</code>，會一路向外傳染。
+更痛苦的是，由於 C++ 標準庫未統一定義 <code>std::task&lt;T&gt;</code>，C++ 出現了「<strong>多重不相容的紅色</strong>」：
+<ul>
+<li>Boost.Asio 染成了 <code>asio::awaitable&lt;T&gt;</code></li>
+<li>Folly 染成了 <code>folly::coro::Task&lt;T&gt;</code></li>
+<li>各家開源庫自製了專屬的 <code>Task&lt;T&gt;</code>
+不同庫之間的協程無法直接 <code>co_await</code> 彼此，工程師必須撰寫大量的轉接層（Adapters）與橋接包裝。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="8-全方位架構對比總結表">8. 全方位架構對比總結表</h2>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">比較維度</th>
+					<th style="text-align: left">C++20/23 協程 (Coroutines)</th>
+					<th style="text-align: left">Rust 非同步 (Async / Future)</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>驅動模型</strong></td>
+					<td style="text-align: left"><strong>Push-Driven（推動式）</strong><br/>基於 Continuation 與 <code>resume()</code> 直接喚醒</td>
+					<td style="text-align: left"><strong>Pull-Driven（拉取式）</strong><br/>基於 <code>Future::poll()</code> 與 Reactor 輪詢</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>執行恢復開銷</strong></td>
+					<td style="text-align: left"><strong>$O(1)$</strong> 直達中斷點；支援對稱轉移尾呼叫最佳化</td>
+					<td style="text-align: left"><strong>$O(D)$</strong> 每次喚醒需從最外層 Future 遞迴向下重評估</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>狀態機記憶體</strong></td>
+					<td style="text-align: left"><strong>Coroutine Frame</strong><br/>預設 Heap 分配；HALO 最佳化為編譯器 Best-Effort</td>
+					<td style="text-align: left"><strong>匿名結構體 / Enum</strong><br/>編譯期精確確定大小；保證 0 堆積配置</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>記憶體空間浪費</strong></td>
+					<td style="text-align: left">無（每個 Frame 精確容納自身狀態）</td>
+					<td style="text-align: left"><strong>Largest Variant 膨脹</strong>（取決於最大暫停點局部變數總和）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>自我引用處理</strong></td>
+					<td style="text-align: left"><strong>指針天然穩定</strong><br/>Frame 在生命週期內位址固定不變</td>
+					<td style="text-align: left"><strong><code>Pin&lt;&amp;mut Self&gt;</code> 機制</strong><br/>型別系統靜態封裝，防止安全移動</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>取消機制 (Cancellation)</strong></td>
+					<td style="text-align: left"><strong>協同式取消</strong>（<code>std::stop_token</code> 顯式檢查）</td>
+					<td style="text-align: left"><strong>結構性取消</strong>（Drop-to-Cancel 隱式解構）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>取消風險</strong></td>
+					<td style="text-align: left">容易漏檢查導致取消請求被忽略</td>
+					<td style="text-align: left"><strong>取消不安全性（Cancellation Safety）</strong><br/>狀態丟失與協定損壞陷阱</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>I/O 模型契合度</strong></td>
+					<td style="text-align: left"><strong>天生契合 Completion (Proactor)</strong><br/>與 <code>io_uring</code> / <code>IOCP</code> 零摩擦結合</td>
+					<td style="text-align: left"><strong>天生契合 Readiness (Reactor)</strong><br/>與 <code>epoll</code> / <code>kqueue</code> 完美整合；在 <code>io_uring</code> 遭遇架構衝突與 Buffer 生命週期矛盾</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>彩色函式 (Function Coloring)</strong></td>
+					<td style="text-align: left"><strong>存在（多重色系碎片化）</strong><br/>回傳型別被強制改為 <code>Task&lt;T&gt;</code>，且跨庫型別互不相容</td>
+					<td style="text-align: left"><strong>存在（單一色系統一）</strong><br/><code>async fn</code> 語法傳染，但全生態共享 <code>Future</code> 契約</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>標準庫抽象</strong></td>
+					<td style="text-align: left"><strong>底層積木</strong>（標準庫留白；C++26 <code>std::execution</code> 整合中）</td>
+					<td style="text-align: left"><strong>統一核心契約</strong>（<code>core::future::Future</code> 全生態通用）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>生態繁榮度</strong></td>
+					<td style="text-align: left">各家自立門戶（Boost.Asio、Folly、自製輕量 runtime）</td>
+					<td style="text-align: left">Tokio 高度統治（生態一致性極高，但有 Runtime 鎖定）</td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h2 id="9-系統架構師的技術選型指南">9. 系統架構師的技術選型指南</h2>
+<p>在面對實際工程專案時，如何在這兩種架構之間做出明智的技術選型？</p>
+<h3 id="推薦選擇-c2023-協程的場景">推薦選擇 C++20/23 協程的場景：</h3>
+<ol>
+<li><strong>精確硬體控制與自製輕量 Runtime</strong>：如我們在前文介紹的 <a href="/posts/2026/08-18-cpp23-coroutine-ai-gateway/">C++23 AI Gateway</a>，不依賴任何外部框架，以數百行程式碼即可基於 <code>epoll</code> 或 <code>io_uring</code> 打造專屬的極簡非同步核心，二進位檔體積僅數 MB。</li>
+<li><strong>深度依賴 Linux <code>io_uring</code> / Windows IOCP 的儲存與網路底座</strong>：在需要 Completion 模型與 Buffer 生命週期嚴密控制的高效能儲存引擎（如高效能 KV 資料庫、分散式檔案系統）中，C++ 協程能提供最低的抽象開銷。</li>
+<li><strong>異質運算管線（Heterogeneous Computing）</strong>：當非同步任務需要跨越 CPU 執行緒、GPU Stream（CUDA/Vulkan）與專用加速器時，C++ 的 Push 模型與未來的 P2300 Senders/Receivers 能提供更自然的排程拓撲。</li>
+</ol>
+<h3 id="推薦選擇-rust-async-的場景">推薦選擇 Rust Async 的場景：</h3>
+<ol>
+<li><strong>雲原生微服務、API 閘道與標準網路應用</strong>：面對典型基於 <code>epoll</code> 的 HTTP/gRPC/WebSocket 服務，Rust 擁有成熟度無可匹敵的 Tokio/Axum/Tonic 生態，開發效率與社群函式庫支援遠勝 C++。</li>
+<li><strong>對記憶體安全與並發安全有絕對嚴格要求的系統</strong>：Rust 的型別系統在編譯期保證了非同步跨執行緒傳遞的 <code>Send</code>/<code>Sync</code> 安全性，徹底消除了 Data Race 與未定義行為。</li>
+<li><strong>嵌入式無堆積（no_std / Bare-Metal）環境</strong>：在沒有動態記憶體配置器（Heap Allocator）的微控制器上，Rust Future 的編譯期確定大小與零 Heap 分配保證，是 C++ 協程難以企及的巨大優勢。</li>
+</ol>
+<hr>
+<h2 id="10-結語">10. 結語</h2>
+<p>C++20/23 協程與 Rust Async/Future 代表了系統級非同步程式設計的兩座不同巔峰：</p>
+<ul>
+<li><strong>C++ 選擇了「機制優先（Mechanism over Policy）」與「高度靈活性」</strong>，賦予工程師底層指標與控制流的完全掌控權，在 Completion I/O 與自訂排程上展現出純粹的高效與優雅，但代價是生態碎片化與需要工程師自行維護生命週期安全。</li>
+<li><strong>Rust 選擇了「型別安全優先」與「結構化約束」</strong>，以 <code>Future::poll</code> 與 <code>Pin</code> 為基石，構建了一個零 Heap 分配、記憶體絕對安全的非同步王國，但在取消安全與 <code>io_uring</code> 等新興架構上面臨了設計哲學的挑戰。</li>
+</ul>
+<p>深刻理解兩者在底層狀態機、記憶體佈局與 I/O 模型的取捨，不僅能讓我們在撰寫非同步程式碼時洞悉每一行 <code>.await</code> / <code>co_await</code> 背後的硬體代價，更能幫助我們在未來的系統架構設計中，做出最精準的工程決策！</p>
+<hr>
+<h2 id="11-延伸閱讀與經典文獻">11. 延伸閱讀與經典文獻</h2>
+<h3 id="經典設計理論">經典設計理論</h3>
+<ul>
+<li>Bob Nystrom (2015): <a href="https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/">What Color is Your Function?</a></li>
+<li>withoutboats (2019): <a href="https://without.boats/blog/why-async-rust/">Why Async Rust?</a></li>
+</ul>
+<h3 id="c-協程與標準演進">C++ 協程與標準演進</h3>
+<ul>
+<li>Lewis Baker: <a href="https://lewissbaker.github.io/2017/09/25/coroutine-theory">Coroutine Theory</a> 系列專文與 <a href="https://lewissbaker.github.io/2020/05/11/understanding_symmetric_transfer">C++20 Coroutines: Understanding Symmetric Transfer</a></li>
+<li>Gor Nishanov (2018): <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0981r0.html">P0981R0: Halo: Coroutine Heap Allocation eLision Optimization</a></li>
+<li>WG21 提案: <a href="https://wg21.link/p2300">P2300: <code>std::execution</code> (Senders/Receivers)</a></li>
+</ul>
+<h3 id="rust-非同步與安全性契約">Rust 非同步與安全性契約</h3>
+<ul>
+<li>withoutboats (2018): <a href="https://without.boats/blog/pin/">Pin</a></li>
+<li>Rust 官方文件: <a href="https://doc.rust-lang.org/std/pin/index.html"><code>std::pin::Pin</code></a></li>
+<li>Tokio 官方教學: <a href="https://tokio.rs/tokio/tutorial/select#cancellation-safety">Cancellation Safety in <code>tokio::select!</code></a></li>
+</ul>
+<h3 id="作業系統-io-架構">作業系統 I/O 架構</h3>
+<ul>
+<li>Jens Axboe (2019): <a href="https://kernel.dk/io_uring.pdf">Efficient IO with io_uring (PDF)</a></li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+
+</body>
+</html>

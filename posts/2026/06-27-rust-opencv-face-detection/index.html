@@ -1,0 +1,780 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>即時人臉與特徵點偵測 - 在 Rust 中使用 OpenCV 實現臉部特徵標定</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-27-rust-opencv-face-detection/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-27-rust-opencv-face-detection/"/>
+  <meta property="og:title" content="即時人臉與特徵點偵測 - 在 Rust 中使用 OpenCV 實現臉部特徵標定"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-06-27 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="opencv"/>
+  
+  <meta property="og:article:tag" content="computer-vision"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/06-09-tiny-llm-deep-dive-9-main/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            tiny-llm-runner 深入解讀 (9)
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/06-28-face-mosaic/">
+            影片自動人臉打碼
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">即時人臉與特徵點偵測</h1>
+      
+      <div class="post-subtitle">在 Rust 中使用 OpenCV 實現臉部特徵標定</div>
+      
+      <div class="post-meta">
+        <span class="post-date">June 27, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/opencv"><span class="label label-primary">opencv</span></a>
+        
+        <a href="/tags/computer-vision"><span class="label label-primary">computer-vision</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Aug 12, 2026 - <a href="/posts/2026/08-12-voice-assistant/">在 Rust 中實驗本機語音助理</a></li>
+  
+    <li>Aug 09, 2026 - <a href="/posts/2026/08-09-ip-camera/">打造跨平台高效能 IP Camera 視訊串流伺服器</a></li>
+  
+    <li>Aug 08, 2026 - <a href="/posts/2026/08-08-gesture-control/">打造零延遲 AI 手勢作業系統控制器</a></li>
+  
+    <li>Aug 07, 2026 - <a href="/posts/2026/08-07-depth-relief/">用 Rust 把 2D 相片變成 3D 列印浮雕</a></li>
+  
+    <li>Jun 28, 2026 - <a href="/posts/2026/06-28-face-mosaic/">影片自動人臉打碼</a></li>
+  
+    <li>Jun 27, 2026 - <a href="/posts/2026/06-27-rust-opencv-face-detection/">即時人臉與特徵點偵測</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama</a></li>
+  
+    <li>May 25, 2026 - <a href="/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)</a></li>
+  
+    <li>May 21, 2026 - <a href="/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站</a></li>
+  
+    <li>May 20, 2026 - <a href="/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器</a></li>
+  
+    <li>Mar 21, 2026 - <a href="/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-emu/">NES 模擬器完成</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-apu/">NES APU 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-ppu/">NES PPU 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU</a></li>
+  
+    <li>Feb 23, 2026 - <a href="/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器</a></li>
+  
+    <li>Feb 18, 2026 - <a href="/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器</a></li>
+  
+    <li>Feb 15, 2026 - <a href="/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM</a></li>
+  
+    <li>Feb 14, 2026 - <a href="/posts/2026/02-14-tilesplit/">TileSplit</a></li>
+  
+    <li>Feb 13, 2026 - <a href="/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro</a></li>
+  
+    <li>Feb 09, 2026 - <a href="/posts/2026/02-09-wgpu-game-of-life/">WebGPU Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-08-flashcard-app/">間隔重複記憶卡 App</a></li>
+  
+    <li>Feb 07, 2026 - <a href="/posts/2026/02-07-guitar-fretboard/">吉他指板視覺化工具</a></li>
+  
+    <li>Jan 31, 2026 - <a href="/posts/2026/01-31-gpui-calculator/">GPUI 計算機實作</a></li>
+  
+    <li>Jan 06, 2026 - <a href="/posts/2026/01-06-rust-wasm-markdown-editor/">打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        <!-- 
+
+  
+ -->
+<p>說到電腦視覺，大家第一個想到的語言通常是 Python。但如果你跟我一樣，覺得「都用 Rust 了，為什麼不連人臉偵測也用 Rust 來寫？」——那這篇文章就是寫給你的。</p>
+<p>這次的 Rust 52 Projects 挑戰，我用 OpenCV 內建的 <strong>YuNet</strong> 輕量級深度學習模型，寫了一個能處理靜態圖片和即時 Webcam 影像的人臉偵測工具。除了畫 Bounding Box，還會標記出五個臉部特徵點（雙眼、鼻尖、左右嘴角），每個特徵點用不同的顏色呈現。</p>
+<h3 id="為什麼選-yunet">為什麼選 YuNet？</h3>
+<p>人臉偵測的模型百百種，從古早的 Haar Cascade 到各種 YOLO 變體都有。我最後選了 <a href="https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet">YuNet</a> 有幾個原因：</p>
+<ol>
+<li><strong>OpenCV 原生支援</strong>：從 OpenCV 4.7 開始，<code>FaceDetectorYN</code> 就是內建 API，不用另外裝什麼深度學習框架</li>
+<li><strong>ONNX 格式</strong>：模型就是一個 <code>.onnx</code> 檔案，下載下來直接用</li>
+<li><strong>夠快夠準</strong>：這個模型是專門為邊緣裝置設計的，在一般筆電上跑即時 Webcam 完全不是問題</li>
+<li><strong>特徵點偵測</strong>：不只給你一個方框，還附帶五個臉部特徵點的座標</li>
+</ol>
+<h3 id="環境建置opencv-rust-的地雷區">環境建置：opencv-rust 的地雷區</h3>
+<p>在 Rust 裡使用 OpenCV，靠的是 <a href="https://github.com/twistedfall/opencv-rust">opencv-rust</a> 這個綁定庫。坦白說，這大概是整個專案裡最痛苦的部分。在 Windows 上需要先用 vcpkg 安裝 OpenCV：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>vcpkg install opencv4<span style="color:#960050;background-color:#1e0010">:</span>x64-windows</span></span></code></pre></div>
+
+<p>然後設定一堆環境變數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>$env:OPENCV_LINK_LIBS = <span style="color:#e6db74">&#34;opencv_world4&#34;</span>
+</span></span><span style="display:flex;"><span>$env:OPENCV_LINK_PATHS = <span style="color:#e6db74">&#34;C:\path\to\vcpkg\installed\x64-windows\lib&#34;</span>
+</span></span><span style="display:flex;"><span>$env:OPENCV_INCLUDE_PATHS = <span style="color:#e6db74">&#34;C:\path\to\vcpkg\installed\x64-windows\include&#34;</span></span></span></code></pre></div>
+
+<p>另外因為 <code>opencv-rust</code> 的 build script 會用 <code>libclang</code> 來解析 C++ header 產生 Rust 綁定，所以還需要確保系統裝了 LLVM/Clang。<code>Cargo.toml</code> 中啟用了 <code>clang-runtime</code> feature：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">dependencies</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">anyhow</span> = <span style="color:#e6db74">&#34;1&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">clap</span> = { <span style="color:#a6e22e">version</span> = <span style="color:#e6db74">&#34;4&#34;</span>, <span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;derive&#34;</span>] }
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">opencv</span> = { <span style="color:#a6e22e">path</span> = <span style="color:#e6db74">&#34;opencv-rust-patch&#34;</span>, <span style="color:#a6e22e">features</span> = [<span style="color:#e6db74">&#34;clang-runtime&#34;</span>] }</span></span></code></pre></div>
+
+<p>你可能注意到我用的是 <code>path = &quot;opencv-rust-patch&quot;</code> 而不是 crates.io 上的版本。這是因為我需要針對 OpenCV 5 做一些修正，所以 fork 了一份放在本地。</p>
+<h3 id="用-clap-定義-cli-介面">用 Clap 定義 CLI 介面</h3>
+<p>工具的使用方式很簡單：不帶參數就開 Webcam，指定 <code>--image</code> 就處理靜態圖片。用 <code>clap</code> 的 derive macro 定義起來非常清爽：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Parser)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[command(name = </span><span style="color:#e6db74">&#34;face-detect&#34;</span><span style="color:#75715e">, version)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Cli</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Path to an image file. If omitted, opens the webcam.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long)]</span>
+</span></span><span style="display:flex;"><span>    image: Option<span style="color:#f92672">&lt;</span>PathBuf<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Path to the YuNet ONNX model file.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value = </span><span style="color:#e6db74">&#34;face_detection_yunet_2023mar.onnx&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span>    model: <span style="color:#a6e22e">PathBuf</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Minimum confidence score to keep a detection (0.0–1.0).
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value_t = 0.9)]</span>
+</span></span><span style="display:flex;"><span>    score_threshold: <span style="color:#66d9ef">f32</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// NMS IoU threshold (0.0–1.0).
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long, default_value_t = 0.3)]</span>
+</span></span><span style="display:flex;"><span>    nms_threshold: <span style="color:#66d9ef">f32</span>,
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">/// Path to save the annotated output image (image mode only).
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">#[arg(short, long)]</span>
+</span></span><span style="display:flex;"><span>    output: Option<span style="color:#f92672">&lt;</span>PathBuf<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡有兩個可以調整的閾值：</p>
+<ul>
+<li><strong>score_threshold</strong>：信賴度門檻，只有信心分數超過這個值的偵測結果才會保留。預設 0.9 表示「非常有把握才算」</li>
+<li><strong>nms_threshold</strong>：Non-Maximum Suppression 的 IoU 門檻，用來消除重疊的偵測框</li>
+</ul>
+<h3 id="建立-yunet-偵測器">建立 YuNet 偵測器</h3>
+<p>建立偵測器的程式碼意外地簡潔。<code>FaceDetectorYN::create</code> 就是 OpenCV 對 YuNet 模型的封裝：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> detector <span style="color:#f92672">=</span> FaceDetectorYN::create(
+</span></span><span style="display:flex;"><span>    model_path,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;&#34;</span>,                  <span style="color:#75715e">// config（YuNet 不需要）
+</span></span></span><span style="display:flex;"><span>    Size::new(<span style="color:#ae81ff">320</span>, <span style="color:#ae81ff">320</span>), <span style="color:#75715e">// 初始 input_size，之後會根據實際圖片調整
+</span></span></span><span style="display:flex;"><span>    cli.score_threshold,
+</span></span><span style="display:flex;"><span>    cli.nms_threshold,
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">5000</span>,                <span style="color:#75715e">// top_k：最多保留幾個候選框
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0</span>,                   <span style="color:#75715e">// backend：預設
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">0</span>,                   <span style="color:#75715e">// target：CPU
+</span></span></span><span style="display:flex;"><span>)<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p>值得注意的是 <code>input_size</code> 只是個初始值。實際上每次呼叫 <code>detect</code> 之前，我們都會用 <code>set_input_size</code> 把它調成當前圖片（或影格）的實際尺寸，讓模型知道要處理多大的輸入。</p>
+<h3 id="靜態圖片模式縮放的藝術">靜態圖片模式：縮放的藝術</h3>
+<p>處理靜態圖片有個實務上的考量：如果直接拿一張 4000×3000 的照片丟進去偵測，不僅速度慢，模型在太大的解析度下表現也不一定好。所以我做了一個等比例縮放的策略：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> size <span style="color:#f92672">=</span> img.size()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> max_dim <span style="color:#f92672">=</span> <span style="color:#ae81ff">800.0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> scale <span style="color:#f92672">=</span> <span style="color:#ae81ff">1.0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> detect_img <span style="color:#f92672">=</span> img.clone();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> size.width <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">800</span> <span style="color:#f92672">||</span> size.height <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">800</span> {
+</span></span><span style="display:flex;"><span>    scale <span style="color:#f92672">=</span> <span style="color:#66d9ef">f64</span>::max(size.width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>, size.height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>) <span style="color:#f92672">/</span> max_dim;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> new_w <span style="color:#f92672">=</span> (size.width <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">/</span> scale).round() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> new_h <span style="color:#f92672">=</span> (size.height <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">/</span> scale).round() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> new_size <span style="color:#f92672">=</span> Size::new(new_w, new_h);
+</span></span><span style="display:flex;"><span>    imgproc::resize(<span style="color:#f92672">&amp;</span>img, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> detect_img, new_size, <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">0.0</span>, imgproc::<span style="color:#66d9ef">INTER_LINEAR</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>關鍵在於：偵測完之後，我們需要把座標<strong>乘回去</strong>，這樣在原始解析度的圖片上畫框才會對齊：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> scale <span style="color:#f92672">!=</span> <span style="color:#ae81ff">1.0</span> <span style="color:#f92672">&amp;&amp;</span> count <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>count {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> j <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#ae81ff">14</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> v <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, j)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">*</span>faces.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, j)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> (v <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">*</span> scale) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>注意只處理前 14 個欄位（座標），第 15 個欄位是信賴度分數，不需要縮放。</p>
+<h3 id="webcam-即時模式">Webcam 即時模式</h3>
+<p>Webcam 模式就是一個經典的影像處理 loop：讀一張影格 → 偵測 → 畫框 → 顯示 → 檢查鍵盤輸入。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">detect_in_webcam</span>(detector: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> <span style="color:#66d9ef">impl</span> FaceDetectorYNTrait) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> cam <span style="color:#f92672">=</span> videoio::VideoCapture::new(<span style="color:#ae81ff">0</span>, videoio::<span style="color:#66d9ef">CAP_ANY</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>cam.is_opened()<span style="color:#f92672">?</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">bail!</span>(<span style="color:#e6db74">&#34;Cannot open default webcam (index 0)&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> window <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;face-detect – webcam (press Q to quit)&#34;</span>;
+</span></span><span style="display:flex;"><span>    highgui::named_window(window, highgui::<span style="color:#66d9ef">WINDOW_AUTOSIZE</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> frame <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>        cam.read(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> frame)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> frame.empty() { <span style="color:#66d9ef">continue</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        detector.set_input_size(frame.size()<span style="color:#f92672">?</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> faces <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>        detector.detect(<span style="color:#f92672">&amp;</span>frame, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> faces)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        draw_detections(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> frame, <span style="color:#f92672">&amp;</span>faces)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        highgui::imshow(window, <span style="color:#f92672">&amp;</span>frame)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> key <span style="color:#f92672">=</span> highgui::wait_key(<span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> key <span style="color:#f92672">==</span> <span style="color:#e6db74">b</span><span style="color:#e6db74">&#39;q&#39;</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span> <span style="color:#f92672">||</span> key <span style="color:#f92672">==</span> <span style="color:#ae81ff">27</span> { <span style="color:#66d9ef">break</span>; }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    highgui::destroy_all_windows()<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡有幾個 Rust 特色值得留意：</p>
+<ul>
+<li><strong>Trait bound <code>impl FaceDetectorYNTrait</code></strong>：用 trait 而不是具體型別，讓函式更通用</li>
+<li><strong><code>bail!</code> 巨集</strong>：來自 <code>anyhow</code> crate，等同於 <code>return Err(anyhow!(...))</code></li>
+<li><strong><code>?</code> 運算子</strong>：幾乎每一行 OpenCV 呼叫都可能失敗，<code>?</code> 讓錯誤處理保持簡潔</li>
+</ul>
+<h3 id="臉部特徵點的資料結構">臉部特徵點的資料結構</h3>
+<p>YuNet 回傳的 <code>faces</code> 矩陣是一個 $N \times 15$ 的 <code>Mat</code>（<code>f32</code>），每一列代表一張偵測到的臉：</p>
+<table>
+	<thead>
+			<tr>
+					<th>欄位</th>
+					<th>內容</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>0–3</td>
+					<td>Bounding Box 的 x, y, w, h</td>
+			</tr>
+			<tr>
+					<td>4–5</td>
+					<td>右眼座標 🔵</td>
+			</tr>
+			<tr>
+					<td>6–7</td>
+					<td>左眼座標 🔴</td>
+			</tr>
+			<tr>
+					<td>8–9</td>
+					<td>鼻尖座標 🟢</td>
+			</tr>
+			<tr>
+					<td>10–11</td>
+					<td>右嘴角座標 🩷</td>
+			</tr>
+			<tr>
+					<td>12–13</td>
+					<td>左嘴角座標 🟡</td>
+			</tr>
+			<tr>
+					<td>14</td>
+					<td>信賴度分數</td>
+			</tr>
+	</tbody>
+</table>
+<p>繪製的時候，我把五個特徵點設定了不同顏色（注意 OpenCV 用的是 BGR 色彩空間，不是 RGB）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#66d9ef">LANDMARK_COLORS</span>: [(<span style="color:#66d9ef">f64</span>, <span style="color:#66d9ef">f64</span>, <span style="color:#66d9ef">f64</span>); <span style="color:#ae81ff">5</span>] <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>    (<span style="color:#ae81ff">255.0</span>, <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">0.0</span>),     <span style="color:#75715e">// 右眼  – 藍色
+</span></span></span><span style="display:flex;"><span>    (<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">255.0</span>),     <span style="color:#75715e">// 左眼  – 紅色
+</span></span></span><span style="display:flex;"><span>    (<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">255.0</span>, <span style="color:#ae81ff">0.0</span>),     <span style="color:#75715e">// 鼻尖  – 綠色
+</span></span></span><span style="display:flex;"><span>    (<span style="color:#ae81ff">255.0</span>, <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">255.0</span>),   <span style="color:#75715e">// 右嘴角 – 粉色
+</span></span></span><span style="display:flex;"><span>    (<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">255.0</span>, <span style="color:#ae81ff">255.0</span>),   <span style="color:#75715e">// 左嘴角 – 黃色
+</span></span></span><span style="display:flex;"><span>];</span></span></code></pre></div>
+
+<p>然後用一個迴圈把每個特徵點畫成小圓點：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (j, <span style="color:#f92672">&amp;</span>(b, g, r)) <span style="color:#66d9ef">in</span> <span style="color:#66d9ef">LANDMARK_COLORS</span>.iter().enumerate() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> col <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span> <span style="color:#f92672">+</span> j <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">2</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> lx <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, col)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> ly <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, col <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>    imgproc::circle(
+</span></span><span style="display:flex;"><span>        img,
+</span></span><span style="display:flex;"><span>        Point::new(lx, ly),
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">3</span>,
+</span></span><span style="display:flex;"><span>        Scalar::new(b, g, r, <span style="color:#ae81ff">0.0</span>),
+</span></span><span style="display:flex;"><span>        imgproc::<span style="color:#66d9ef">FILLED</span>,
+</span></span><span style="display:flex;"><span>        imgproc::<span style="color:#66d9ef">LINE_AA</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這段程式碼的小巧思在於用 <code>enumerate</code> 搭配固定的欄位偏移量 <code>4 + j * 2</code>，把五對 x/y 座標和五組顏色優雅地對應起來。</p>
+<h3 id="測試不只是跑一跑而已">測試：不只是跑一跑而已</h3>
+<p>這個專案寫了蠻完整的測試。除了基本的功能測試，還有兩個用真實資料集跑的 benchmark：</p>
+<p><strong>基礎功能測試</strong>直接驗證偵測結果是否符合預期：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">test_face_detection_lena</span>() -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> detector <span style="color:#f92672">=</span> setup_detector(<span style="color:#ae81ff">0.5</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> count <span style="color:#f92672">=</span> detect_in_image(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> detector, <span style="color:#f92672">&amp;</span><span style="color:#e6db74">&#34;tests/lena.jpg&#34;</span>.into(), Some(<span style="color:#f92672">&amp;</span><span style="color:#e6db74">&#34;tests/lena_out.jpg&#34;</span>.into()))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(count, <span style="color:#ae81ff">1</span>, <span style="color:#e6db74">&#34;Should detect exactly 1 face in lena.jpg&#34;</span>);
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><strong>LFW 命中率 Benchmark</strong> 用 <a href="http://vis-www.cs.umass.edu/lfw/">Labeled Faces in the Wild</a> 資料集的 1000 張真實人臉照片，計算偵測器的命中率。要求至少 80%：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> hit_rate <span style="color:#f92672">=</span> (hits <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">/</span> images.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">100.0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">assert!</span>(hit_rate <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">80.0</span>, <span style="color:#e6db74">&#34;Hit rate {:.1}% is below acceptable 80% threshold&#34;</span>, hit_rate);</span></span></code></pre></div>
+
+<p><strong>Stanford Background 誤判率 Benchmark</strong> 反過來，用完全不含人臉的風景照片（來自 <a href="http://dags.stanford.edu/projects/scenedataset.html">Stanford Background Dataset</a>），測試偵測器會不會「看到不該看到的臉」。要求誤判率低於 5%：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> fp_rate <span style="color:#f92672">=</span> (false_positives <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">/</span> total) <span style="color:#f92672">*</span> <span style="color:#ae81ff">100.0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">assert!</span>(fp_rate <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">5.0</span>, <span style="color:#e6db74">&#34;False positive rate {:.1}% is above acceptable 5% threshold&#34;</span>, fp_rate);</span></span></code></pre></div>
+
+<p>這種正反兩面夾擊的測試方式，讓你在調整 <code>score_threshold</code> 時有科學依據，而不是靠感覺。</p>
+<h3 id="學到的-rust-概念">學到的 Rust 概念</h3>
+<table>
+	<thead>
+			<tr>
+					<th>概念</th>
+					<th>應用場景</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>impl Trait</code> 參數</td>
+					<td>讓偵測函式接受任何實作 <code>FaceDetectorYNTrait</code> 的型別</td>
+			</tr>
+			<tr>
+					<td><code>anyhow::Result</code></td>
+					<td>統一錯誤處理，不用為每種錯誤定義型別</td>
+			</tr>
+			<tr>
+					<td><code>clap</code> derive macro</td>
+					<td>宣告式定義 CLI 介面</td>
+			</tr>
+			<tr>
+					<td><code>Mat</code> 的泛型存取</td>
+					<td><code>at_2d::&lt;f32&gt;(i, j)</code> 在型別安全下操作矩陣</td>
+			</tr>
+			<tr>
+					<td>模式匹配 + 解構</td>
+					<td><code>for (j, &amp;(b, g, r))</code> 同時取得索引和解構元組</td>
+			</tr>
+			<tr>
+					<td><code>Option</code> 驅動的分支</td>
+					<td><code>cli.image</code> 的 <code>Some/None</code> 決定圖片模式或 Webcam 模式</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="結語">結語</h3>
+<p>用 Rust 寫電腦視覺程式，最大的挑戰不在演算法本身，而是環境建置和 FFI 綁定。一旦搞定了 <code>opencv-rust</code> 的編譯問題，寫起來其實蠻順暢的——Rust 的型別系統和錯誤處理在這種「每一行都可能出錯」的 FFI 情境下，反而讓人特別安心。</p>
+<p>如果你也想試試看，記得先下載 <a href="https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet">YuNet ONNX 模型</a>，然後準備好耐心面對 OpenCV 的安裝過程 😄</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/face-detect">face-detect 原始碼</a> — 本文範例的完整程式碼</li>
+<li><a href="https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet">OpenCV Zoo — YuNet 模型</a></li>
+<li><a href="https://github.com/twistedfall/opencv-rust">opencv-rust</a> — Rust 的 OpenCV 綁定庫</li>
+<li><a href="http://vis-www.cs.umass.edu/lfw/">Labeled Faces in the Wild</a> — LFW 人臉資料集</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+
+</body>
+</html>

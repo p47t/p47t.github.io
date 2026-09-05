@@ -1,0 +1,761 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>在 Rust 中實驗本機語音助理 - 整合 Gemma-4 多模態模型、WebRTC APM 與 openWakeWord (Rust 52 Projects #52)</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-12-voice-assistant/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-12-voice-assistant/"/>
+  <meta property="og:title" content="在 Rust 中實驗本機語音助理 - 整合 Gemma-4 多模態模型、WebRTC APM 與 openWakeWord (Rust 52 Projects #52)"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-08-12 20:48:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="tools"/>
+  
+  <meta property="og:article:tag" content="c&#43;&#43;"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/08-11-jetpack-compose-rendering-architecture/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            深入剖析 Jetpack Compose 渲染架構
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/08-14-minicompose/">
+            MiniCompose
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">在 Rust 中實驗本機語音助理</h1>
+      
+      <div class="post-subtitle">整合 Gemma-4 多模態模型、WebRTC APM 與 openWakeWord (Rust 52 Projects #52)</div>
+      
+      <div class="post-meta">
+        <span class="post-date">August 12, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/tools"><span class="label label-primary">tools</span></a>
+        
+        <a href="/tags/c&#43;&#43;"><span class="label label-primary">c&#43;&#43;</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Aug 12, 2026 - <a href="/posts/2026/08-12-voice-assistant/">在 Rust 中實驗本機語音助理</a></li>
+  
+    <li>Aug 09, 2026 - <a href="/posts/2026/08-09-ip-camera/">打造跨平台高效能 IP Camera 視訊串流伺服器</a></li>
+  
+    <li>Aug 08, 2026 - <a href="/posts/2026/08-08-gesture-control/">打造零延遲 AI 手勢作業系統控制器</a></li>
+  
+    <li>Aug 07, 2026 - <a href="/posts/2026/08-07-depth-relief/">用 Rust 把 2D 相片變成 3D 列印浮雕</a></li>
+  
+    <li>Jun 28, 2026 - <a href="/posts/2026/06-28-face-mosaic/">影片自動人臉打碼</a></li>
+  
+    <li>Jun 27, 2026 - <a href="/posts/2026/06-27-rust-opencv-face-detection/">即時人臉與特徵點偵測</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama</a></li>
+  
+    <li>May 25, 2026 - <a href="/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)</a></li>
+  
+    <li>May 21, 2026 - <a href="/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站</a></li>
+  
+    <li>May 20, 2026 - <a href="/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器</a></li>
+  
+    <li>Mar 21, 2026 - <a href="/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-emu/">NES 模擬器完成</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-apu/">NES APU 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-ppu/">NES PPU 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU</a></li>
+  
+    <li>Feb 23, 2026 - <a href="/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器</a></li>
+  
+    <li>Feb 18, 2026 - <a href="/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器</a></li>
+  
+    <li>Feb 15, 2026 - <a href="/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM</a></li>
+  
+    <li>Feb 14, 2026 - <a href="/posts/2026/02-14-tilesplit/">TileSplit</a></li>
+  
+    <li>Feb 13, 2026 - <a href="/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro</a></li>
+  
+    <li>Feb 09, 2026 - <a href="/posts/2026/02-09-wgpu-game-of-life/">WebGPU Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-08-flashcard-app/">間隔重複記憶卡 App</a></li>
+  
+    <li>Feb 07, 2026 - <a href="/posts/2026/02-07-guitar-fretboard/">吉他指板視覺化工具</a></li>
+  
+    <li>Jan 31, 2026 - <a href="/posts/2026/01-31-gpui-calculator/">GPUI 計算機實作</a></li>
+  
+    <li>Jan 06, 2026 - <a href="/posts/2026/01-06-rust-wasm-markdown-editor/">打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/08-12-voice-assistant/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在桌面上運行一個簡易的語音助理，一直是我很想嘗試的學習專案。市面上的商業語音助理（如 Alexa 或 Siri）背後有極為龐大的雲端基礎設施與複雜的工程團隊；但作為個人學習 Rust 與本機 AI 技術的練習，我們也可以用幾百行 Rust 程式碼，把麥克風音訊擷取、WebRTC 降噪、喚醒詞辨識、多模態 LLM 與語音合成組裝成一個本機運行的終端機實驗原型。</p>
+<p>這就是 <strong><a href="https://github.com/p47t/rust-52-projects/tree/master/voice-assistant">voice-assistant</a></strong> 專案的由來，也是 <strong>Rust 52 Projects</strong> 挑戰的第 52 篇專案（完結篇）。</p>
+<p>這個專案的主要目的是<strong>學習如何整合各個獨立的 Rust crate 與 C/C++ FFI 綁定</strong>。特別的是，為了實驗多模態模型的可能性，專案嘗試繞過了傳統「語音轉文字 (STT, Whisper) $\to$ 文字 LLM $\to$ 文字轉語音 (TTS)」的三階段流程，改為將麥克風錄製的語音音訊直接作為多模態向量（audio tensor embedding）輸入給 <strong>Gemma-4 Multimodal Audio</strong> 模型，進行端到端推論。</p>
+<p>這篇文章記錄了這個實驗專案的架構設計、模組組合與學習心得。</p>
+<h2 id="1-專案學習重點與組件構成">1. 專案學習重點與組件構成</h2>
+<p>作為一個學習練習，這個專案將幾個常見的語音處理組件整合在一起：</p>
+<ul>
+<li><strong>本機流程實驗 (Local Pipeline)</strong>：全程在本地電腦執行麥克風採樣、降噪、喚醒詞辨識與模型推論，方便在沒有網路連線時進行測試與調試。</li>
+<li><strong>WebRTC APM 音訊預處理 (Noise Suppression &amp; AGC2)</strong>：利用 <code>sonora</code> 封裝的 WebRTC 引擎，將麥克風採樣率重採樣至 16kHz 單聲道，並進行基礎的背景雜音消除與自動增益調整。</li>
+<li><strong>喚醒詞偵測 (openWakeWord)</strong>：使用 <code>oww-rs</code> 在背景持續監聽 1280 個樣本 (sample) 的音訊視窗，判定是否觸發喚醒詞（預設支援 Alexa 或 Hey Mycroft 測試模型）。</li>
+<li><strong>基礎 RMS 能量 VAD (Voice Activity Detection)</strong>：喚醒後進入錄音模式，以 10ms (160 樣本) 視窗計算音訊方均根 (RMS) 能量，當持續低於門檻 1.5 秒或達到 8 秒上限時停止錄音。</li>
+<li><strong>多模態語音推論嘗試</strong>：透過 <code>llama-cpp-4</code> 與 Vulkan GPU 加速加載 Gemma-4 多模態模型 (<code>gemma-4-E4B-it</code> + <code>mmproj-gemma-4-E4B-it-BF16.gguf</code>)，將 WAV 音訊轉為向量直接由 LLM 進行解碼與串流生成。</li>
+<li><strong>原生 PowerShell TTS 與簡單迴路防護</strong>：呼叫 Windows PowerShell 內建的 <code>System.Speech</code> 進行語音朗讀；並在朗讀結束前清理輸入緩衝區，避免麥克風收錄到喇叭播放的聲音而造成誤觸發。</li>
+</ul>
+<h2 id="2-系統狀態機架構state-machine">2. 系統狀態機架構（state machine）</h2>
+<p>程式的主體架構是一個簡單的狀態機（state machine），負責在不同的音訊處理階段之間進行切換：</p>
+
+  <div class="mermaid">
+    %%{init: { 'themeVariables': { 'fontSize': '16px', 'subGraphTitleFontSize': '18px' } }}%%
+flowchart TD
+    subgraph Listening ["1. State::Listening (背景監聽)"]
+        direction TD
+        A1["cpal 麥克風音訊擷取 (16kHz 重採樣)"] --> A2["WebRTC APM (降噪 NS + AGC2 增益)"]
+        A2 --> A3["openWakeWord (1280 樣本視窗比對)"]
+    end
+
+    subgraph Recording ["2. State::Recording (使用者口述錄音)"]
+        direction TD
+        B1["10ms 視窗計算 RMS 音訊能量"] --> B2["終端機即時繪製彩色音量波形條"]
+        B2 --> B3["VAD 判定: 靜音 > 1.5s 或 時間 > 8.0s"]
+    end
+
+    subgraph Processing ["3. State::Processing (Gemma-4 多模態推論)"]
+        direction TD
+        C1["寫入錄音至 temp_query.wav"] --> C2["Gemma-4 Multimodal Projector (Audio Embedding)"]
+        C2 --> C3["llama-cpp-4 (Vulkan GPU 加速串流生成)"]
+    end
+
+    subgraph Speaking ["4. State::Speaking (語音反饋與重置)"]
+        direction TD
+        D1["Windows PowerShell System.Speech 語音朗讀"] --> D2["清空音訊緩衝區 & 防範自激迴音"]
+    end
+
+    A3 -->|"偵測到喚醒詞 (High Beep)"| Recording
+    B3 -->|"錄音完成 (Low Beep)"| Processing
+    C3 -->|"推論完成"| Speaking
+    D2 -->|"恢復背景監聽"| Listening
+  </div>
+
+<h2 id="3-核心模組實現拆解">3. 核心模組實現拆解</h2>
+<h3 id="31-音訊擷取與-webrtc-apm-降噪預處理-preprocessorrs">3.1 音訊擷取與 WebRTC APM 降噪預處理 (<code>preprocessor.rs</code>)</h3>
+<p>不同麥克風設備的預設採樣率（例如 44.1kHz 或 48kHz）與聲道數各不相同。<code>AudioPreprocessor</code> 的作用是將這些異構音訊轉化為 openWakeWord 與 LLM 模型所需的 <strong>16,000 Hz 單聲道格式</strong>，並經過 WebRTC 的降噪與增益模組處理：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AudioPreprocessor</span> {
+</span></span><span style="display:flex;"><span>    input_sample_rate: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    apm: Option<span style="color:#f92672">&lt;</span>AudioProcessing<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    mic_samples_accumulator: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    apm_input_buffer: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> AudioPreprocessor {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">feed_and_process</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, raw_samples: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>], channels: <span style="color:#66d9ef">usize</span>) -&gt; Result<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> raw_samples.is_empty() { <span style="color:#66d9ef">return</span> Ok(Vec::new()); }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 1. 單聲道混音 (Channel Mixing)
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> mono_samples <span style="color:#f92672">=</span> convert_channels_to_mono(raw_samples, channels);
+</span></span><span style="display:flex;"><span>        self.mic_samples_accumulator.extend_from_slice(<span style="color:#f92672">&amp;</span>mono_samples);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 2. 線性重採樣至 16,000 Hz
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> mic_samples_needed <span style="color:#f92672">=</span> (<span style="color:#ae81ff">160.0</span> <span style="color:#f92672">*</span> (self.input_sample_rate <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">16000.0</span>)).ceil() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> self.mic_samples_accumulator.len() <span style="color:#f92672">&gt;=</span> mic_samples_needed {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> chunk_to_resample <span style="color:#f92672">=</span> self.mic_samples_accumulator.drain(<span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>mic_samples_needed).collect::<span style="color:#f92672">&lt;</span>Vec<span style="color:#f92672">&lt;</span>_<span style="color:#f92672">&gt;&gt;</span>();
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> resampled_16k <span style="color:#f92672">=</span> resample_linear(<span style="color:#f92672">&amp;</span>chunk_to_resample, self.input_sample_rate, <span style="color:#ae81ff">16000</span>);
+</span></span><span style="display:flex;"><span>            self.apm_input_buffer.extend_from_slice(<span style="color:#f92672">&amp;</span>resampled_16k);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 3. WebRTC APM 處理 10ms 影格 (160 樣本)
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> apm_frame_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">160</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> processed_samples <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> self.apm_input_buffer.len() <span style="color:#f92672">&gt;=</span> apm_frame_size {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> frame: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> self.apm_input_buffer.drain(<span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>apm_frame_size).collect();
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> processed_frame <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(<span style="color:#66d9ef">ref</span> <span style="color:#66d9ef">mut</span> apm_engine) <span style="color:#f92672">=</span> self.apm {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> dest <span style="color:#f92672">=</span> <span style="color:#a6e22e">vec!</span>[<span style="color:#ae81ff">0.0</span><span style="color:#66d9ef">f32</span>; apm_frame_size];
+</span></span><span style="display:flex;"><span>                apm_engine.process_capture_f32(<span style="color:#f92672">&amp;</span>[<span style="color:#f92672">&amp;</span>frame], <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> [<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> dest])<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                dest
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                frame
+</span></span><span style="display:flex;"><span>            };
+</span></span><span style="display:flex;"><span>            processed_samples.extend_from_slice(<span style="color:#f92672">&amp;</span>processed_frame);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        Ok(processed_samples)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="32-openwakeword-喚醒詞偵測-detectorrs">3.2 openWakeWord 喚醒詞偵測 (<code>detector.rs</code>)</h3>
+<p><code>openWakeWord</code> 是一個輕量級的開源喚醒詞模型。這裡使用 <code>oww-rs</code> 將處理後的 16kHz 音訊累積至 1280 個樣本（約 80ms）的固定區塊後傳入模型進行推論：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">WakewordDetector</span> {
+</span></span><span style="display:flex;"><span>    oww_model: <span style="color:#a6e22e">OwwModel</span>,
+</span></span><span style="display:flex;"><span>    oww_chunk_buffer: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span> WakewordDetector {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">feed_and_detect</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, samples: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>]) -&gt; <span style="color:#66d9ef">bool</span> {
+</span></span><span style="display:flex;"><span>        self.oww_chunk_buffer.extend_from_slice(samples);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> triggered <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> self.oww_chunk_buffer.len() <span style="color:#f92672">&gt;=</span> <span style="color:#66d9ef">OWW_MODEL_CHUNK_SIZE</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> chunk: Vec<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> self.oww_chunk_buffer.drain(<span style="color:#ae81ff">0</span><span style="color:#f92672">..</span><span style="color:#66d9ef">OWW_MODEL_CHUNK_SIZE</span>).collect();
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> result <span style="color:#f92672">=</span> self.oww_model.detection(chunk);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> result.detected {
+</span></span><span style="display:flex;"><span>                triggered <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        triggered
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="33-基礎-rms-靜音檢測-vad-vadrs">3.3 基礎 RMS 靜音檢測 (VAD) (<code>vad.rs</code>)</h3>
+<p>專案中採用了較簡單的能量門檻法作為 VAD 實作。每 10ms 影格計算 Root Mean Square (RMS) 音訊能量：</p>
+$$RMS = \sqrt{\frac{1}{N} \sum_{i=1}^{N} x_i^2}$$<p>若 RMS 持續低於設定門檻（預設 0.003）達到指定影格數（1.5 秒），或總錄音長度超過最大上限（8 秒），則終止錄音。雖然簡單的 RMS 門檻在吵雜環境或說話停頓較長時可能會誤判，但作為教學概念驗證已經足夠直觀：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">process_frame</span>(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self, frame: <span style="color:#66d9ef">&amp;</span>[<span style="color:#66d9ef">f32</span>]) -&gt; (<span style="color:#66d9ef">bool</span>, <span style="color:#66d9ef">f32</span>) {
+</span></span><span style="display:flex;"><span>    self.recording_samples.extend_from_slice(frame);
+</span></span><span style="display:flex;"><span>    self.total_frames_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> sum_squares <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.0</span><span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#f92672">&amp;</span>sample <span style="color:#66d9ef">in</span> frame {
+</span></span><span style="display:flex;"><span>        sum_squares <span style="color:#f92672">+=</span> sample <span style="color:#f92672">*</span> sample;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> rms <span style="color:#f92672">=</span> (sum_squares <span style="color:#f92672">/</span> frame.len() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>).sqrt();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> rms <span style="color:#f92672">&lt;</span> self.vad_threshold {
+</span></span><span style="display:flex;"><span>        self.silence_frames_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        self.silence_frames_count <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> is_silent <span style="color:#f92672">=</span> self.silence_frames_count <span style="color:#f92672">&gt;=</span> self.silence_limit_frames 
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;&amp;</span> self.total_frames_count <span style="color:#f92672">&gt;=</span> self.min_recording_frames;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> hit_max <span style="color:#f92672">=</span> self.total_frames_count <span style="color:#f92672">&gt;=</span> self.max_recording_frames;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    (is_silent <span style="color:#f92672">||</span> hit_max, rms)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="34-gemma-4-多模態音訊直通推論-enginers">3.4 Gemma-4 多模態音訊直通推論 (<code>engine.rs</code>)</h3>
+<p>在這個學習實驗中，最有趣的部分是嘗試用 <code>llama-cpp-4</code> 的 <code>MtmdContext</code>（多模態上下文）將音訊檔案 (<code>temp_query.wav</code>) 編碼為 Embeddings（<code>MtmdBitmap</code>），並直接傳給 Gemma-4 模型進行推論：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run_multimodal</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> self,
+</span></span><span style="display:flex;"><span>    prompt: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>,
+</span></span><span style="display:flex;"><span>    audio_path: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Path</span>,
+</span></span><span style="display:flex;"><span>    max_tokens: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    seed: Option<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">u32</span><span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">mut</span> stream_callback: <span style="color:#a6e22e">impl</span> FnMut(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">str</span>) <span style="color:#f92672">+</span> Send,
+</span></span><span style="display:flex;"><span>) -&gt; Result<span style="color:#f92672">&lt;</span>String<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> marker <span style="color:#f92672">=</span> MtmdContext::default_marker();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> full_prompt <span style="color:#f92672">=</span> <span style="color:#a6e22e">format!</span>(<span style="color:#e6db74">&#34;</span><span style="color:#e6db74">{}</span><span style="color:#e6db74"> </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">&#34;</span>, prompt, marker);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 將音訊轉換為多模態 Bitmap
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bitmap <span style="color:#f92672">=</span> MtmdBitmap::from_file(<span style="color:#f92672">&amp;</span>self.mtmd_ctx, audio_path)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 切分文字 prompt 與多模態標記
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> text <span style="color:#f92672">=</span> MtmdInputText::new(<span style="color:#f92672">&amp;</span>full_prompt, <span style="color:#66d9ef">true</span>, <span style="color:#66d9ef">true</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> bitmaps <span style="color:#f92672">=</span> [<span style="color:#f92672">&amp;</span>bitmap];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> chunks <span style="color:#f92672">=</span> MtmdInputChunks::new();
+</span></span><span style="display:flex;"><span>    self.mtmd_ctx.tokenize(<span style="color:#f92672">&amp;</span>text, <span style="color:#f92672">&amp;</span>bitmaps, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> chunks)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 一次性評估音訊 tokens
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> lctx <span style="color:#f92672">=</span> self.session.model.new_context(<span style="color:#f92672">&amp;</span>self.session.backend, self.loaded_context_params.clone())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> n_past <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span><span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>    self.mtmd_ctx.eval_chunks(lctx.as_ptr(), <span style="color:#f92672">&amp;</span>chunks, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, lctx.n_batch() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>, <span style="color:#66d9ef">true</span>, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> n_past)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 4. 自迴歸串流生成回應文字
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> sampler <span style="color:#f92672">=</span> LlamaSampler::chain_simple([
+</span></span><span style="display:flex;"><span>        LlamaSampler::dist(seed.unwrap_or(<span style="color:#ae81ff">42</span>)),
+</span></span><span style="display:flex;"><span>        LlamaSampler::greedy(),
+</span></span><span style="display:flex;"><span>    ]);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...逐 token 解碼並觸發 stream_callback(&amp;piece)...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個方式省去了整合 STT 模型的步驟，讓我們能直接在 Rust 中實驗多模態模型對語音輸入的回應效果。</p>
+<h3 id="35-windows-powershell-tts-整合-speechrs">3.5 Windows PowerShell TTS 整合 (<code>speech.rs</code>)</h3>
+<p>為了保持專案輕量、避免引進額外的 C/C++ 語音合成依賴，語音輸出部分選擇直接透過 <code>std::process::Command</code> 呼叫 Windows 內建的 PowerShell <code>System.Speech</code> 進行朗讀：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">speak</span>(text: <span style="color:#66d9ef">&amp;</span><span style="color:#66d9ef">str</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> text.trim().is_empty() { <span style="color:#66d9ef">return</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> script <span style="color:#f92672">=</span> <span style="color:#a6e22e">format!</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Add-Type -AssemblyName System.Speech; </span><span style="color:#ae81ff">\</span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">         $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; </span><span style="color:#ae81ff">\</span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">         $synth.Speak([Console]::In.ReadToEnd())&#34;</span>
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> child <span style="color:#f92672">=</span> std::process::Command::new(<span style="color:#e6db74">&#34;powershell&#34;</span>)
+</span></span><span style="display:flex;"><span>        .args([<span style="color:#e6db74">&#34;-NoProfile&#34;</span>, <span style="color:#e6db74">&#34;-Command&#34;</span>, <span style="color:#f92672">&amp;</span>script])
+</span></span><span style="display:flex;"><span>        .stdin(std::process::Stdio::piped())
+</span></span><span style="display:flex;"><span>        .spawn().ok();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(<span style="color:#66d9ef">mut</span> c) <span style="color:#f92672">=</span> child {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Some(<span style="color:#66d9ef">mut</span> stdin) <span style="color:#f92672">=</span> c.stdin.take() {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> _ <span style="color:#f92672">=</span> stdin.write_all(text.as_bytes());
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> _ <span style="color:#f92672">=</span> c.wait();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>在測試過程中發現，如果 TTS 播放時麥克風仍處於接收狀態，喇叭發出的聲音很容易再次觸發喚醒或錄音邏輯。因此，程式在 <code>Speaking</code> 狀態下會阻塞等待 TTS 結束，並在重新進入 <code>Listening</code> 前呼叫 <code>input_buffer.lock().unwrap().clear()</code> 清空累積的音訊緩衝區。</p>
+<h2 id="4-測試與執行方式">4. 測試與執行方式</h2>
+<p>準備好 Gemma-4 GGUF 模型與 Multimodal Projector 檔案後，即可執行此練習專案：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo run --release -- --wakeword alexa --threshold 0.5</span></span></code></pre></div>
+
+<p>可用選項參數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Usage: voice-assistant [OPTIONS]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Options:
+</span></span><span style="display:flex;"><span>  -m, --model &lt;MODEL&gt;              GGUF 模型路徑
+</span></span><span style="display:flex;"><span>  -p, --mmproj &lt;MMPROJ&gt;            Multimodal Projector GGUF 路徑
+</span></span><span style="display:flex;"><span>  -w, --wakeword &lt;WAKEWORD&gt;        喚醒詞模型 [default: alexa] [alexa, mycroft]
+</span></span><span style="display:flex;"><span>  -t, --threshold &lt;THRESHOLD&gt;      喚醒詞信心門檻 (0.0 - 1.0) [default: 0.5]
+</span></span><span style="display:flex;"><span>      --no-apm                     停用 WebRTC APM 降噪預處理
+</span></span><span style="display:flex;"><span>  -v, --vad-threshold &lt;THRESHOLD&gt;  VAD 靜音門檻 (RMS) [default: 0.003]
+</span></span><span style="display:flex;"><span>  -d, --max-duration &lt;SECONDS&gt;     最長單次錄音秒數 [default: 8.0]
+</span></span><span style="display:flex;"><span>  -s, --silence-duration &lt;SECONDS&gt; 靜音結束判定秒數 [default: 1.5]</span></span></code></pre></div>
+
+<h2 id="5-rust-52-projects-學習之旅總結-">5. Rust 52 Projects 學習之旅總結 💡</h2>
+<p>完成這個專案，也代表著 <strong>Rust 52 Projects</strong> 個人學習挑戰告一段落。</p>
+<p>當初發起這個挑戰，目的只是希望能強迫自己每週透過動手寫一個小專案，從實務中學習 Rust 的不同領域。回看這 52 個練習專案，涵蓋了許多過去不曾涉足的方向：</p>
+<ul>
+<li><strong>系統與模擬器學習</strong>：嘗試練習了 6502 CPU 與 NES 主機模擬器的邏輯解構。</li>
+<li><strong>圖形與 UI 框架</strong>：接觸了 <code>wgpu</code> (WGSL Shaders)、GPUI 與 Egui 等不同的繪圖與桌面 GUI 框架。</li>
+<li><strong>FFI 與電腦視覺</strong>：學習如何在 Rust 中呼叫 OpenCV 5、MediaPipe ONNX 模型與系統級輸入 API。</li>
+<li><strong>機器學習與本地 LLM</strong>：從解析 GGUF 格式、手寫基礎 Tensor 算子，到調用多模態大模型。</li>
+</ul>
+<p>這 52 個專案絕大多數都只是簡單的概念驗證 (PoC) 或學習實驗，離成熟或生產級的軟體仍有很長的路要走。但過程中深刻體會到了 Rust 強大的型別安全、零成本抽象以及豐富的社群生態系（ecosystem）。</p>
+<p>特別想感嘆與感謝的是，能夠順利堅持並完成這整整 52 個專案，<strong>AI 輔助開發（AI-assisted coding）</strong> 的進步絕對功不可沒。不論是快速搭建範例原型、除錯 C/C++ FFI 綁定、理解音訊與機器學習演算法，還是探索陌生的套件，AI 都扮演了隨時隨地的結對編程（pair programming）夥伴，大幅降低了跨領域學習的門檻，讓我也能一步步把這個原本看似遙遠的 52 篇系列挑戰圓滿完成。</p>
+<p>專案的原始碼都已整理並開源在 GitHub 上，希望能給同樣在學習 Rust 的朋友提供一些參考與啟發：</p>
+<p>👉 <strong><a href="https://github.com/p47t/rust-52-projects/tree/master/voice-assistant">p47t/rust-52-projects (voice-assistant)</a></strong></p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>

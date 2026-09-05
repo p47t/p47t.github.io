@@ -1,0 +1,395 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/wayland/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-08-30 00:00:00 -0700 -0700</updated>
+    
+    <item>
+      <title>探索 Omarchy Linux：鍵盤驅動、平鋪優先與 AI 原生的現代化桌面架構實戰</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/</link>
+      <pubDate>Sun, 30 Aug 2026 00:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;在 Linux 開發者的世界中，&lt;strong&gt;Arch Linux&lt;/strong&gt; 憑藉其極簡原則（The Arch Way）、滾動更新（rolling release）機制以及龐大的 AUR（Arch User Repository）生態，一直是追求掌控感與最新技術者的首選。&lt;/p&gt;
+&lt;p&gt;然而，許多人在嘗試打造個人工作站時，往往發現「從零拼裝一個現代化、美觀且穩定的 Wayland 桌面環境」需要耗費數週時間挑選套件與調校設定檔，常常陷入「維護系統的時間遠多於真正寫程式的時間」的困境。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Omarchy Linux&lt;/strong&gt; 便是為了解決這個痛點而生的現代化發行版。在深入體驗 Omarchy 之後，我發現它最吸引人的特質，可以精準歸結為三大核心支柱：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;⌨️ &lt;strong&gt;Keyboard-Driven（全鍵盤驅動）&lt;/strong&gt;：手不離鍵盤即可掌控全域。系統內建完備的快捷鍵網、Quickshell 即時選單，並支援透過宣告式 Lua 靈活擴充個人化的按鍵流（例如我個人習慣配置的 Meh key 與語音聽寫）。&lt;/li&gt;
+&lt;li&gt;🪟 &lt;strong&gt;Tile-Preferred（平鋪視窗優先）&lt;/strong&gt;：基於 Hyprland 的動態平鋪佈局與 UWSM 工作階段管理，零重疊、零浪費螢幕空間，並具備毫秒級工作區調度能力。&lt;/li&gt;
+&lt;li&gt;🤖 &lt;strong&gt;AI-Native（AI 原生架構）&lt;/strong&gt;：非事後拼湊，而是系統層原生為 AI coding agent 設計——包含機器自省 CLI、內建 agent skills 規範、狀態列即時 AI 額度追蹤與安全自我修復機制。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;本文將帶大家從 DHH 轉向 Linux 的背景出發，深入拆解 Omarchy 的底層技術架構、Quickshell 插件生態，以及如何透過 AI agent 進行深度客製。&lt;/p&gt;
+&lt;h2 id=&#34;1-誕生背景dhh-的-linux-omakase-理念與-omarchy-的起源&#34;&gt;1. 誕生背景：DHH 的 Linux Omakase 理念與 Omarchy 的起源&lt;/h2&gt;
+&lt;p&gt;提到 Omarchy 的誕生，就不能不提 &lt;strong&gt;David Heinemeier Hansson（DHH）&lt;/strong&gt;——Ruby on Rails 創始人兼 37signals CTO，同時也是近年推動「離開雲端（Leaving the Cloud）」與伺服器自託管運動的代表人物。&lt;/p&gt;
+&lt;p&gt;長年以來，許多開發者（包括 DHH 本人）儘管熱愛開源，但日常工作機仍多停留在 macOS，主要原因在於 macOS 提供了無可挑剔的字型渲染、精緻的 UI 美學與穩定的硬體整合；而 Linux 桌面長期以來雖然自由度極高，但往往需要使用者耗費數週時間自行挑選套件、縫合各家 dotfiles，容易陷入「配置時間遠多於開發時間」的泥淖。&lt;/p&gt;
+&lt;h3 id=&#34;從離開雲端到離開-apple&#34;&gt;從「離開雲端」到「離開 Apple」&lt;/h3&gt;
+&lt;p&gt;在成功帶領 37signals 脫離 AWS 與公有雲、回歸自建機房並開源部署工具 Kamal 後，DHH 將他對「自主掌控權」的追求延伸到了個人操作系統——決定全面告別 Apple 與 macOS，踏上探索 Linux 桌面的旅程。&lt;/p&gt;
+&lt;p&gt;這趟旅程經歷了兩個重要的演進階段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;第一階段：Omakub（基於 Ubuntu）&lt;/strong&gt;
+DHH 首先打造了 &lt;strong&gt;Omakub&lt;/strong&gt;（取名自日式主廚料理「Omakase（お任せ，由主廚為你搭配平衡的組合）」+ Ubuntu）。他的核心理念是：「Linux 不該只有極簡拼裝一種途徑，它也可以像主廚配餐的 Omakase 一樣，提供一套由經驗豐富的工程師精挑細選、兼顧美學且開箱即用的開發環境。」&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;第二階段：邁向滾動發行庫 $\rightarrow$ Omarchy（基於 Arch Linux）&lt;/strong&gt;
+在實際日常使用後，DHH 與社群進一步發現，Arch Linux 的滾動更新（rolling release）、龐大活躍的 AUR（Arch User Repository）以及簡潔的底層架構，更適合現代開發者的工作需求。於是，&lt;strong&gt;Omarchy&lt;/strong&gt; 應運而生——將 &amp;ldquo;Omakase&amp;rdquo; 的整合哲學融入 Arch Linux 的基礎之中。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Omarchy 並非只是一包 dotfiles，而是一套完整的現代化桌面系統：它採用了 Hyprland 動態平鋪合成器、以 Qt6/QML 打造的 Quickshell 狀態列、Btrfs 自動快照防護網，並原生融入了對現代 AI coding agent 的深度協同支援。&lt;/p&gt;
+&lt;h2 id=&#34;2-omarchy-全域架構大圖big-picture&#34;&gt;2. Omarchy 全域架構大圖（Big Picture）&lt;/h2&gt;
+&lt;p&gt;Omarchy 採用&lt;strong&gt;分層解耦架構（Layered Architecture）&lt;/strong&gt;，將系統預設配置、桌面元件與使用者擴充層嚴格劃分：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    L1[&#34;&lt;b&gt;1. 使用者與 agent 擴充層&lt;/b&gt;&lt;br/&gt;&lt;code&gt;~/.config/omarchy/&lt;/code&gt;&lt;br/&gt;自訂 hooks · 選單擴充 (JSONC)&lt;br/&gt;插件克隆 · 客製色票&#34;]
+    L2[&#34;&lt;b&gt;2. Omarchy 系統框架&lt;/b&gt;&lt;br/&gt;&lt;code&gt;/usr/share/omarchy/&lt;/code&gt;&lt;br/&gt;統一主題引擎 (colors.toml)&lt;br/&gt;更新管線 · agent skills&#34;]
+    L3[&#34;&lt;b&gt;3. 現代化 Wayland 桌面生態&lt;/b&gt;&lt;br/&gt;Hyprland (模組化 Lua 配置)&lt;br/&gt;Quickshell (QML 狀態列) · UWSM session 管理&#34;]
+    L4[&#34;&lt;b&gt;4. Arch Linux 基礎與底層系統&lt;/b&gt;&lt;br/&gt;Pacman &amp;amp; AUR 滾動更新庫&lt;br/&gt;Limine + Snapper (Btrfs 快照回滾)&lt;br/&gt;PipeWire &amp;amp; Linux Kernel&#34;]
+
+    L1 ==&gt;|安全配置覆寫 &amp;amp; 插件擴充| L2
+    L2 ==&gt;|全域主題推播 &amp;amp; 桌面會話整合| L3
+    L3 ==&gt;|構建於 Arch 滾動更新體系| L4
+
+    classDef userNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+    classDef frameworkNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef desktopNode fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef archNode fill:#0f172a,stroke:#94a3b8,stroke-width:2px,color:#f8fafc;
+
+    class L1 userNode;
+    class L2 frameworkNode;
+    class L3 desktopNode;
+    class L4 archNode;
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+  &lt;/div&gt;
+
+&lt;h2 id=&#34;3-三大核心支柱與底層技術棧&#34;&gt;3. 三大核心支柱與底層技術棧&lt;/h2&gt;
+&lt;h3 id=&#34;31-鍵盤至上keyboard-driven-的極速操控&#34;&gt;3.1 鍵盤至上：Keyboard-Driven 的極速操控&lt;/h3&gt;
+&lt;p&gt;Omarchy 的原生設計讓使用者能最大程度保持「手不離鍵盤主鍵區」：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;直覺的原生快捷鍵體系&lt;/strong&gt;：
+Omarchy 預設圍繞 &lt;code&gt;Super&lt;/code&gt; 與 &lt;code&gt;Alt&lt;/code&gt; 鍵構建了完整且層次分明的快捷操作網（例如切換工作區、分割視窗、調整大小與多螢幕跳轉）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;極簡的宣告式 Lua 綁定 API&lt;/strong&gt;：
+不同於過去修改複雜的配置檔，Omarchy 在 &lt;code&gt;~/.config/hypr/bindings.lua&lt;/code&gt; 中提供了 &lt;code&gt;o.bind&lt;/code&gt; 與 &lt;code&gt;hl.unbind&lt;/code&gt; 等高階 API。使用者可以非常優雅地疊加個人自訂鍵位（例如自訂 Meh key 複合鍵、特殊巨集），而完全不破壞系統預設邏輯。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;全鍵盤搜尋與啟動器（&lt;code&gt;omarchy-menu&lt;/code&gt;）&lt;/strong&gt;：
+透過 &lt;code&gt;Alt + Space&lt;/code&gt; 或 &lt;code&gt;Super + Space&lt;/code&gt; 喚出 Quickshell 即時選單，支援模糊搜尋所有系統設定、主題切換、AI agent 選擇與應用程式啟動。&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/navigation-browser-terminal.webp&#34; alt=&#34;navigation-browser-terminal.webp&#34; width=&#34;1600&#34; height=&#34;900&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/clipboard-history-search.webp&#34; alt=&#34;clipboard-history-search.webp&#34; width=&#34;1600&#34; height=&#34;1132&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h3 id=&#34;32-平鋪優先tile-preferred-與現代-wayland-桌面&#34;&gt;3.2 平鋪優先：Tile-Preferred 與現代 Wayland 桌面&lt;/h3&gt;
+&lt;p&gt;對於多視窗重度使用者與程式開發者而言，傳統重疊視窗（floating windows）需要不斷使用滑鼠拉伸與移動視窗邊界，極度分散注意力。&lt;/p&gt;
+&lt;p&gt;Omarchy 選擇了 &lt;strong&gt;Hyprland&lt;/strong&gt; 作為核心合成器，並以平鋪視窗作為第一公民：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;動態平鋪與空間利用率&lt;/strong&gt;：視窗開啟時自動分割排版，有效利用螢幕空間；搭配流暢的動畫與邊框樣式，兼具實用與視覺一致性。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;UWSM 會話管理&lt;/strong&gt;：採用 Universal Wayland Session Manager，所有桌面常駐程式（如 Fcitx5 輸入法、音訊守護）皆註冊為獨立的 &lt;code&gt;systemd&lt;/code&gt; user units，徹底解決 Wayland 下環境變數不同步與程序崩潰難以追蹤的問題。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;模組化 Lua 視窗規則（&lt;code&gt;windows.lua&lt;/code&gt;）&lt;/strong&gt;：個別應用程式（例如密碼庫、計算機）可精準宣告為自動浮動並置中，其餘開發工具（終端機、瀏覽器、Obsidian）則維持全平鋪排版。&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/navigation-fourway-tiling.webp&#34; alt=&#34;navigation-fourway-tiling.webp&#34; width=&#34;1600&#34; height=&#34;900&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h3 id=&#34;33-ai-原生ai-native-架構與-agent-深度協同&#34;&gt;3.3 AI 原生：AI-Native 架構與 Agent 深度協同&lt;/h3&gt;
+&lt;p&gt;傳統 Linux 發行版對 AI coding agent（如 Claude Code、Antigravity、Aider、Pi）極為不友善——設定檔散落在 &lt;code&gt;/etc&lt;/code&gt;、&lt;code&gt;/usr&lt;/code&gt; 與 &lt;code&gt;~/.config&lt;/code&gt;，常需要互動式 &lt;code&gt;sudo&lt;/code&gt; 輸入密碼導致 agent 阻塞，且一旦修改錯誤可能造成系統黑畫面。&lt;/p&gt;
+&lt;p&gt;Omarchy 從設計之初便將 AI 協作納入作業系統核心：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;結構化自省介面（Machine-Readable CLI）&lt;/strong&gt;：
+AI agent 不需要靠猜測指令參數，Omarchy 提供了強大的自省 API：
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 輸出全系統所有指令的 JSON Schema（包含群組、路由、參數與說明）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy commands --json
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 免互動式 sudo 的系統健康與除錯資訊輸出（避免 agent 執行時阻塞）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy debug --no-sudo --print&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;內建 agent skills 規範（&lt;code&gt;/usr/share/omarchy/default/agents/skills/&lt;/code&gt;）&lt;/strong&gt;：
+Omarchy 預先為 AI agent 封裝了專屬的 skill 知識庫：
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;omarchy&lt;/code&gt; skill：定義了安全的配置修改邊界、熱重載策略與備份復原命令。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;diagnose-crash&lt;/code&gt; skill：自動擷取 &lt;code&gt;journalctl&lt;/code&gt;、&lt;code&gt;coredumpctl&lt;/code&gt; 與 Wayland 合成器日誌，讓 agent 能精準分析桌面當機原因並修復。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態列即時 AI 額度追蹤（&lt;code&gt;omarchy.agents&lt;/code&gt;）&lt;/strong&gt;：
+狀態列隨附第一方 AI 插件，點擊即可即時展開目前 Claude / OpenAI / 本地模型的 token 消耗步調、今日用量與額度分析。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;隔離與插件克隆模式（plugin clone pattern）&lt;/strong&gt;：
+系統預設組件位於 &lt;code&gt;/usr/share/omarchy/&lt;/code&gt;（唯讀保護）。AI agent 在擴充狀態列元件時，可以使用 &lt;code&gt;omarchy plugin clone &amp;lt;plugin-name&amp;gt;&lt;/code&gt;，將系統內建插件安全複製到 &lt;code&gt;~/.config/omarchy/plugins/&lt;/code&gt; 下建立專屬版本，修改絕不會破壞上游核心。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;快速安全回滾（Self-Healing Mechanisms）&lt;/strong&gt;：
+若 AI agent 在調整配置時寫出語法錯誤，Omarchy 提供非破壞性的還原指令：
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 自動備份當前錯誤配置並還原回預設狀態&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy refresh shell
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy refresh hyprland&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;34-穩健底層btrfs--snapper--limine-快照回滾&#34;&gt;3.4 穩健底層：Btrfs + Snapper + Limine 快照回滾&lt;/h3&gt;
+&lt;p&gt;為了確保滾動發行庫（rolling release）的穩定性，Omarchy 在底層構建了自動快照保護網：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Btrfs 子卷隔離&lt;/strong&gt;：根目錄（&lt;code&gt;@&lt;/code&gt;）與家目錄（&lt;code&gt;@home&lt;/code&gt;）分離，快照回滾不影響個人使用者資料。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Snapper + Libalpm Hooks&lt;/strong&gt;：每次 &lt;code&gt;pacman&lt;/code&gt; 寫入套件前後自動透過 &lt;code&gt;libalpm&lt;/code&gt; hooks 捕捉 Pre/Post 快照。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Limine 開機選單同步&lt;/strong&gt;：整合 &lt;code&gt;limine-snapper-sync&lt;/code&gt;，每次更新自動在開機選單生成快照項目，遇到異常可直接從選單回滾。&lt;/li&gt;
+&lt;/ul&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/snapshots-bootloader.webp&#34; alt=&#34;snapshots-bootloader.webp&#34; width=&#34;1600&#34; height=&#34;994&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h2 id=&#34;4-深入-quickshell-插件架構與生態&#34;&gt;4. 深入 Quickshell 插件架構與生態&lt;/h2&gt;
+&lt;p&gt;Omarchy 的狀態列（Bar）、通知中心、鎖定螢幕、OSD 與彈出面板全都是基於 &lt;strong&gt;&lt;a href=&#34;https://quickshell.org/&#34;&gt;Quickshell&lt;/a&gt;（以 Qt6/QML 實作的 Wayland shell 框架）&lt;/strong&gt; 以插件形式掛載：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph Host [&#34;omarchy-shell (Quickshell 單一常駐主體)&#34;]
+        direction TB
+        Services[&#34;全域共用服務 (QML)&lt;br/&gt;• 統一主題色票 (colors.toml)&lt;br/&gt;• PipeWire 音訊 / Network 狀態&#34;]
+        Registry[&#34;PluginRegistry 外掛註冊表&lt;br/&gt;• inotify 監聽即時熱重載&lt;br/&gt;• manifest.json 契約驗證&#34;]
+    end
+
+    subgraph Plugins [&#34;插件生態系統 (Plugins)&#34;]
+        direction LR
+        Builtin[&#34;&lt;b&gt;系統第一方插件&lt;/b&gt; (&lt;code&gt;/usr/share/...&lt;/code&gt;)&lt;br/&gt;• omarchy.bar · omarchy.audio&lt;br/&gt;• omarchy.agents · omarchy.network&#34;]
+        Custom[&#34;&lt;b&gt;使用者自訂插件&lt;/b&gt; (&lt;code&gt;~/.config/...&lt;/code&gt;)&lt;br/&gt;• custom.cpu-monitor (自訂)&lt;br/&gt;• 第三方 Git 克隆插件&#34;]
+    end
+
+    Services --- Registry
+    Registry ==&gt;|動態載入 &amp;amp; 生命週期託管| Builtin
+    Registry ==&gt;|動態載入 &amp;amp; 熱重載| Custom
+
+    classDef hostNode fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef subNode fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#e2e8f0;
+    classDef builtinNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef customNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+
+    class Host hostNode;
+    class Services,Registry subNode;
+    class Builtin builtinNode;
+    class Custom customNode;
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;41-核心運作機制&#34;&gt;4.1 核心運作機制&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;單一常駐 Host（single shell host）&lt;/strong&gt;：
+全桌面只跑一個 &lt;code&gt;omarchy-shell&lt;/code&gt; 程序。點擊狀態列展開音訊面板、Wi-Fi 列表或日曆時，是在同一個記憶體空間內呼叫 IPC 顯示 UI，實現&lt;strong&gt;零冷啟動延遲&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;inotify 即時熱重載（hot-reloading）&lt;/strong&gt;：
+&lt;code&gt;PluginRegistry.qml&lt;/code&gt; 透過後台 &lt;code&gt;inotifywait&lt;/code&gt; 監聽 &lt;code&gt;~/.config/omarchy/plugins/&lt;/code&gt;。當你儲存任何 &lt;code&gt;.qml&lt;/code&gt; 或 &lt;code&gt;manifest.json&lt;/code&gt; 時，外掛會在幾十毫秒內自動重載，完全不影響工作區與執行中的應用程式。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;嚴謹的 Manifest 契約 (&lt;code&gt;manifest.json&lt;/code&gt;)&lt;/strong&gt;：
+每個插件透過清單宣告其支援的型態（&lt;code&gt;kinds&lt;/code&gt;）：&lt;code&gt;bar-widget&lt;/code&gt;（狀態列元件）、&lt;code&gt;panel&lt;/code&gt;（彈出面板）、&lt;code&gt;overlay&lt;/code&gt;（全螢幕遮罩）、&lt;code&gt;service&lt;/code&gt;（背景單例服務）與 &lt;code&gt;bar&lt;/code&gt;（替換式狀態列）。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;42-哪裡可以找到與探索-omarchy-插件&#34;&gt;4.2 哪裡可以找到與探索 Omarchy 插件？&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;官方插件探索中心（Plugins Hub）&lt;/strong&gt;：造訪 &lt;strong&gt;&lt;a href=&#34;https://plugins.omarchy.org/&#34;&gt;https://plugins.omarchy.org/&lt;/a&gt;&lt;/strong&gt; 可以瀏覽由社群與官方維護的海量插件庫（包含各式狀態列小工具、控制面板、系統監控與主題擴充）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;第一方內建插件庫&lt;/strong&gt;：位於 &lt;code&gt;/usr/share/omarchy/shell/plugins/&lt;/code&gt;，使用 &lt;code&gt;omarchy plugin list&lt;/code&gt; 即可檢視（如 &lt;code&gt;omarchy.agents&lt;/code&gt;、&lt;code&gt;omarchy.tailscale&lt;/code&gt;、&lt;code&gt;omarchy.audio&lt;/code&gt;、&lt;code&gt;omarchy.disk-speedtest&lt;/code&gt; 等）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;插件克隆模式&lt;/strong&gt;：使用 &lt;code&gt;omarchy plugin clone &amp;lt;source-id&amp;gt; --edit&lt;/code&gt; 將內建插件複製到 &lt;code&gt;~/.config/omarchy/plugins/&lt;/code&gt; 進行安全魔改。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;社群第三方 Git 插件&lt;/strong&gt;：使用 &lt;code&gt;omarchy plugin add &amp;lt;git-url&amp;gt; --enable&lt;/code&gt; 快速安裝並加入狀態列。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;5-實戰演練客製與擴充-omarchy-範例&#34;&gt;5. 實戰演練：客製與擴充 Omarchy 範例&lt;/h2&gt;
+&lt;h3 id=&#34;51-客製化-meh-key-體系與-voxtype-語音聽寫切換&#34;&gt;5.1 客製化 Meh Key 體系與 Voxtype 語音聽寫切換&lt;/h3&gt;
+&lt;p&gt;雖然 Omarchy 預設提供了完整的 &lt;code&gt;Super&lt;/code&gt; 鍵操作網，但為了徹底杜絕與個別開發工具（如 IDE、終端機內部快捷鍵）的鍵位衝突，我個人在 &lt;code&gt;~/.config/hypr/bindings.lua&lt;/code&gt; 中引入了 &lt;strong&gt;Meh key（&lt;code&gt;Ctrl + Alt + Shift&lt;/code&gt;）&lt;/strong&gt; 作為高階快捷鍵前綴。&lt;/p&gt;
+&lt;p&gt;透過 Omarchy 提供的標準 &lt;code&gt;o.bind&lt;/code&gt; API，可以非常直覺地將系統常駐的 &lt;strong&gt;Voxtype 本地 Whisper 語音聽寫守護程序&lt;/strong&gt;（&lt;code&gt;voxtype record toggle&lt;/code&gt;）綁定至 &lt;code&gt;Meh + V&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-lua&#34; data-lang=&#34;lua&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;-- ~/.config/hypr/bindings.lua&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;local&lt;/span&gt; o &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; require(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;omarchy.bindings&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;-- 個人客製化：綁定 Meh + V (Ctrl + Alt + Shift + V) 隨手切換語音錄音&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;o.bind(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CTRL + ALT + SHIFT + V&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Toggle dictation&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;voxtype record toggle&amp;#34;&lt;/span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;執行 &lt;code&gt;hyprctl reload&lt;/code&gt; 後立即生效。現在無論在哪個視窗，按下 &lt;code&gt;Meh + V&lt;/code&gt; 就能立即開始或結束語音錄音並自動完成文字輸出，完全不影響一般的應用程式快速鍵。&lt;/p&gt;
+&lt;h3 id=&#34;52-實作-cpu-溫度與使用率狀態列-widget--btop-整合長駐串流優化&#34;&gt;5.2 實作 CPU 溫度與使用率狀態列 Widget + btop 整合（長駐串流優化）&lt;/h3&gt;
+&lt;p&gt;在 &lt;code&gt;~/.config/omarchy/plugins/custom.cpu-monitor/&lt;/code&gt; 建立自訂小工具。為了避免每 2 秒透過 &lt;code&gt;Timer&lt;/code&gt; 重複 fork 子行程造成 CPU 開銷，我們採用 &lt;strong&gt;單一長駐串流進程 + Quickshell 原生 &lt;code&gt;SplitParser&lt;/code&gt;&lt;/strong&gt; 的高效架構：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;manifest.json&lt;/code&gt;&lt;/strong&gt;：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-json&#34; data-lang=&#34;json&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;schemaVersion&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;id&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;custom.cpu-monitor&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;name&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CPU Monitor&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;version&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;1.0.0&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;kinds&amp;#34;&lt;/span&gt;: [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;bar-widget&amp;#34;&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;entryPoints&amp;#34;&lt;/span&gt;: { &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;barWidget&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CpuWidget.qml&amp;#34;&lt;/span&gt; },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;barWidget&amp;#34;&lt;/span&gt;: {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;displayName&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CPU Monitor&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;category&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;System&amp;#34;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;#34;defaultSection&amp;#34;&lt;/span&gt;: &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;right&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;2&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cpu_stream.sh&lt;/code&gt;&lt;/strong&gt;（純 bash 常駐採集腳本，每 2 秒向 stdout 輸出單行 JSON，全生命週期僅 fork 1 次）：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#!/usr/bin/env bash
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# ~/.config/omarchy/plugins/custom.cpu-monitor/cpu_stream.sh&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 啟動時定位溫度感測路徑&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;temp_file&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; d in /sys/class/hwmon/hwmon*; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt; -f &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$d&lt;span style=&#34;color:#e6db74&#34;&gt;/name&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; grep -q &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;coretemp\|k10temp\|zenpower\|cpu_thermal&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$d&lt;span style=&#34;color:#e6db74&#34;&gt;/name&amp;#34;&lt;/span&gt; 2&amp;gt;/dev/null; &lt;span style=&#34;color:#66d9ef&#34;&gt;then&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt; -f &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$d&lt;span style=&#34;color:#e6db74&#34;&gt;/temp1_input&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; temp_file&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$d&lt;span style=&#34;color:#e6db74&#34;&gt;/temp1_input&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; break
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fi&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;read -r _ u1 n1 s1 i1 io1 ir1 sir1 st1 _ &amp;lt; /proc/stat
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;prev_total&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;u1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; n1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; s1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; i1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; io1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; ir1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; sir1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; st1&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;prev_idle&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;i1 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; io1&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 持續串流輸出，零額外子程序&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; true; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    sleep &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    read -r _ u2 n2 s2 i2 io2 ir2 sir2 st2 _ &amp;lt; /proc/stat
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    total&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;u2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; n2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; s2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; i2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; io2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; ir2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; sir2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; st2&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    idle&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;i2 &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; io2&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    total_diff&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;total &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; prev_total&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    idle_diff&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt;idle &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; prev_idle&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    prev_total&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;$total
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    prev_idle&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;$idle
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    usage&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt; total_diff &amp;gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; ? &lt;span style=&#34;color:#f92672&#34;&gt;(&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;100&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;(&lt;/span&gt;total_diff &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; idle_diff&lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt; / total_diff : &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;))&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    temp&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt; -n &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$temp_file&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;[&lt;/span&gt; -r &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$temp_file&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;]&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;then&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        read -r raw_temp &amp;lt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$temp_file&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; 2&amp;gt;/dev/null
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        temp&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;$((&lt;/span&gt; raw_temp &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1000&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;))&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;°C&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fi&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    printf &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;{&amp;#34;usage&amp;#34;: %d, &amp;#34;temp&amp;#34;: &amp;#34;%s&amp;#34;}\n&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$usage&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;$temp&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;done&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;3&#34;&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;CpuWidget.qml&lt;/code&gt;&lt;/strong&gt;（使用 &lt;code&gt;SplitParser&lt;/code&gt; 串流事件驅動，搭配 &lt;code&gt;TextMetrics&lt;/code&gt; 固定欄位寬度防止字元跳動）：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-qml&#34; data-lang=&#34;qml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;QtQuick&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Quickshell&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Quickshell&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Io&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;qs&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Commons&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;import&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;qs&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Ui&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;BarWidget&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;id: root&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;moduleName:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;custom.cpu-monitor&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;property&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;cpuUsage:&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;property&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;string&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;cpuTemp:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;--&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;// 預先計算 3 位數百分比與溫度的最大字元寬度，防止數字跳動造成狀態列抖動
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;TextMetrics&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;id: usageMetrics&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;font.family:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Style&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;font&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;family&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;font.pixelSize:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Style&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;font&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;body&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;100%&amp;#34;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;TextMetrics&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;id: tempMetrics&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;font.family:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Style&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;font&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;family&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;font.pixelSize:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Style&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;font&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;body&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;100°C&amp;#34;&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;Process&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;id: statStream&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;running:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;command:&lt;/span&gt; [&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;bash&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;Quickshell&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;env&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;HOME&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;/.config/omarchy/plugins/custom.cpu-monitor/cpu_stream.sh&amp;#34;&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;stdout:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;SplitParser&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#66d9ef&#34;&gt;onRead:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;function&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;line&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;try&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;          &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;JSON&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;parse&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;line&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;          &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;usage&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!==&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;undefined&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;root&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;cpuUsage&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;usage&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;          &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;temp&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!==&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;undefined&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;root&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;cpuTemp&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;temp&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;catch&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;e&lt;/span&gt;) {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;Row&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.centerIn:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;spacing:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Style&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;space&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;color:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Color&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;foreground&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.verticalCenter:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;verticalCenter&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;width:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;usageMetrics&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;width&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;horizontalAlignment:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;AlignRight&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;root&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;cpuUsage&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;%&amp;#34;&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;color:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Color&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;foreground&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.verticalCenter:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;verticalCenter&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;·&amp;#34;&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;color:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Color&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;foreground&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;opacity:&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.6&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.verticalCenter:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;verticalCenter&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;width:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;tempMetrics&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;width&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;horizontalAlignment:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Text&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;AlignLeft&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;text:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;root&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;cpuTemp&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;color:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Color&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;foreground&lt;/span&gt;; &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.verticalCenter:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;verticalCenter&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;MouseArea&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;anchors.fill:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parent&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;cursorShape:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Qt&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;PointingHandCursor&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;onClicked:&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;root&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;bar&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;omarchy launch or focus tui btop&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ol start=&#34;4&#34;&gt;
+&lt;li&gt;&lt;strong&gt;啟用與掛載&lt;/strong&gt;：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy plugin enable custom.cpu-monitor --section right&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;啟用後狀態列右上角即時渲染出 CPU 負載與溫度，且固定寬度不晃動，點擊即可無縫展開 &lt;code&gt;btop&lt;/code&gt; 監控！&lt;/p&gt;
+&lt;h3 id=&#34;53-全域色票生成與動態編譯ai-native&#34;&gt;5.3 全域色票生成與動態編譯（AI-Native）&lt;/h3&gt;
+&lt;p&gt;由 AI agent 自動生成 Cyberpunk 2077 配色 &lt;code&gt;colors.toml&lt;/code&gt;，並透過單一指令完成全域推播：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;omarchy theme set cyber-neon&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Omarchy 的模板引擎會自動讀取 &lt;code&gt;/usr/share/omarchy/default/themed/*.tpl&lt;/code&gt;，將色票即時注入 Ghostty、Alacritty、VS Code、Neovim、Obsidian 與 Quickshell 並發送熱重載訊號。&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-omarchy-linux-architecture/tokyo-night-preview.webp&#34; alt=&#34;tokyo-night-preview.webp&#34; width=&#34;1600&#34; height=&#34;900&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h2 id=&#34;6-總結&#34;&gt;6. 總結&lt;/h2&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;特性維度&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;傳統 DIY Arch Linux&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;Omarchy Linux&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;操作哲學&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;依賴滑鼠或分散的快速鍵&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Keyboard-Driven&lt;/strong&gt;：直覺原生快捷鍵、宣告式 Lua 擴充（如 Meh key）與 Voxtype&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;視窗佈局&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;需手動調整重疊視窗&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Tile-Preferred&lt;/strong&gt;：Hyprland 動態平鋪 + UWSM &lt;code&gt;systemd&lt;/code&gt; 工作階段隔離&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;AI 整合&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;無原生支援，指令易因 &lt;code&gt;sudo&lt;/code&gt; 阻塞&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;AI-Native&lt;/strong&gt;：結構化自省 CLI、agent skills、狀態列 token 追蹤&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;狀態列與 UI&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;Waybar (GTK) 或 Polybar&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Quickshell (Qt6/QML)&lt;/strong&gt;：單一常駐 host、毫秒級熱重載&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;外觀一致性&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;手動設定 10+ 個獨立設定檔&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;&lt;code&gt;colors.toml&lt;/code&gt; 單一來源&lt;/strong&gt; + 跨應用模板編譯管線&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;更新防護&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;需自行設置 Btrfs 快照&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Limine + Snapper + &lt;code&gt;omarchy-update&lt;/code&gt;&lt;/strong&gt; 預檢與開機選單快照回滾&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Omarchy 並非要取代 Arch Linux 的極簡靈魂，而是以 &lt;strong&gt;Keyboard-Driven&lt;/strong&gt;、&lt;strong&gt;Tile-Preferred&lt;/strong&gt; 與 &lt;strong&gt;AI-Native&lt;/strong&gt; 為核心，透過高度模組化且優雅的架構，打造出兼具流暢操控力、視覺一致性與 AI 深度協作的現代化開發者工作站。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

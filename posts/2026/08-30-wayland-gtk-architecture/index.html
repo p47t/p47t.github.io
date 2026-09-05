@@ -1,0 +1,771 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>深入剖析 Wayland 運作架構：從 GTK、xdg_shell 到底層 IPC 機制 - 從像素畫布、狀態協商到零拷貝 buffer 共享的技術全貌</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-30-wayland-gtk-architecture/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-30-wayland-gtk-architecture/"/>
+  <meta property="og:title" content="深入剖析 Wayland 運作架構：從 GTK、xdg_shell 到底層 IPC 機制 - 從像素畫布、狀態協商到零拷貝 buffer 共享的技術全貌"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-08-30 10:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="linux"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:tag" content="c&#43;&#43;"/>
+  
+  <meta property="og:article:tag" content="performance"/>
+  
+  <meta property="og:article:tag" content="vulkan"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/08-30-omarchy-linux-architecture/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            探索 Omarchy Linux：鍵盤驅動、平鋪優先與 AI 原生的現代化桌面架構實戰
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">深入剖析 Wayland 運作架構：從 GTK、xdg_shell 到底層 IPC 機制</h1>
+      
+      <div class="post-subtitle">從像素畫布、狀態協商到零拷貝 buffer 共享的技術全貌</div>
+      
+      <div class="post-meta">
+        <span class="post-date">August 30, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/linux"><span class="label label-primary">linux</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        <a href="/tags/c&#43;&#43;"><span class="label label-primary">c&#43;&#43;</span></a>
+        
+        <a href="/tags/performance"><span class="label label-primary">performance</span></a>
+        
+        <a href="/tags/vulkan"><span class="label label-primary">vulkan</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/08-30-wayland-gtk-architecture/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在 Linux 桌面圖形技術的演進史中，<strong>Wayland</strong> 取代有著數十年歷史的 <strong>X11</strong>，無疑是一場深刻的架構演進。</p>
+<p>我自己過去在 Linux 上開發 GTK 桌面應用程式或客製化視窗時，常遇到一些令人好奇的底層問題：為什麼視窗在拖拉縮放時能做到完全不閃爍撕裂？為什麼應用程式無法像在 X11 下那樣隨意讀取全域螢幕座標？</p>
+<p>回顧過去在 X11 時代，X Server 扮演著無所不在的中心角色——它既要處理網路協定、字型渲染、視窗幾何形狀，還要轉發輸入與剪貼簿資料，甚至在 Composite 擴充加入後，還得在 X Server、window manager 與 compositor 之間來回搬移畫面資料，造成了嚴重的架構冗餘與畫面撕裂（tearing）。</p>
+<p>而 Wayland 的設計哲學非常純粹：<strong>「每一幀都是完美的（Every frame is perfect）」</strong>。它徹底廢除了傳統的 X Server，讓 <strong>compositor（如 GNOME 的 Mutter、KDE 的 KWin 或 Sway/Hyprland）直接兼任顯示伺服器與視窗管理器</strong>。</p>
+<p>這也帶來了許多底層開發者與架構愛好者的疑問：</p>
+<ul>
+<li>當我們寫一個 <strong>GTK 4 / GTK 3</strong> 應用程式時，它在 Wayland 下是如何繪製並顯示到螢幕上的？</li>
+<li>為什麼 Wayland 核心協定裡「沒有視窗」，而是透過 <strong><code>xdg_shell</code></strong> 來定義視窗行為？</li>
+<li>最底層的 <strong><code>wl_surface</code></strong> 是如何透過雙重緩衝（double-buffered）達成原子性更新的？</li>
+<li>應用程式與 compositor 之間是如何透過 <strong>UNIX Domain Socket 與 <code>SCM_RIGHTS</code></strong> 實現零拷貝（zero-copy）buffer 傳遞的？</li>
+</ul>
+<p>這篇文章將由上而下，從 UI toolkit（GTK）、桌面視窗協定（<code>xdg_shell</code>）、圖形原語（<code>wl_surface</code>）、底層二進位 IPC 通訊機制，一路探討到真實的 <strong>C++23 + Vulkan 實戰參考範例</strong>，為大家全面拆解 Wayland 的運作原理！</p>
+<h2 id="1-頂層視角gtk-應用程式在-wayland-上如何運作">1. 頂層視角：GTK 應用程式在 Wayland 上如何運作？</h2>
+<p>在傳統 X11 架構下，視窗裝飾（標題列、關閉按鈕）通常由伺服端的 window manager 繪製，應用程式只負責在指定的 X Window 區域內畫圖。但在 Wayland 架構下，應用程式（client）的自主權與隔離性大幅提高。</p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph G_Client["GTK 應用程式 (Client Process)"]
+        GTK["GTK 4 / GTK 3<br/>(Widgets, Layout, State)"]
+        GSK["GSK / Cairo<br/>(Scene Graph & 2D/3D Rendering)"]
+        GDK["GDK Wayland Backend<br/>(gdk/wayland)"]
+        EGL["EGL / Mesa (GPU 加速)<br/>wl_shm (軟體繪製)"]
+        LIBWAYLAND["libwayland-client<br/>(IPC Protocol)"]
+
+        GTK --> GSK
+        GSK --> GDK
+        GDK --> EGL
+        GDK --> LIBWAYLAND
+    end
+
+    subgraph G_IPC["Wayland Protocol (UNIX Domain Socket)"]
+        SOCKET["$XDG_RUNTIME_DIR/wayland-0"]
+    end
+
+    subgraph G_Server["Wayland Compositor (如 Mutter, KWin)"]
+        COMP["Compositor Core<br/>(Windowing & Shell Management)"]
+        RENDERER["Compositor Renderer<br/>(OpenGL / Vulkan)"]
+        LIBINPUT["libinput<br/>(Input Event Handling)"]
+    end
+
+    subgraph G_Kernel["Linux Kernel"]
+        DRM["DRM / KMS<br/>(Display Output)"]
+        EVD["evdev<br/>(Keyboard, Mouse, Touch)"]
+    end
+
+    LIBWAYLAND <-->|傳遞 Buffer Handle 與狀態請求| SOCKET
+    SOCKET <--> COMP
+    EVD --> LIBINPUT
+    LIBINPUT --> COMP
+    COMP --> RENDERER
+    RENDERER --> DRM
+  </div>
+
+<h3 id="gdk-wayland-後端與事件整合">GDK Wayland 後端與事件整合</h3>
+<p>GTK 應用程式啟動時，GDK（GIMP Drawing Kit）會載入 Wayland 後端（<code>gdk/wayland</code>），並透過 <code>libwayland-client</code> 建立對 compositor 的 socket 連線（通常位於 <code>$XDG_RUNTIME_DIR/wayland-0</code>）。</p>
+<p>GDK 會將 Wayland socket 的 File Descriptor 掛載進 GLib 的主事件迴圈（<code>GMainContext</code>）。當 Wayland 有事件到達時，GLib 的 Poll 機制會喚醒應用程式，將 Wayland 事件解析後轉為 <code>GdkEvent</code> 派發給對應的 GTK Widget。</p>
+<h3 id="客戶端裝飾-client-side-decoration-csd">客戶端裝飾 (Client-Side Decoration, CSD)</h3>
+<p>在 Wayland 中，compositor 預設不負責幫應用程式加上視窗標題列。因此 GTK 採用 <strong>CSD</strong>，將標題列（<code>GtkHeaderBar</code>）、視窗控制按鈕（最小化、最大化、關閉）以及視窗外圍陰影（drop shadow）全部納入應用程式的繪製樹中。</p>
+<h3 id="緩衝區繪製與提交">緩衝區繪製與提交</h3>
+<ol>
+<li><strong>GPU 渲染</strong>：GTK 4 透過 GSK（GTK Scene Kit）配合 Vulkan 或 OpenGL/EGL，直接在顯示卡記憶體中渲染 framebuffer。接著透過 Linux 的 <strong>DMA-BUF</strong> 機制將 GPU buffer 的記憶體描述符傳遞給 compositor。</li>
+<li><strong>軟體繪製 fallback</strong>：若缺乏硬體加速，GTK 透過 Cairo 在共享記憶體（<code>memfd_create</code>）中繪製，並透過 <strong><code>wl_shm</code></strong> 協定共享給 compositor。</li>
+</ol>
+<h3 id="幀時脈同步-frame-clock">幀時脈同步 (Frame Clock)</h3>
+<p>GTK 的動畫與重繪機制（<code>gdk_frame_clock</code>）完全依賴 compositor 驅動。當 GTK 繪製完一幀並提交後，會透過 <code>wl_surface.frame</code> 註冊一個回呼（callback）。</p>
+<p>Compositor 會在當前畫面真正完成 VSync 上屏且準備好接收下一幀時，送出 <code>wl_callback.done</code> 事件並帶上高精度時間戳記（timestamp）。GTK 收到通知後才開始排程下一幀的計算與渲染，徹底告別不必要的 CPU/GPU 消耗與畫面撕裂。</p>
+<h2 id="2-視窗語意層xdg_shell-協定">2. 視窗語意層：<code>xdg_shell</code> 協定</h2>
+<p>如果你翻開 Wayland 核心協定，會發現裡面根本沒有「視窗（window）」這個概念。核心協定只提供抽象的像素畫布 <code>wl_surface</code>。</p>
+<p>那麼，桌面應用程式的「標題、最小化、最大化、全螢幕、右鍵選單」是由誰定義的？答案就是 <strong><code>xdg_shell</code></strong>。</p>
+
+  <div class="mermaid">
+    flowchart TD
+    REG["wl_registry<br/>(Wayland 全域註冊表)"] -->|綁定| WM["xdg_wm_base<br/>(全域管理器介面)"]
+    SURF["wl_surface<br/>(基礎像素表面)"] -->|封裝| XSURF["xdg_surface<br/>(桌面表面基底)"]
+    WM -->|建立| XSURF
+    WM -->|輔助定位| POS_HELPER["xdg_positioner"]
+
+    XSURF -->|"賦予角色 (Role)"| TOP["xdg_toplevel<br/>(一般頂層應用視窗)"]
+    XSURF -->|"賦予角色 (Role)"| POP["xdg_popup<br/>(彈出式選單 / Tooltip)"]
+
+    POS_HELPER -.->|指定彈出規則| POP
+  </div>
+
+<h3 id="核心介面分工">核心介面分工</h3>
+<ol>
+<li><strong><code>xdg_wm_base</code></strong>：<code>xdg_shell</code> 的工廠介面，負責建立 <code>xdg_surface</code> 與管理客戶端活躍度（Ping/Pong）。</li>
+<li><strong><code>xdg_surface</code></strong>：將 <code>wl_surface</code> 與桌面視窗狀態連結的基底物件，負責管理視窗幾何邊界（<code>set_window_geometry</code>，用來剔除外圍陰影以精準計算貼齊尺寸）與狀態交握。</li>
+<li><strong><code>xdg_toplevel</code></strong>：代表標準的桌面頂層視窗，支援設定 <code>set_title</code>、<code>set_app_id</code>（對應 <code>.desktop</code> 啟動檔與圖示）、<code>set_maximized</code> 與 <code>set_fullscreen</code>。</li>
+<li><strong><code>xdg_popup</code> 與 <code>xdg_positioner</code></strong>：專為右鍵選單、下拉清單、tooltip 設計。由於 Wayland 出於安全隔離考量<strong>不向應用程式揭露螢幕全域座標</strong>，應用程式無法自行計算選單是否會超出螢幕邊界。透過 <code>xdg_positioner</code>，應用程式只需設定錨點與翻轉策略（如 <code>flip_x</code>、<code>slide_y</code>），compositor 就會在螢幕邊界內自動計算最合適的彈出位置。</li>
+</ol>
+<h3 id="視窗縮放的雙向狀態協商-configure-ack-handshake">視窗縮放的雙向狀態協商 (Configure-Ack Handshake)</h3>
+<p>在 X11 時代，當使用者拖曳改變視窗大小時，常常會看到視窗內容被瞬間拉伸失真、或是邊框縮小但內容還沒跟上的殘影。<code>xdg_shell</code> 透過嚴謹的雙向狀態機徹底解決了這個問題：</p>
+
+  <div class="mermaid">
+    sequenceDiagram
+    autonumber
+    participant Comp as Compositor (Mutter / KWin)
+    participant Client as GTK Client
+
+    Note over Comp: 使用者拉動視窗或最大化
+    Comp->>Client: xdg_toplevel.configure(1024, 768, [maximized])
+    Comp->>Client: xdg_surface.configure(serial=1234)
+
+    Note over Client: 1. 根據新尺寸重新排版 UI<br/>2. 繪製 1024x768 的新 Buffer
+
+    Client->>Comp: xdg_surface.ack_configure(serial=1234)
+    Client->>Comp: wl_surface.attach(new_buffer)
+    Client->>Comp: wl_surface.commit()
+
+    Note over Comp: Compositor 確認序號匹配<br/>原子性（Atomic）更新畫面上屏
+  </div>
+
+<p>Compositor 送出 <code>configure</code> 事件時會帶上一組 <code>serial</code> 序號。Client 在重新繪製完成並呼叫 <code>ack_configure(serial)</code> 之前，compositor 會持續以舊尺寸顯示或暫停更新，絕不會呈現半完成的破裂畫面。</p>
+<h3 id="互動式移動與縮放-interactive-move--resize">互動式移動與縮放 (Interactive Move / Resize)</h3>
+<p>在 Wayland 中，client 無法任意修改自己的螢幕座標。當使用者在 GTK 的標題列按下滑鼠開始拖曳時：</p>
+<ol>
+<li>GTK 偵測到點擊事件，呼叫 <code>xdg_toplevel.move(seat, serial)</code>。</li>
+<li><strong>Compositor 接管後續手勢</strong>：直接在顯示層移動整個 surface，GTK 本身完全不需要介入座標計算。</li>
+</ol>
+<h3 id="心跳監控機制-ping--pong">心跳監控機制 (Ping / Pong)</h3>
+<p>為了防止應用程式因無窮迴圈或耗時任務卡死導致介面失去回應，<code>xdg_wm_base</code> 內建了心跳機制：</p>
+<ul>
+<li>Compositor 定期發送 <code>xdg_wm_base.ping(serial)</code>。</li>
+<li>Client 必須在主事件迴圈中立刻回應 <code>xdg_wm_base.pong(serial)</code>。</li>
+<li>若逾時未收到回覆，compositor 便能可靠地判斷應用程式已當機，向使用者跳出「應用程式無回應」的結束對話框。</li>
+</ul>
+<h2 id="3-圖形原語層wl_surface-的雙重緩衝狀態機">3. 圖形原語層：<code>wl_surface</code> 的雙重緩衝狀態機</h2>
+<p>在 Wayland 中，所有呈現在螢幕上的像素載體，最底層都是一個 <strong><code>wl_surface</code></strong>。</p>
+<p><code>wl_surface</code> 最核心的精髓在於其 <strong>「待處理狀態（pending state）」</strong> 與 <strong>「當前狀態（current state）」</strong> 的雙重緩衝設計。</p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph G_Client["Client 操作請求"]
+        REQ_OPS["attach / damage / scale / frame<br/>(可多次累積呼叫)"]
+    end
+
+    subgraph G_State["wl_surface 狀態機"]
+        ST_PENDING["待處理狀態 (Pending State)<br/>暫存所有變更，對螢幕無任何影響"]
+        ST_CURRENT["當前狀態 (Current State)<br/>Compositor 實際拿來合成上屏的狀態"]
+    end
+
+    REQ_OPS -->|暫存變更至| ST_PENDING
+    BTN_COMMIT["wl_surface.commit 呼叫"] -->|"原子性觸發 (Atomically Applied)"| ST_PENDING
+    ST_PENDING -->|套用所有變更| ST_CURRENT
+    ST_CURRENT -->|Compositor 讀取| COMP_RENDER["Compositor 畫面混成與渲染"]
+  </div>
+
+<h3 id="關鍵-api-與優化機制">關鍵 API 與優化機制</h3>
+<ul>
+<li><strong><code>attach(buffer)</code> &amp; <code>damage_buffer(x, y, w, h)</code></strong>：綁定新 buffer 並宣告異動區域（dirty / damage region）。Compositor 只需重繪該局部區域，大幅節省 GPU 頻寬。</li>
+<li><strong><code>commit()</code></strong>：<strong>原子性提交開關</strong>。在此之前呼叫的所有 <code>attach</code>、<code>damage</code>、<code>set_buffer_scale</code> 都不會生效；呼叫 <code>commit()</code> 的瞬間，全部變更一次性生效。</li>
+<li><strong><code>set_opaque_region(region)</code></strong>：告訴 compositor 表面內哪些區塊是完全不透明的。Compositor 可以直接對被遮擋的底層視窗進行遮擋剔除（occlusion culling），避免無謂的 overdraw。</li>
+<li><strong><code>set_input_region(region)</code></strong>：定義點擊命中範圍，未涵蓋的區域事件將直接穿透到底層視窗。</li>
+<li><strong><code>enter(output)</code> / <code>leave(output)</code></strong>：當視窗跨越不同螢幕時，compositor 會通知 client 當前螢幕的 HiDPI 縮放比，讓 client 能即時動態調整渲染解析度。</li>
+</ul>
+<h3 id="表面角色模型與子表面-subsurfaces">表面角色模型與子表面 (Subsurfaces)</h3>
+<p>一個 <code>wl_surface</code> 在生命週期中只能被賦予一種角色（如 <code>xdg_toplevel</code>、<code>xdg_popup</code> 或滑鼠游標）。</p>
+<p>此外，透過 <strong><code>wl_subsurface</code></strong>，應用程式可以建立多層次複合畫布：</p>
+<ul>
+<li><strong>同步模式（sync mode）</strong>：子表面的更新暫存，直到父表面呼叫 <code>commit()</code> 時一起原子性上屏。</li>
+<li><strong>非同步模式（desync mode）</strong>：子表面擁有獨立的更新週期。例如在影片播放器中，主視窗 UI 以 60 Hz 更新，而影片畫面作為子表面以獨立的 24 fps 非同步提交，解碼渲染與 UI 互不阻塞。</li>
+</ul>
+<h2 id="4-底層通訊wayland-二進位-ipc-與零拷貝傳輸">4. 底層通訊：Wayland 二進位 IPC 與零拷貝傳輸</h2>
+<p>Wayland 在處理行程間通訊（IPC）時，捨棄了 X11 龐大複雜的通訊協定，採用了極簡的二進位封包設計。</p>
+<h3 id="傳輸層unix-domain-socket">傳輸層：UNIX Domain Socket</h3>
+<p>Wayland 基於本地 <strong>UNIX Domain Stream Socket（<code>AF_UNIX</code>, <code>SOCK_STREAM</code>）</strong>，沒有任何 TCP/IP 網路堆疊開銷。</p>
+<h3 id="8-byte-訊息標頭與二進位格式-wire-format">8-Byte 訊息標頭與二進位格式 (Wire Format)</h3>
+<p>所有 Wayland 的請求（request）與事件（event）都是序列化的二進位資料流。每個訊息都以固定的 <strong>8-byte header</strong> 開始：</p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph G_Packet["Wayland 二進位封包格式 (Wire Format)"]
+        direction TB
+
+        subgraph G_Header["8-Byte 固定訊息標頭 (Message Header)"]
+            direction TB
+            H_OBJ["<b>Object ID</b><br/>32-bit (4 Bytes) · 目標物件識別碼"]
+            H_SIZE["<b>Message Size</b><br/>16-bit (2 Bytes)<br/>封包總長度"]
+            H_OPCODE["<b>Opcode</b><br/>16-bit (2 Bytes)<br/>方法 / 事件編號"]
+        end
+
+        subgraph G_Payload["動態參數負載 (Payload Data)"]
+            P_ARGS["<b>Arguments (32-bit 對齊參數清單)</b><br/>int32 · uint32 · fixed (24.8)<br/>string · new_id · array"]
+        end
+
+        H_OBJ --> H_SIZE & H_OPCODE
+        H_SIZE & H_OPCODE --> P_ARGS
+    end
+
+    classDef headerNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef payloadNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+
+    class H_OBJ,H_SIZE,H_OPCODE headerNode;
+    class P_ARGS payloadNode;
+  </div>
+
+<ol>
+<li><strong><code>Object ID</code>（32-bit uint）</strong>：目標物件識別碼（例如某個特定的 <code>wl_surface</code> 實例）。</li>
+<li><strong><code>Opcode</code>（16-bit uint）</strong>：方法編號（0 代表介面定義的第一個方法，1 代表第二個，依此類推）。</li>
+<li><strong><code>Message Size</code>（16-bit uint）</strong>：包含 header 與 payload 的封包總長度。</li>
+<li><strong>Payload</strong>：參數資料，包含 <code>int</code>、<code>uint</code>、<code>fixed</code>（24.8 定點數）、<code>string</code>、<code>array</code> 等，全部對齊 4-byte 邊界。</li>
+</ol>
+<h3 id="零拷貝傳輸scm_rights-傳遞-file-descriptor">零拷貝傳輸：<code>SCM_RIGHTS</code> 傳遞 File Descriptor</h3>
+<p>圖形繪製最忌諱在行程間複製大塊像素資料。Wayland 的做法是<strong>絕不透過 socket 傳遞像素</strong>，而是透過 Linux Kernel 的 <code>sendmsg()</code> 輔助資料（ancillary data）傳遞 <strong>File Descriptor</strong>：</p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph G_ClientProcess["GTK Client 行程"]
+        MEM["GPU Framebuffer / DMA-BUF<br/>或 memfd_create 共享記憶體"]
+        FD["Client 端 FD (如 fd=7)"]
+        MEM --- FD
+    end
+
+    subgraph G_Kernel["Linux Kernel IPC"]
+        SCM["sendmsg(..., SCM_RIGHTS, fd=7)<br/>Kernel 在 Compositor FD 表建立副本"]
+    end
+
+    subgraph G_Compositor["Compositor 行程"]
+        SFD["Server 端 FD (如 fd=12)"]
+        SMEM["直接映射相同的實體 RAM<br/>或 GPU 顯存紋理"]
+        SFD --- SMEM
+    end
+
+    FD -->|sendmsg| SCM
+    SCM -->|recvmsg| SFD
+  </div>
+
+<ul>
+<li><strong>共享記憶體（<code>wl_shm</code>）</strong>：Client 透過 <code>memfd_create()</code> 建立匿名記憶體，透過 <code>SCM_RIGHTS</code> 將 FD 傳給 compositor，雙方各自呼叫 <code>mmap()</code> 映射同一塊實體記憶體。</li>
+<li><strong>GPU 紋理（<code>linux-dmabuf</code>）</strong>：GTK/Mesa 透過 DMA-BUF 建立 GPU buffer 的 FD 並傳遞，compositor 直接將其作為 EGLImage/GPU Texture 匯入，實現真正的 <strong>zero-copy</strong> 渲染。</li>
+</ul>
+<h3 id="本地物件-id-分配與非同步通訊">本地物件 ID 分配與非同步通訊</h3>
+<p>在傳統 RPC 中，建立物件往往需要發送請求並等待伺服器回傳新 ID。而 Wayland 採用了巧妙的本地分配機制：</p>
+<ul>
+<li><strong>Client 指派 ID</strong>：Client 在發送 <code>new_id</code> 請求（如建立 surface）時，直接自行決定下一個未使用的 32-bit ID（範圍為 <code>0x00000001</code> ～ <code>0xfeffffff</code>）並告知 server，<strong>完全無需等待伺服器回傳確認</strong>。</li>
+<li><strong>全非同步通訊</strong>：絕大多數請求都是單向發送（fire-and-forget）。若 client 需要確保伺服端已處理完前面的所有請求，只需發送一個 <strong><code>wl_display.sync</code></strong> 屏障（barrier），compositor 處理到該點時會回傳 <code>wl_callback.done</code> 事件。</li>
+</ul>
+<h2 id="5-實戰範例極簡硬體加速-wayland--vulkan-參考實作hello-wayland">5. 實戰範例：極簡硬體加速 Wayland + Vulkan 參考實作（hello-wayland）</h2>
+<p>為了讓大家能跳脫 GTK/Qt 等大型龐雜框架的包裝，真正看清上述所有 Wayland 核心機制的運作細節，我們實作了一個極簡且具備純硬體加速的開源參考專案：</p>
+<p>👉 <strong>GitHub 專案倉庫</strong>：<a href="https://github.com/p47t/hello-wayland">https://github.com/p47t/hello-wayland</a></p>
+
+  <div class="mermaid">
+    flowchart TD
+    subgraph App["Hello Wayland (C++23)"]
+        WAPP["WaylandApp<br/>(PIMPL · 事件迴圈)"]
+        VK["VulkanRenderer<br/>(RAII · std::expected)"]
+    end
+
+    subgraph Wayland["Wayland Protocol"]
+        REG["wl_registry"]
+        WM["xdg_wm_base"]
+        XSURF["xdg_surface / xdg_toplevel"]
+        WSURF["wl_surface"]
+    end
+
+    subgraph VulkanDriver["Vulkan WSI (GPU Driver)"]
+        VK_SURF["VkSurfaceKHR<br/>(VK_KHR_wayland_surface)"]
+        SWAP["VkSwapchainKHR<br/>(VK_KHR_swapchain)"]
+    end
+
+    WAPP -->|綁定| REG
+    REG -->|獲取| WM
+    WM -->|建立| XSURF
+    XSURF -->|管理| WSURF
+    WSURF -.->|傳入 display 與 surface| VK_SURF
+    VK_SURF -->|建立| SWAP
+    VK -->|渲染並呈現| SWAP
+
+    classDef cppNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef wlNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+    classDef vkNode fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+
+    class WAPP,VK cppNode;
+    class REG,WM,XSURF,WSURF wlNode;
+    class VK_SURF,SWAP vkNode;
+  </div>
+
+<h3 id="關鍵架構設計與實作細節">關鍵架構設計與實作細節</h3>
+<ol>
+<li><strong>直接對接 Wayland 核心協定</strong>：
+專案完全不依賴任何重量級視窗庫，直接透過 <code>libwayland-client</code> 與編譯期透過 <code>wayland-scanner</code> 產生的 <code>xdg-shell-protocol.c/.h</code> 建立 socket 連線並綁定 <code>wl_compositor</code> 與 <code>xdg_wm_base</code>。</li>
+<li><strong>嚴謹的雙向狀態協商（Configure-Ack）</strong>：
+在 <code>xdg_surface_listener.configure</code> 回呼中精準處理 compositor 指派的幾何尺寸與視窗狀態，並立即呼叫 <code>xdg_surface_ack_configure(surface, serial)</code> 達成無破圖協商。</li>
+<li><strong>Vulkan 原生 WSI 與零拷貝呈現</strong>：
+透過 Vulkan 的 <code>VK_KHR_wayland_surface</code> 擴充，將底層的 <code>wl_display</code> 與 <code>wl_surface</code> 直接註冊為 <code>VkSurfaceKHR</code>；配合 <code>VK_KHR_swapchain</code>，GPU 著色器渲染完畢後即可直接將顯存緩衝區交由 compositor 混成，實現真正的 <strong>zero-copy</strong> 渲染管線。</li>
+<li><strong>動態 Swapchain 重建</strong>：
+當使用者拖曳視窗改變尺寸時，專案能自動處理 <code>VK_ERROR_OUT_OF_DATE_KHR</code> 與 <code>VK_SUBOPTIMAL_KHR</code>，優雅地以 <code>oldSwapchain</code> 重新建立新尺寸的 Framebuffer 與 Render Pass，保證視窗縮放過程如絲般順滑。</li>
+<li><strong><code>wl_surface.frame</code> 幀率時脈同步</strong>：
+在每一幀渲染提交時註冊 <code>wl_surface_frame</code> 回呼，精確配合螢幕刷新率（60/120/144 Hz）排程下一幀，達成無撕裂、零浪費的省電渲染循環。</li>
+<li><strong>現代 C++23 與 Cabin 建置</strong>：
+全專案採用 <strong>C++23</strong> 開發，大量運用 <code>std::expected</code> 進行單子風格的無例外錯誤處理（Monadic error handling），並使用現代 C++ 套件管理器 <a href="https://github.com/cabinpkg/cabin">Cabin</a> 管理建置與依賴，只需簡單兩行即可編譯並執行：</li>
+</ol>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 編譯專案</span>
+</span></span><span style="display:flex;"><span>cabin build
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 執行 Wayland Vulkan 應用程式</span>
+</span></span><span style="display:flex;"><span>cabin run</span></span></code></pre></div>
+
+<h2 id="6-x11-vs-wayland-架構對比總結">6. X11 vs Wayland 架構對比總結</h2>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">架構維度</th>
+					<th style="text-align: left">傳統 X11 架構</th>
+					<th style="text-align: left">現代 Wayland 架構</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>核心架構</strong></td>
+					<td style="text-align: left">集中式 X Server + 獨立 window manager + compositor</td>
+					<td style="text-align: left">Compositor 兼任顯示伺服器與視窗管理器</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>繪圖流程</strong></td>
+					<td style="text-align: left">間接轉發渲染指令或雙重 buffer 拷貝</td>
+					<td style="text-align: left">Client 直接渲染至 GPU/SHM buffer，compositor 零拷貝合成</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>視窗管理</strong></td>
+					<td style="text-align: left">伺服端繪製邊框；全域座標公開暴露</td>
+					<td style="text-align: left">客戶端裝飾（CSD）；由 <code>xdg_shell</code> 進行雙向狀態協商</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>通訊協定</strong></td>
+					<td style="text-align: left">龐大狀態機與網路協定封包</td>
+					<td style="text-align: left">極簡 8-Byte 標頭二進位串流 + <code>SCM_RIGHTS</code> 傳遞 FD</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>畫面同步</strong></td>
+					<td style="text-align: left">容易出現垂直撕裂（tearing）與閃爍</td>
+					<td style="text-align: left">透過 <code>wl_surface.frame</code> 嚴格鎖定 VSync，保證「每幀完美」</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>安全隔離</strong></td>
+					<td style="text-align: left">任何程式可監聽全域按鍵與螢幕截圖</td>
+					<td style="text-align: left">行程沙盒隔離，敏感操作須經 XDG Desktop Portal 授權</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="7-延伸閱讀與參考資源">7. 延伸閱讀與參考資源</h2>
+<p>如果你想更深入地從 C 語言底層、自製 compositor 或自訂協定擴充角度探索 Wayland，強烈推薦閱讀開源經典著作：</p>
+<ul>
+<li>📖 <strong><a href="https://wayland-book.com/">The Wayland Book</a></strong>：由 Drew DeVault 撰寫的權威開源指南，系統性涵蓋了 Wayland 協定架構、libwayland 內部機制、Seat 輸入模型以及 client/server 端實作，是深入學習 Wayland 的必讀經典。</li>
+<li>💻 <strong><a href="https://github.com/p47t/hello-wayland">hello-wayland 專案倉庫</a></strong>：現代 C++23、Vulkan 與 Cabin 的極簡硬體加速 Wayland 桌面客戶端實作範例。</li>
+</ul>
+<h2 id="結語">結語</h2>
+<p>從應用程式層的 GTK 視窗元件與 CSD 繪製，到 <code>xdg_shell</code> 嚴謹的 Configure-Ack 雙向協商，再到 <code>wl_surface</code> 的雙重緩衝狀態機、底層 <code>SCM_RIGHTS</code> 的零拷貝檔案描述符傳遞，以及實際透過 C++23 與 Vulkan 打造的 <a href="https://github.com/p47t/hello-wayland">hello-wayland</a> 範例——Wayland 透過分層明確的現代化設計，為 Linux 桌面帶來了流暢、無撕裂且具隔離安全性的圖形基礎架構。</p>
+<p>理解這套架構，不僅能幫助我們在開發 GTK/Qt 等 GUI 應用程式時寫出效能更好、行為更標準的程式碼，更能深入體會現代作業系統在圖形混成與跨行程通訊上的設計智慧！</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+
+</body>
+</html>

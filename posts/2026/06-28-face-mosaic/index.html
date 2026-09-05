@@ -1,0 +1,727 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>影片自動人臉打碼 - 用 Rust &#43; OpenCV 實現自動化隱私保護</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-28-face-mosaic/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/06-28-face-mosaic/"/>
+  <meta property="og:title" content="影片自動人臉打碼 - 用 Rust &#43; OpenCV 實現自動化隱私保護"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-06-28 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="opencv"/>
+  
+  <meta property="og:article:tag" content="computer-vision"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/06-27-rust-opencv-face-detection/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            即時人臉與特徵點偵測
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/08-07-depth-relief/">
+            用 Rust 把 2D 相片變成 3D 列印浮雕
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">影片自動人臉打碼</h1>
+      
+      <div class="post-subtitle">用 Rust &#43; OpenCV 實現自動化隱私保護</div>
+      
+      <div class="post-meta">
+        <span class="post-date">June 28, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/opencv"><span class="label label-primary">opencv</span></a>
+        
+        <a href="/tags/computer-vision"><span class="label label-primary">computer-vision</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Aug 12, 2026 - <a href="/posts/2026/08-12-voice-assistant/">在 Rust 中實驗本機語音助理</a></li>
+  
+    <li>Aug 09, 2026 - <a href="/posts/2026/08-09-ip-camera/">打造跨平台高效能 IP Camera 視訊串流伺服器</a></li>
+  
+    <li>Aug 08, 2026 - <a href="/posts/2026/08-08-gesture-control/">打造零延遲 AI 手勢作業系統控制器</a></li>
+  
+    <li>Aug 07, 2026 - <a href="/posts/2026/08-07-depth-relief/">用 Rust 把 2D 相片變成 3D 列印浮雕</a></li>
+  
+    <li>Jun 28, 2026 - <a href="/posts/2026/06-28-face-mosaic/">影片自動人臉打碼</a></li>
+  
+    <li>Jun 27, 2026 - <a href="/posts/2026/06-27-rust-opencv-face-detection/">即時人臉與特徵點偵測</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama</a></li>
+  
+    <li>May 25, 2026 - <a href="/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)</a></li>
+  
+    <li>May 21, 2026 - <a href="/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站</a></li>
+  
+    <li>May 20, 2026 - <a href="/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器</a></li>
+  
+    <li>Mar 21, 2026 - <a href="/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-emu/">NES 模擬器完成</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-apu/">NES APU 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-ppu/">NES PPU 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU</a></li>
+  
+    <li>Feb 23, 2026 - <a href="/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器</a></li>
+  
+    <li>Feb 18, 2026 - <a href="/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器</a></li>
+  
+    <li>Feb 15, 2026 - <a href="/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM</a></li>
+  
+    <li>Feb 14, 2026 - <a href="/posts/2026/02-14-tilesplit/">TileSplit</a></li>
+  
+    <li>Feb 13, 2026 - <a href="/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro</a></li>
+  
+    <li>Feb 09, 2026 - <a href="/posts/2026/02-09-wgpu-game-of-life/">WebGPU Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-08-flashcard-app/">間隔重複記憶卡 App</a></li>
+  
+    <li>Feb 07, 2026 - <a href="/posts/2026/02-07-guitar-fretboard/">吉他指板視覺化工具</a></li>
+  
+    <li>Jan 31, 2026 - <a href="/posts/2026/01-31-gpui-calculator/">GPUI 計算機實作</a></li>
+  
+    <li>Jan 06, 2026 - <a href="/posts/2026/01-06-rust-wasm-markdown-editor/">打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        <!-- 
+
+  
+ -->
+<p>上一篇我們用 Rust + OpenCV 的 YuNet 模型做了靜態圖片和 Webcam 的即時人臉偵測。偵測到人臉之後，下一步自然會想到：能不能自動把人臉打上馬賽克？</p>
+<p>這就是 face-mosaic 這個專案要做的事——讀入一段影片，自動偵測每一幀裡的人臉，打上模糊或像素化效果，然後輸出一支全新的影片。整個過程完全自動化，不需要手動框選任何東西。</p>
+<h3 id="從-face-detect-到-face-mosaic">從 face-detect 到 face-mosaic</h3>
+<p>如果你看過前一篇文章，會發現 face-detect 已經解決了最核心的問題：用 YuNet 找到人臉的 Bounding Box。face-mosaic 要做的就是在這個基礎上加兩件事：</p>
+<ol>
+<li><strong>影片處理管線</strong>：逐幀讀取 → 偵測 → 打碼 → 寫入輸出影片</li>
+<li><strong>模糊/像素化效果</strong>：在偵測到的人臉區域上套用視覺遮蔽</li>
+</ol>
+<p>聽起來簡單，但實際動手才會發現影片處理有很多細節要處理。</p>
+<h3 id="影片處理的基本架構">影片處理的基本架構</h3>
+<p>影片處理的核心是一個 read-process-write 的迴圈。OpenCV 的 <code>VideoCapture</code> 負責讀取，<code>VideoWriter</code> 負責輸出：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> cap <span style="color:#f92672">=</span> videoio::VideoCapture::from_file(<span style="color:#f92672">&amp;</span>input_path, videoio::<span style="color:#66d9ef">CAP_ANY</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> fps <span style="color:#f92672">=</span> cap.get(videoio::<span style="color:#66d9ef">CAP_PROP_FPS</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> width <span style="color:#f92672">=</span> cap.get(videoio::<span style="color:#66d9ef">CAP_PROP_FRAME_WIDTH</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> height <span style="color:#f92672">=</span> cap.get(videoio::<span style="color:#66d9ef">CAP_PROP_FRAME_HEIGHT</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> total_frames <span style="color:#f92672">=</span> cap.get(videoio::<span style="color:#66d9ef">CAP_PROP_FRAME_COUNT</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> writer <span style="color:#f92672">=</span> videoio::VideoWriter::new(
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>output_path,
+</span></span><span style="display:flex;"><span>    videoio::VideoWriter::fourcc(<span style="color:#e6db74">&#39;m&#39;</span>, <span style="color:#e6db74">&#39;p&#39;</span>, <span style="color:#e6db74">&#39;4&#39;</span>, <span style="color:#e6db74">&#39;v&#39;</span>)<span style="color:#f92672">?</span>,
+</span></span><span style="display:flex;"><span>    fps,
+</span></span><span style="display:flex;"><span>    Size::new(width, height),
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">true</span>, <span style="color:#75715e">// isColor
+</span></span></span><span style="display:flex;"><span>)<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<p>這裡有幾個重要參數：</p>
+<ul>
+<li><strong>FPS</strong>：從原始影片直接讀取，確保輸出影片的播放速度跟原始影片一致</li>
+<li><strong>fourcc</strong>：影片編碼格式。<code>mp4v</code> 是 MPEG-4 編碼，跟 <code>.mp4</code> 容器相容</li>
+<li><strong>尺寸</strong>：直接沿用原始影片的解析度</li>
+</ul>
+<h3 id="逐幀偵測與打碼">逐幀偵測與打碼</h3>
+<p>主要的處理迴圈長這樣：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> frame <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> frame_count: <span style="color:#66d9ef">i64</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>    cap.read(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> frame)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> frame.empty() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    frame_count <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 更新偵測器的輸入尺寸
+</span></span></span><span style="display:flex;"><span>    detector.set_input_size(frame.size()<span style="color:#f92672">?</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 偵測人臉
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> faces <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>    detector.detect(<span style="color:#f92672">&amp;</span>frame, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> faces)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 對每張偵測到的臉打碼
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> i <span style="color:#66d9ef">in</span> <span style="color:#ae81ff">0</span><span style="color:#f92672">..</span>faces.rows() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, <span style="color:#ae81ff">0</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> y <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, <span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> w <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, <span style="color:#ae81ff">2</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> h <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>faces.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(i, <span style="color:#ae81ff">3</span>)<span style="color:#f92672">?</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        apply_mosaic(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> frame, Rect::new(x, y, w, h))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    writer.write(<span style="color:#f92672">&amp;</span>frame)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> frame_count <span style="color:#f92672">%</span> <span style="color:#ae81ff">100</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;Processed </span><span style="color:#e6db74">{}</span><span style="color:#e6db74">/</span><span style="color:#e6db74">{}</span><span style="color:#e6db74"> frames&#34;</span>, frame_count, total_frames);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>每 100 幀印一次進度，因為處理長影片時沒有任何回饋會讓人以為程式當掉了。</p>
+<h3 id="馬賽克效果的兩種實現">馬賽克效果的兩種實現</h3>
+<p>臉部打碼可以用兩種方式實現：高斯模糊和像素化（馬賽克）。</p>
+<h4 id="高斯模糊">高斯模糊</h4>
+<p>最直觀的做法是對人臉區域套用高斯模糊。OpenCV 的 <code>gaussian_blur</code> 一行搞定：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">apply_blur</span>(frame: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Mat, roi: <span style="color:#a6e22e">Rect</span>) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 確保 ROI 不會超出圖片邊界
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> roi <span style="color:#f92672">=</span> clamp_rect(roi, frame.size()<span style="color:#f92672">?</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> face_region <span style="color:#f92672">=</span> Mat::roi(frame, roi)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> blurred <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// kernel size 越大越模糊，必須是奇數
+</span></span></span><span style="display:flex;"><span>    imgproc::gaussian_blur(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>face_region,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> blurred,
+</span></span><span style="display:flex;"><span>        Size::new(<span style="color:#ae81ff">99</span>, <span style="color:#ae81ff">99</span>),
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">30.0</span>, <span style="color:#75715e">// sigmaX
+</span></span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">30.0</span>, <span style="color:#75715e">// sigmaY
+</span></span></span><span style="display:flex;"><span>        opencv::core::<span style="color:#66d9ef">BORDER_DEFAULT</span>,
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    blurred.copy_to(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> face_region)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="像素化馬賽克">像素化（馬賽克）</h4>
+<p>像素化的原理也很巧妙：先把人臉區域<strong>縮小</strong>到很小（比如 10×10），再<strong>放大</strong>回原本的尺寸。因為放大時用的是最近鄰插值（Nearest Neighbor），就會產生經典的馬賽克方塊效果：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">apply_mosaic</span>(frame: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Mat, roi: <span style="color:#a6e22e">Rect</span>) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> roi <span style="color:#f92672">=</span> clamp_rect(roi, frame.size()<span style="color:#f92672">?</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> face_region <span style="color:#f92672">=</span> Mat::roi(frame, roi)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> pixel_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">10</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> small_size <span style="color:#f92672">=</span> Size::new(
+</span></span><span style="display:flex;"><span>        (roi.width <span style="color:#f92672">/</span> pixel_size).max(<span style="color:#ae81ff">1</span>),
+</span></span><span style="display:flex;"><span>        (roi.height <span style="color:#f92672">/</span> pixel_size).max(<span style="color:#ae81ff">1</span>),
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 縮小
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> small <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>    imgproc::resize(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>face_region, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> small,
+</span></span><span style="display:flex;"><span>        small_size, <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">0.0</span>,
+</span></span><span style="display:flex;"><span>        imgproc::<span style="color:#66d9ef">INTER_LINEAR</span>,
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 放大回原尺寸（最近鄰插值 = 馬賽克效果）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> mosaic <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>    imgproc::resize(
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&amp;</span>small, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> mosaic,
+</span></span><span style="display:flex;"><span>        Size::new(roi.width, roi.height), <span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">0.0</span>,
+</span></span><span style="display:flex;"><span>        imgproc::<span style="color:#66d9ef">INTER_NEAREST</span>,
+</span></span><span style="display:flex;"><span>    )<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> face_mut <span style="color:#f92672">=</span> Mat::roi_mut(frame, roi)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    mosaic.copy_to(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> face_mut)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這種「先縮後放」的技巧比逐像素手動計算簡單很多，而且完全利用了 OpenCV 既有的 resize 函式。</p>
+<h3 id="roi-邊界處理一個容易被忽略的坑">ROI 邊界處理：一個容易被忽略的坑</h3>
+<p>YuNet 回傳的 Bounding Box 座標有時候會超出圖片邊界，特別是當人臉在畫面邊緣的時候。如果不處理，OpenCV 會直接 panic。所以需要一個 clamp 函式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">clamp_rect</span>(rect: <span style="color:#a6e22e">Rect</span>, size: <span style="color:#a6e22e">Size</span>) -&gt; <span style="color:#a6e22e">Rect</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> x <span style="color:#f92672">=</span> rect.x.max(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> y <span style="color:#f92672">=</span> rect.y.max(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> w <span style="color:#f92672">=</span> rect.width.min(size.width <span style="color:#f92672">-</span> x);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> h <span style="color:#f92672">=</span> rect.height.min(size.height <span style="color:#f92672">-</span> y);
+</span></span><span style="display:flex;"><span>    Rect::new(x, y, w.max(<span style="color:#ae81ff">0</span>), h.max(<span style="color:#ae81ff">0</span>))
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個函式確保 ROI 永遠在圖片範圍內。看起來很小，但沒有它，處理真實世界的影片時幾乎一定會爆掉。</p>
+<h3 id="效能考量">效能考量</h3>
+<p>處理影片跟處理靜態圖片最大的差異在於效能。一段 30fps、10 分鐘的影片有 18,000 幀，每一幀都要跑一次 YuNet 偵測。幾個值得注意的點：</p>
+<ul>
+<li><strong>不需要對每幀做縮放</strong>：影片的每一幀解析度是固定的，不像靜態圖片可能有各種解析度。<code>set_input_size</code> 只需要在第一幀或解析度改變時呼叫</li>
+<li><strong>YuNet 夠快</strong>：這個模型是為邊緣裝置設計的，在一般筆電上一幀只需要幾毫秒</li>
+<li><strong>瓶頸在 I/O</strong>：影片的讀寫比偵測本身更花時間，特別是寫入大型 MP4 檔案時</li>
+</ul>
+<p>在我的測試中，處理一段 1080p 影片大約能跑到 15-25 fps，主要受限於影片解碼和編碼的速度。</p>
+<h3 id="跟-face-detect-的程式碼共用">跟 face-detect 的程式碼共用</h3>
+<p>face-mosaic 和 face-detect 的核心偵測邏輯完全一樣——都是用 <code>FaceDetectorYN</code> 呼叫 YuNet 模型。差別在於：</p>
+<table>
+	<thead>
+			<tr>
+					<th></th>
+					<th>face-detect</th>
+					<th>face-mosaic</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>輸入</td>
+					<td>靜態圖片 / Webcam</td>
+					<td>影片檔案</td>
+			</tr>
+			<tr>
+					<td>輸出</td>
+					<td>畫框 + 特徵點</td>
+					<td>模糊/馬賽克</td>
+			</tr>
+			<tr>
+					<td>處理方式</td>
+					<td>單張 / 即時串流</td>
+					<td>逐幀批次處理</td>
+			</tr>
+			<tr>
+					<td>寫入</td>
+					<td>圖片 / GUI 視窗</td>
+					<td>VideoWriter → MP4</td>
+			</tr>
+	</tbody>
+</table>
+<p>兩個專案都用了本地 patch 過的 <code>opencv-rust</code>（因為要支援 OpenCV 5），依賴結構也幾乎相同。</p>
+<h3 id="學到的東西">學到的東西</h3>
+<p>這個專案最有趣的不是演算法，而是影片處理的工程細節：</p>
+<table>
+	<thead>
+			<tr>
+					<th>概念</th>
+					<th>應用</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>VideoCapture</code> / <code>VideoWriter</code></td>
+					<td>OpenCV 的影片 I/O API</td>
+			</tr>
+			<tr>
+					<td>fourcc 編碼</td>
+					<td>指定影片壓縮格式</td>
+			</tr>
+			<tr>
+					<td>ROI (Region of Interest)</td>
+					<td>只對圖片的局部區域操作</td>
+			</tr>
+			<tr>
+					<td>Nearest Neighbor 插值</td>
+					<td>放大時產生馬賽克效果</td>
+			</tr>
+			<tr>
+					<td>邊界 Clamp</td>
+					<td>防止 ROI 超出圖片範圍</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="結語">結語</h3>
+<p>face-mosaic 是 face-detect 的自然延伸。人臉偵測本身只是起點，真正有趣的是你拿偵測結果來做什麼——這裡是打碼，但同樣的架構也可以拿來做人臉追蹤、表情辨識、或者臉部特效。</p>
+<p>影片處理讓整個專案的複雜度跳了一級，但 Rust 的型別系統在這裡依然很有幫助：<code>Mat</code> 的生命週期管理、<code>Result</code> 的錯誤傳播、以及編譯器對邊界條件的提醒，都讓你在處理 18,000 幀的迴圈裡更有信心。</p>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/face-mosaic">face-mosaic 原始碼</a> — 本文範例的完整程式碼</li>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/face-detect">face-detect 原始碼</a> — 人臉偵測基礎專案</li>
+<li><a href="https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet">OpenCV Zoo — YuNet 模型</a></li>
+<li><a href="https://github.com/twistedfall/opencv-rust">opencv-rust</a> — Rust 的 OpenCV 綁定庫</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+
+</body>
+</html>

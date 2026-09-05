@@ -1,0 +1,375 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/vulkan/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-08-30 10:00:00 -0700 -0700</updated>
+    
+    <item>
+      <title>深入剖析 Wayland 運作架構：從 GTK、xdg_shell 到底層 IPC 機制</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-30-wayland-gtk-architecture/</link>
+      <pubDate>Sun, 30 Aug 2026 10:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-30-wayland-gtk-architecture/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-30-wayland-gtk-architecture/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;在 Linux 桌面圖形技術的演進史中，&lt;strong&gt;Wayland&lt;/strong&gt; 取代有著數十年歷史的 &lt;strong&gt;X11&lt;/strong&gt;，無疑是一場深刻的架構演進。&lt;/p&gt;
+&lt;p&gt;我自己過去在 Linux 上開發 GTK 桌面應用程式或客製化視窗時，常遇到一些令人好奇的底層問題：為什麼視窗在拖拉縮放時能做到完全不閃爍撕裂？為什麼應用程式無法像在 X11 下那樣隨意讀取全域螢幕座標？&lt;/p&gt;
+&lt;p&gt;回顧過去在 X11 時代，X Server 扮演著無所不在的中心角色——它既要處理網路協定、字型渲染、視窗幾何形狀，還要轉發輸入與剪貼簿資料，甚至在 Composite 擴充加入後，還得在 X Server、window manager 與 compositor 之間來回搬移畫面資料，造成了嚴重的架構冗餘與畫面撕裂（tearing）。&lt;/p&gt;
+&lt;p&gt;而 Wayland 的設計哲學非常純粹：&lt;strong&gt;「每一幀都是完美的（Every frame is perfect）」&lt;/strong&gt;。它徹底廢除了傳統的 X Server，讓 &lt;strong&gt;compositor（如 GNOME 的 Mutter、KDE 的 KWin 或 Sway/Hyprland）直接兼任顯示伺服器與視窗管理器&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;這也帶來了許多底層開發者與架構愛好者的疑問：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;當我們寫一個 &lt;strong&gt;GTK 4 / GTK 3&lt;/strong&gt; 應用程式時，它在 Wayland 下是如何繪製並顯示到螢幕上的？&lt;/li&gt;
+&lt;li&gt;為什麼 Wayland 核心協定裡「沒有視窗」，而是透過 &lt;strong&gt;&lt;code&gt;xdg_shell&lt;/code&gt;&lt;/strong&gt; 來定義視窗行為？&lt;/li&gt;
+&lt;li&gt;最底層的 &lt;strong&gt;&lt;code&gt;wl_surface&lt;/code&gt;&lt;/strong&gt; 是如何透過雙重緩衝（double-buffered）達成原子性更新的？&lt;/li&gt;
+&lt;li&gt;應用程式與 compositor 之間是如何透過 &lt;strong&gt;UNIX Domain Socket 與 &lt;code&gt;SCM_RIGHTS&lt;/code&gt;&lt;/strong&gt; 實現零拷貝（zero-copy）buffer 傳遞的？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這篇文章將由上而下，從 UI toolkit（GTK）、桌面視窗協定（&lt;code&gt;xdg_shell&lt;/code&gt;）、圖形原語（&lt;code&gt;wl_surface&lt;/code&gt;）、底層二進位 IPC 通訊機制，一路探討到真實的 &lt;strong&gt;C++23 + Vulkan 實戰參考範例&lt;/strong&gt;，為大家全面拆解 Wayland 的運作原理！&lt;/p&gt;
+&lt;h2 id=&#34;1-頂層視角gtk-應用程式在-wayland-上如何運作&#34;&gt;1. 頂層視角：GTK 應用程式在 Wayland 上如何運作？&lt;/h2&gt;
+&lt;p&gt;在傳統 X11 架構下，視窗裝飾（標題列、關閉按鈕）通常由伺服端的 window manager 繪製，應用程式只負責在指定的 X Window 區域內畫圖。但在 Wayland 架構下，應用程式（client）的自主權與隔離性大幅提高。&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph G_Client[&#34;GTK 應用程式 (Client Process)&#34;]
+        GTK[&#34;GTK 4 / GTK 3&lt;br/&gt;(Widgets, Layout, State)&#34;]
+        GSK[&#34;GSK / Cairo&lt;br/&gt;(Scene Graph &amp; 2D/3D Rendering)&#34;]
+        GDK[&#34;GDK Wayland Backend&lt;br/&gt;(gdk/wayland)&#34;]
+        EGL[&#34;EGL / Mesa (GPU 加速)&lt;br/&gt;wl_shm (軟體繪製)&#34;]
+        LIBWAYLAND[&#34;libwayland-client&lt;br/&gt;(IPC Protocol)&#34;]
+
+        GTK --&gt; GSK
+        GSK --&gt; GDK
+        GDK --&gt; EGL
+        GDK --&gt; LIBWAYLAND
+    end
+
+    subgraph G_IPC[&#34;Wayland Protocol (UNIX Domain Socket)&#34;]
+        SOCKET[&#34;$XDG_RUNTIME_DIR/wayland-0&#34;]
+    end
+
+    subgraph G_Server[&#34;Wayland Compositor (如 Mutter, KWin)&#34;]
+        COMP[&#34;Compositor Core&lt;br/&gt;(Windowing &amp; Shell Management)&#34;]
+        RENDERER[&#34;Compositor Renderer&lt;br/&gt;(OpenGL / Vulkan)&#34;]
+        LIBINPUT[&#34;libinput&lt;br/&gt;(Input Event Handling)&#34;]
+    end
+
+    subgraph G_Kernel[&#34;Linux Kernel&#34;]
+        DRM[&#34;DRM / KMS&lt;br/&gt;(Display Output)&#34;]
+        EVD[&#34;evdev&lt;br/&gt;(Keyboard, Mouse, Touch)&#34;]
+    end
+
+    LIBWAYLAND &lt;--&gt;|傳遞 Buffer Handle 與狀態請求| SOCKET
+    SOCKET &lt;--&gt; COMP
+    EVD --&gt; LIBINPUT
+    LIBINPUT --&gt; COMP
+    COMP --&gt; RENDERER
+    RENDERER --&gt; DRM
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;gdk-wayland-後端與事件整合&#34;&gt;GDK Wayland 後端與事件整合&lt;/h3&gt;
+&lt;p&gt;GTK 應用程式啟動時，GDK（GIMP Drawing Kit）會載入 Wayland 後端（&lt;code&gt;gdk/wayland&lt;/code&gt;），並透過 &lt;code&gt;libwayland-client&lt;/code&gt; 建立對 compositor 的 socket 連線（通常位於 &lt;code&gt;$XDG_RUNTIME_DIR/wayland-0&lt;/code&gt;）。&lt;/p&gt;
+&lt;p&gt;GDK 會將 Wayland socket 的 File Descriptor 掛載進 GLib 的主事件迴圈（&lt;code&gt;GMainContext&lt;/code&gt;）。當 Wayland 有事件到達時，GLib 的 Poll 機制會喚醒應用程式，將 Wayland 事件解析後轉為 &lt;code&gt;GdkEvent&lt;/code&gt; 派發給對應的 GTK Widget。&lt;/p&gt;
+&lt;h3 id=&#34;客戶端裝飾-client-side-decoration-csd&#34;&gt;客戶端裝飾 (Client-Side Decoration, CSD)&lt;/h3&gt;
+&lt;p&gt;在 Wayland 中，compositor 預設不負責幫應用程式加上視窗標題列。因此 GTK 採用 &lt;strong&gt;CSD&lt;/strong&gt;，將標題列（&lt;code&gt;GtkHeaderBar&lt;/code&gt;）、視窗控制按鈕（最小化、最大化、關閉）以及視窗外圍陰影（drop shadow）全部納入應用程式的繪製樹中。&lt;/p&gt;
+&lt;h3 id=&#34;緩衝區繪製與提交&#34;&gt;緩衝區繪製與提交&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;GPU 渲染&lt;/strong&gt;：GTK 4 透過 GSK（GTK Scene Kit）配合 Vulkan 或 OpenGL/EGL，直接在顯示卡記憶體中渲染 framebuffer。接著透過 Linux 的 &lt;strong&gt;DMA-BUF&lt;/strong&gt; 機制將 GPU buffer 的記憶體描述符傳遞給 compositor。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;軟體繪製 fallback&lt;/strong&gt;：若缺乏硬體加速，GTK 透過 Cairo 在共享記憶體（&lt;code&gt;memfd_create&lt;/code&gt;）中繪製，並透過 &lt;strong&gt;&lt;code&gt;wl_shm&lt;/code&gt;&lt;/strong&gt; 協定共享給 compositor。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;幀時脈同步-frame-clock&#34;&gt;幀時脈同步 (Frame Clock)&lt;/h3&gt;
+&lt;p&gt;GTK 的動畫與重繪機制（&lt;code&gt;gdk_frame_clock&lt;/code&gt;）完全依賴 compositor 驅動。當 GTK 繪製完一幀並提交後，會透過 &lt;code&gt;wl_surface.frame&lt;/code&gt; 註冊一個回呼（callback）。&lt;/p&gt;
+&lt;p&gt;Compositor 會在當前畫面真正完成 VSync 上屏且準備好接收下一幀時，送出 &lt;code&gt;wl_callback.done&lt;/code&gt; 事件並帶上高精度時間戳記（timestamp）。GTK 收到通知後才開始排程下一幀的計算與渲染，徹底告別不必要的 CPU/GPU 消耗與畫面撕裂。&lt;/p&gt;
+&lt;h2 id=&#34;2-視窗語意層xdg_shell-協定&#34;&gt;2. 視窗語意層：&lt;code&gt;xdg_shell&lt;/code&gt; 協定&lt;/h2&gt;
+&lt;p&gt;如果你翻開 Wayland 核心協定，會發現裡面根本沒有「視窗（window）」這個概念。核心協定只提供抽象的像素畫布 &lt;code&gt;wl_surface&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;那麼，桌面應用程式的「標題、最小化、最大化、全螢幕、右鍵選單」是由誰定義的？答案就是 &lt;strong&gt;&lt;code&gt;xdg_shell&lt;/code&gt;&lt;/strong&gt;。&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    REG[&#34;wl_registry&lt;br/&gt;(Wayland 全域註冊表)&#34;] --&gt;|綁定| WM[&#34;xdg_wm_base&lt;br/&gt;(全域管理器介面)&#34;]
+    SURF[&#34;wl_surface&lt;br/&gt;(基礎像素表面)&#34;] --&gt;|封裝| XSURF[&#34;xdg_surface&lt;br/&gt;(桌面表面基底)&#34;]
+    WM --&gt;|建立| XSURF
+    WM --&gt;|輔助定位| POS_HELPER[&#34;xdg_positioner&#34;]
+
+    XSURF --&gt;|&#34;賦予角色 (Role)&#34;| TOP[&#34;xdg_toplevel&lt;br/&gt;(一般頂層應用視窗)&#34;]
+    XSURF --&gt;|&#34;賦予角色 (Role)&#34;| POP[&#34;xdg_popup&lt;br/&gt;(彈出式選單 / Tooltip)&#34;]
+
+    POS_HELPER -.-&gt;|指定彈出規則| POP
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;核心介面分工&#34;&gt;核心介面分工&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;xdg_wm_base&lt;/code&gt;&lt;/strong&gt;：&lt;code&gt;xdg_shell&lt;/code&gt; 的工廠介面，負責建立 &lt;code&gt;xdg_surface&lt;/code&gt; 與管理客戶端活躍度（Ping/Pong）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;xdg_surface&lt;/code&gt;&lt;/strong&gt;：將 &lt;code&gt;wl_surface&lt;/code&gt; 與桌面視窗狀態連結的基底物件，負責管理視窗幾何邊界（&lt;code&gt;set_window_geometry&lt;/code&gt;，用來剔除外圍陰影以精準計算貼齊尺寸）與狀態交握。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;xdg_toplevel&lt;/code&gt;&lt;/strong&gt;：代表標準的桌面頂層視窗，支援設定 &lt;code&gt;set_title&lt;/code&gt;、&lt;code&gt;set_app_id&lt;/code&gt;（對應 &lt;code&gt;.desktop&lt;/code&gt; 啟動檔與圖示）、&lt;code&gt;set_maximized&lt;/code&gt; 與 &lt;code&gt;set_fullscreen&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;xdg_popup&lt;/code&gt; 與 &lt;code&gt;xdg_positioner&lt;/code&gt;&lt;/strong&gt;：專為右鍵選單、下拉清單、tooltip 設計。由於 Wayland 出於安全隔離考量&lt;strong&gt;不向應用程式揭露螢幕全域座標&lt;/strong&gt;，應用程式無法自行計算選單是否會超出螢幕邊界。透過 &lt;code&gt;xdg_positioner&lt;/code&gt;，應用程式只需設定錨點與翻轉策略（如 &lt;code&gt;flip_x&lt;/code&gt;、&lt;code&gt;slide_y&lt;/code&gt;），compositor 就會在螢幕邊界內自動計算最合適的彈出位置。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;視窗縮放的雙向狀態協商-configure-ack-handshake&#34;&gt;視窗縮放的雙向狀態協商 (Configure-Ack Handshake)&lt;/h3&gt;
+&lt;p&gt;在 X11 時代，當使用者拖曳改變視窗大小時，常常會看到視窗內容被瞬間拉伸失真、或是邊框縮小但內容還沒跟上的殘影。&lt;code&gt;xdg_shell&lt;/code&gt; 透過嚴謹的雙向狀態機徹底解決了這個問題：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    sequenceDiagram
+    autonumber
+    participant Comp as Compositor (Mutter / KWin)
+    participant Client as GTK Client
+
+    Note over Comp: 使用者拉動視窗或最大化
+    Comp-&gt;&gt;Client: xdg_toplevel.configure(1024, 768, [maximized])
+    Comp-&gt;&gt;Client: xdg_surface.configure(serial=1234)
+
+    Note over Client: 1. 根據新尺寸重新排版 UI&lt;br/&gt;2. 繪製 1024x768 的新 Buffer
+
+    Client-&gt;&gt;Comp: xdg_surface.ack_configure(serial=1234)
+    Client-&gt;&gt;Comp: wl_surface.attach(new_buffer)
+    Client-&gt;&gt;Comp: wl_surface.commit()
+
+    Note over Comp: Compositor 確認序號匹配&lt;br/&gt;原子性（Atomic）更新畫面上屏
+  &lt;/div&gt;
+
+&lt;p&gt;Compositor 送出 &lt;code&gt;configure&lt;/code&gt; 事件時會帶上一組 &lt;code&gt;serial&lt;/code&gt; 序號。Client 在重新繪製完成並呼叫 &lt;code&gt;ack_configure(serial)&lt;/code&gt; 之前，compositor 會持續以舊尺寸顯示或暫停更新，絕不會呈現半完成的破裂畫面。&lt;/p&gt;
+&lt;h3 id=&#34;互動式移動與縮放-interactive-move--resize&#34;&gt;互動式移動與縮放 (Interactive Move / Resize)&lt;/h3&gt;
+&lt;p&gt;在 Wayland 中，client 無法任意修改自己的螢幕座標。當使用者在 GTK 的標題列按下滑鼠開始拖曳時：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;GTK 偵測到點擊事件，呼叫 &lt;code&gt;xdg_toplevel.move(seat, serial)&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Compositor 接管後續手勢&lt;/strong&gt;：直接在顯示層移動整個 surface，GTK 本身完全不需要介入座標計算。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;心跳監控機制-ping--pong&#34;&gt;心跳監控機制 (Ping / Pong)&lt;/h3&gt;
+&lt;p&gt;為了防止應用程式因無窮迴圈或耗時任務卡死導致介面失去回應，&lt;code&gt;xdg_wm_base&lt;/code&gt; 內建了心跳機制：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Compositor 定期發送 &lt;code&gt;xdg_wm_base.ping(serial)&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;Client 必須在主事件迴圈中立刻回應 &lt;code&gt;xdg_wm_base.pong(serial)&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;若逾時未收到回覆，compositor 便能可靠地判斷應用程式已當機，向使用者跳出「應用程式無回應」的結束對話框。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;3-圖形原語層wl_surface-的雙重緩衝狀態機&#34;&gt;3. 圖形原語層：&lt;code&gt;wl_surface&lt;/code&gt; 的雙重緩衝狀態機&lt;/h2&gt;
+&lt;p&gt;在 Wayland 中，所有呈現在螢幕上的像素載體，最底層都是一個 &lt;strong&gt;&lt;code&gt;wl_surface&lt;/code&gt;&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;wl_surface&lt;/code&gt; 最核心的精髓在於其 &lt;strong&gt;「待處理狀態（pending state）」&lt;/strong&gt; 與 &lt;strong&gt;「當前狀態（current state）」&lt;/strong&gt; 的雙重緩衝設計。&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph G_Client[&#34;Client 操作請求&#34;]
+        REQ_OPS[&#34;attach / damage / scale / frame&lt;br/&gt;(可多次累積呼叫)&#34;]
+    end
+
+    subgraph G_State[&#34;wl_surface 狀態機&#34;]
+        ST_PENDING[&#34;待處理狀態 (Pending State)&lt;br/&gt;暫存所有變更，對螢幕無任何影響&#34;]
+        ST_CURRENT[&#34;當前狀態 (Current State)&lt;br/&gt;Compositor 實際拿來合成上屏的狀態&#34;]
+    end
+
+    REQ_OPS --&gt;|暫存變更至| ST_PENDING
+    BTN_COMMIT[&#34;wl_surface.commit 呼叫&#34;] --&gt;|&#34;原子性觸發 (Atomically Applied)&#34;| ST_PENDING
+    ST_PENDING --&gt;|套用所有變更| ST_CURRENT
+    ST_CURRENT --&gt;|Compositor 讀取| COMP_RENDER[&#34;Compositor 畫面混成與渲染&#34;]
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;關鍵-api-與優化機制&#34;&gt;關鍵 API 與優化機制&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;attach(buffer)&lt;/code&gt; &amp;amp; &lt;code&gt;damage_buffer(x, y, w, h)&lt;/code&gt;&lt;/strong&gt;：綁定新 buffer 並宣告異動區域（dirty / damage region）。Compositor 只需重繪該局部區域，大幅節省 GPU 頻寬。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;commit()&lt;/code&gt;&lt;/strong&gt;：&lt;strong&gt;原子性提交開關&lt;/strong&gt;。在此之前呼叫的所有 &lt;code&gt;attach&lt;/code&gt;、&lt;code&gt;damage&lt;/code&gt;、&lt;code&gt;set_buffer_scale&lt;/code&gt; 都不會生效；呼叫 &lt;code&gt;commit()&lt;/code&gt; 的瞬間，全部變更一次性生效。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;set_opaque_region(region)&lt;/code&gt;&lt;/strong&gt;：告訴 compositor 表面內哪些區塊是完全不透明的。Compositor 可以直接對被遮擋的底層視窗進行遮擋剔除（occlusion culling），避免無謂的 overdraw。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;set_input_region(region)&lt;/code&gt;&lt;/strong&gt;：定義點擊命中範圍，未涵蓋的區域事件將直接穿透到底層視窗。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;enter(output)&lt;/code&gt; / &lt;code&gt;leave(output)&lt;/code&gt;&lt;/strong&gt;：當視窗跨越不同螢幕時，compositor 會通知 client 當前螢幕的 HiDPI 縮放比，讓 client 能即時動態調整渲染解析度。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;表面角色模型與子表面-subsurfaces&#34;&gt;表面角色模型與子表面 (Subsurfaces)&lt;/h3&gt;
+&lt;p&gt;一個 &lt;code&gt;wl_surface&lt;/code&gt; 在生命週期中只能被賦予一種角色（如 &lt;code&gt;xdg_toplevel&lt;/code&gt;、&lt;code&gt;xdg_popup&lt;/code&gt; 或滑鼠游標）。&lt;/p&gt;
+&lt;p&gt;此外，透過 &lt;strong&gt;&lt;code&gt;wl_subsurface&lt;/code&gt;&lt;/strong&gt;，應用程式可以建立多層次複合畫布：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;同步模式（sync mode）&lt;/strong&gt;：子表面的更新暫存，直到父表面呼叫 &lt;code&gt;commit()&lt;/code&gt; 時一起原子性上屏。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;非同步模式（desync mode）&lt;/strong&gt;：子表面擁有獨立的更新週期。例如在影片播放器中，主視窗 UI 以 60 Hz 更新，而影片畫面作為子表面以獨立的 24 fps 非同步提交，解碼渲染與 UI 互不阻塞。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;4-底層通訊wayland-二進位-ipc-與零拷貝傳輸&#34;&gt;4. 底層通訊：Wayland 二進位 IPC 與零拷貝傳輸&lt;/h2&gt;
+&lt;p&gt;Wayland 在處理行程間通訊（IPC）時，捨棄了 X11 龐大複雜的通訊協定，採用了極簡的二進位封包設計。&lt;/p&gt;
+&lt;h3 id=&#34;傳輸層unix-domain-socket&#34;&gt;傳輸層：UNIX Domain Socket&lt;/h3&gt;
+&lt;p&gt;Wayland 基於本地 &lt;strong&gt;UNIX Domain Stream Socket（&lt;code&gt;AF_UNIX&lt;/code&gt;, &lt;code&gt;SOCK_STREAM&lt;/code&gt;）&lt;/strong&gt;，沒有任何 TCP/IP 網路堆疊開銷。&lt;/p&gt;
+&lt;h3 id=&#34;8-byte-訊息標頭與二進位格式-wire-format&#34;&gt;8-Byte 訊息標頭與二進位格式 (Wire Format)&lt;/h3&gt;
+&lt;p&gt;所有 Wayland 的請求（request）與事件（event）都是序列化的二進位資料流。每個訊息都以固定的 &lt;strong&gt;8-byte header&lt;/strong&gt; 開始：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph G_Packet[&#34;Wayland 二進位封包格式 (Wire Format)&#34;]
+        direction TB
+
+        subgraph G_Header[&#34;8-Byte 固定訊息標頭 (Message Header)&#34;]
+            direction TB
+            H_OBJ[&#34;&lt;b&gt;Object ID&lt;/b&gt;&lt;br/&gt;32-bit (4 Bytes) · 目標物件識別碼&#34;]
+            H_SIZE[&#34;&lt;b&gt;Message Size&lt;/b&gt;&lt;br/&gt;16-bit (2 Bytes)&lt;br/&gt;封包總長度&#34;]
+            H_OPCODE[&#34;&lt;b&gt;Opcode&lt;/b&gt;&lt;br/&gt;16-bit (2 Bytes)&lt;br/&gt;方法 / 事件編號&#34;]
+        end
+
+        subgraph G_Payload[&#34;動態參數負載 (Payload Data)&#34;]
+            P_ARGS[&#34;&lt;b&gt;Arguments (32-bit 對齊參數清單)&lt;/b&gt;&lt;br/&gt;int32 · uint32 · fixed (24.8)&lt;br/&gt;string · new_id · array&#34;]
+        end
+
+        H_OBJ --&gt; H_SIZE &amp; H_OPCODE
+        H_SIZE &amp; H_OPCODE --&gt; P_ARGS
+    end
+
+    classDef headerNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef payloadNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+
+    class H_OBJ,H_SIZE,H_OPCODE headerNode;
+    class P_ARGS payloadNode;
+  &lt;/div&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Object ID&lt;/code&gt;（32-bit uint）&lt;/strong&gt;：目標物件識別碼（例如某個特定的 &lt;code&gt;wl_surface&lt;/code&gt; 實例）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Opcode&lt;/code&gt;（16-bit uint）&lt;/strong&gt;：方法編號（0 代表介面定義的第一個方法，1 代表第二個，依此類推）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;Message Size&lt;/code&gt;（16-bit uint）&lt;/strong&gt;：包含 header 與 payload 的封包總長度。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Payload&lt;/strong&gt;：參數資料，包含 &lt;code&gt;int&lt;/code&gt;、&lt;code&gt;uint&lt;/code&gt;、&lt;code&gt;fixed&lt;/code&gt;（24.8 定點數）、&lt;code&gt;string&lt;/code&gt;、&lt;code&gt;array&lt;/code&gt; 等，全部對齊 4-byte 邊界。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;零拷貝傳輸scm_rights-傳遞-file-descriptor&#34;&gt;零拷貝傳輸：&lt;code&gt;SCM_RIGHTS&lt;/code&gt; 傳遞 File Descriptor&lt;/h3&gt;
+&lt;p&gt;圖形繪製最忌諱在行程間複製大塊像素資料。Wayland 的做法是&lt;strong&gt;絕不透過 socket 傳遞像素&lt;/strong&gt;，而是透過 Linux Kernel 的 &lt;code&gt;sendmsg()&lt;/code&gt; 輔助資料（ancillary data）傳遞 &lt;strong&gt;File Descriptor&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph G_ClientProcess[&#34;GTK Client 行程&#34;]
+        MEM[&#34;GPU Framebuffer / DMA-BUF&lt;br/&gt;或 memfd_create 共享記憶體&#34;]
+        FD[&#34;Client 端 FD (如 fd=7)&#34;]
+        MEM --- FD
+    end
+
+    subgraph G_Kernel[&#34;Linux Kernel IPC&#34;]
+        SCM[&#34;sendmsg(..., SCM_RIGHTS, fd=7)&lt;br/&gt;Kernel 在 Compositor FD 表建立副本&#34;]
+    end
+
+    subgraph G_Compositor[&#34;Compositor 行程&#34;]
+        SFD[&#34;Server 端 FD (如 fd=12)&#34;]
+        SMEM[&#34;直接映射相同的實體 RAM&lt;br/&gt;或 GPU 顯存紋理&#34;]
+        SFD --- SMEM
+    end
+
+    FD --&gt;|sendmsg| SCM
+    SCM --&gt;|recvmsg| SFD
+  &lt;/div&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;共享記憶體（&lt;code&gt;wl_shm&lt;/code&gt;）&lt;/strong&gt;：Client 透過 &lt;code&gt;memfd_create()&lt;/code&gt; 建立匿名記憶體，透過 &lt;code&gt;SCM_RIGHTS&lt;/code&gt; 將 FD 傳給 compositor，雙方各自呼叫 &lt;code&gt;mmap()&lt;/code&gt; 映射同一塊實體記憶體。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;GPU 紋理（&lt;code&gt;linux-dmabuf&lt;/code&gt;）&lt;/strong&gt;：GTK/Mesa 透過 DMA-BUF 建立 GPU buffer 的 FD 並傳遞，compositor 直接將其作為 EGLImage/GPU Texture 匯入，實現真正的 &lt;strong&gt;zero-copy&lt;/strong&gt; 渲染。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;本地物件-id-分配與非同步通訊&#34;&gt;本地物件 ID 分配與非同步通訊&lt;/h3&gt;
+&lt;p&gt;在傳統 RPC 中，建立物件往往需要發送請求並等待伺服器回傳新 ID。而 Wayland 採用了巧妙的本地分配機制：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Client 指派 ID&lt;/strong&gt;：Client 在發送 &lt;code&gt;new_id&lt;/code&gt; 請求（如建立 surface）時，直接自行決定下一個未使用的 32-bit ID（範圍為 &lt;code&gt;0x00000001&lt;/code&gt; ～ &lt;code&gt;0xfeffffff&lt;/code&gt;）並告知 server，&lt;strong&gt;完全無需等待伺服器回傳確認&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;全非同步通訊&lt;/strong&gt;：絕大多數請求都是單向發送（fire-and-forget）。若 client 需要確保伺服端已處理完前面的所有請求，只需發送一個 &lt;strong&gt;&lt;code&gt;wl_display.sync&lt;/code&gt;&lt;/strong&gt; 屏障（barrier），compositor 處理到該點時會回傳 &lt;code&gt;wl_callback.done&lt;/code&gt; 事件。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;5-實戰範例極簡硬體加速-wayland--vulkan-參考實作hello-wayland&#34;&gt;5. 實戰範例：極簡硬體加速 Wayland + Vulkan 參考實作（hello-wayland）&lt;/h2&gt;
+&lt;p&gt;為了讓大家能跳脫 GTK/Qt 等大型龐雜框架的包裝，真正看清上述所有 Wayland 核心機制的運作細節，我們實作了一個極簡且具備純硬體加速的開源參考專案：&lt;/p&gt;
+&lt;p&gt;👉 &lt;strong&gt;GitHub 專案倉庫&lt;/strong&gt;：&lt;a href=&#34;https://github.com/p47t/hello-wayland&#34;&gt;https://github.com/p47t/hello-wayland&lt;/a&gt;&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;
+    flowchart TD
+    subgraph App[&#34;Hello Wayland (C++23)&#34;]
+        WAPP[&#34;WaylandApp&lt;br/&gt;(PIMPL · 事件迴圈)&#34;]
+        VK[&#34;VulkanRenderer&lt;br/&gt;(RAII · std::expected)&#34;]
+    end
+
+    subgraph Wayland[&#34;Wayland Protocol&#34;]
+        REG[&#34;wl_registry&#34;]
+        WM[&#34;xdg_wm_base&#34;]
+        XSURF[&#34;xdg_surface / xdg_toplevel&#34;]
+        WSURF[&#34;wl_surface&#34;]
+    end
+
+    subgraph VulkanDriver[&#34;Vulkan WSI (GPU Driver)&#34;]
+        VK_SURF[&#34;VkSurfaceKHR&lt;br/&gt;(VK_KHR_wayland_surface)&#34;]
+        SWAP[&#34;VkSwapchainKHR&lt;br/&gt;(VK_KHR_swapchain)&#34;]
+    end
+
+    WAPP --&gt;|綁定| REG
+    REG --&gt;|獲取| WM
+    WM --&gt;|建立| XSURF
+    XSURF --&gt;|管理| WSURF
+    WSURF -.-&gt;|傳入 display 與 surface| VK_SURF
+    VK_SURF --&gt;|建立| SWAP
+    VK --&gt;|渲染並呈現| SWAP
+
+    classDef cppNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef wlNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+    classDef vkNode fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+
+    class WAPP,VK cppNode;
+    class REG,WM,XSURF,WSURF wlNode;
+    class VK_SURF,SWAP vkNode;
+  &lt;/div&gt;
+
+&lt;h3 id=&#34;關鍵架構設計與實作細節&#34;&gt;關鍵架構設計與實作細節&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;直接對接 Wayland 核心協定&lt;/strong&gt;：
+專案完全不依賴任何重量級視窗庫，直接透過 &lt;code&gt;libwayland-client&lt;/code&gt; 與編譯期透過 &lt;code&gt;wayland-scanner&lt;/code&gt; 產生的 &lt;code&gt;xdg-shell-protocol.c/.h&lt;/code&gt; 建立 socket 連線並綁定 &lt;code&gt;wl_compositor&lt;/code&gt; 與 &lt;code&gt;xdg_wm_base&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;嚴謹的雙向狀態協商（Configure-Ack）&lt;/strong&gt;：
+在 &lt;code&gt;xdg_surface_listener.configure&lt;/code&gt; 回呼中精準處理 compositor 指派的幾何尺寸與視窗狀態，並立即呼叫 &lt;code&gt;xdg_surface_ack_configure(surface, serial)&lt;/code&gt; 達成無破圖協商。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Vulkan 原生 WSI 與零拷貝呈現&lt;/strong&gt;：
+透過 Vulkan 的 &lt;code&gt;VK_KHR_wayland_surface&lt;/code&gt; 擴充，將底層的 &lt;code&gt;wl_display&lt;/code&gt; 與 &lt;code&gt;wl_surface&lt;/code&gt; 直接註冊為 &lt;code&gt;VkSurfaceKHR&lt;/code&gt;；配合 &lt;code&gt;VK_KHR_swapchain&lt;/code&gt;，GPU 著色器渲染完畢後即可直接將顯存緩衝區交由 compositor 混成，實現真正的 &lt;strong&gt;zero-copy&lt;/strong&gt; 渲染管線。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;動態 Swapchain 重建&lt;/strong&gt;：
+當使用者拖曳視窗改變尺寸時，專案能自動處理 &lt;code&gt;VK_ERROR_OUT_OF_DATE_KHR&lt;/code&gt; 與 &lt;code&gt;VK_SUBOPTIMAL_KHR&lt;/code&gt;，優雅地以 &lt;code&gt;oldSwapchain&lt;/code&gt; 重新建立新尺寸的 Framebuffer 與 Render Pass，保證視窗縮放過程如絲般順滑。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;wl_surface.frame&lt;/code&gt; 幀率時脈同步&lt;/strong&gt;：
+在每一幀渲染提交時註冊 &lt;code&gt;wl_surface_frame&lt;/code&gt; 回呼，精確配合螢幕刷新率（60/120/144 Hz）排程下一幀，達成無撕裂、零浪費的省電渲染循環。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;現代 C++23 與 Cabin 建置&lt;/strong&gt;：
+全專案採用 &lt;strong&gt;C++23&lt;/strong&gt; 開發，大量運用 &lt;code&gt;std::expected&lt;/code&gt; 進行單子風格的無例外錯誤處理（Monadic error handling），並使用現代 C++ 套件管理器 &lt;a href=&#34;https://github.com/cabinpkg/cabin&#34;&gt;Cabin&lt;/a&gt; 管理建置與依賴，只需簡單兩行即可編譯並執行：&lt;/li&gt;
+&lt;/ol&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 編譯專案&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cabin build
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# 執行 Wayland Vulkan 應用程式&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cabin run&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;6-x11-vs-wayland-架構對比總結&#34;&gt;6. X11 vs Wayland 架構對比總結&lt;/h2&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;架構維度&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;傳統 X11 架構&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;現代 Wayland 架構&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;核心架構&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;集中式 X Server + 獨立 window manager + compositor&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;Compositor 兼任顯示伺服器與視窗管理器&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;繪圖流程&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;間接轉發渲染指令或雙重 buffer 拷貝&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;Client 直接渲染至 GPU/SHM buffer，compositor 零拷貝合成&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;視窗管理&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;伺服端繪製邊框；全域座標公開暴露&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;客戶端裝飾（CSD）；由 &lt;code&gt;xdg_shell&lt;/code&gt; 進行雙向狀態協商&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;通訊協定&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;龐大狀態機與網路協定封包&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;極簡 8-Byte 標頭二進位串流 + &lt;code&gt;SCM_RIGHTS&lt;/code&gt; 傳遞 FD&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;畫面同步&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;容易出現垂直撕裂（tearing）與閃爍&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;透過 &lt;code&gt;wl_surface.frame&lt;/code&gt; 嚴格鎖定 VSync，保證「每幀完美」&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;安全隔離&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;任何程式可監聽全域按鍵與螢幕截圖&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;行程沙盒隔離，敏感操作須經 XDG Desktop Portal 授權&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;7-延伸閱讀與參考資源&#34;&gt;7. 延伸閱讀與參考資源&lt;/h2&gt;
+&lt;p&gt;如果你想更深入地從 C 語言底層、自製 compositor 或自訂協定擴充角度探索 Wayland，強烈推薦閱讀開源經典著作：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;📖 &lt;strong&gt;&lt;a href=&#34;https://wayland-book.com/&#34;&gt;The Wayland Book&lt;/a&gt;&lt;/strong&gt;：由 Drew DeVault 撰寫的權威開源指南，系統性涵蓋了 Wayland 協定架構、libwayland 內部機制、Seat 輸入模型以及 client/server 端實作，是深入學習 Wayland 的必讀經典。&lt;/li&gt;
+&lt;li&gt;💻 &lt;strong&gt;&lt;a href=&#34;https://github.com/p47t/hello-wayland&#34;&gt;hello-wayland 專案倉庫&lt;/a&gt;&lt;/strong&gt;：現代 C++23、Vulkan 與 Cabin 的極簡硬體加速 Wayland 桌面客戶端實作範例。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;從應用程式層的 GTK 視窗元件與 CSD 繪製，到 &lt;code&gt;xdg_shell&lt;/code&gt; 嚴謹的 Configure-Ack 雙向協商，再到 &lt;code&gt;wl_surface&lt;/code&gt; 的雙重緩衝狀態機、底層 &lt;code&gt;SCM_RIGHTS&lt;/code&gt; 的零拷貝檔案描述符傳遞，以及實際透過 C++23 與 Vulkan 打造的 &lt;a href=&#34;https://github.com/p47t/hello-wayland&#34;&gt;hello-wayland&lt;/a&gt; 範例——Wayland 透過分層明確的現代化設計，為 Linux 桌面帶來了流暢、無撕裂且具隔離安全性的圖形基礎架構。&lt;/p&gt;
+&lt;p&gt;理解這套架構，不僅能幫助我們在開發 GTK/Qt 等 GUI 應用程式時寫出效能更好、行為更標準的程式碼，更能深入體會現代作業系統在圖形混成與跨行程通訊上的設計智慧！&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

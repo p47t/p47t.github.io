@@ -1,0 +1,949 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>打造零延遲 AI 手勢作業系統控制器 - 在 Rust 中使用 OpenCV 5 DNN 與 MediaPipe ONNX (Rust 52 Projects #50)</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-08-gesture-control/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/08-08-gesture-control/"/>
+  <meta property="og:title" content="打造零延遲 AI 手勢作業系統控制器 - 在 Rust 中使用 OpenCV 5 DNN 與 MediaPipe ONNX (Rust 52 Projects #50)"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-08-08 19:37:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="opencv"/>
+  
+  <meta property="og:article:tag" content="computer-vision"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="gui"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">248</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">57</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/08-07-depth-relief/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            用 Rust 把 2D 相片變成 3D 列印浮雕
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/08-09-ip-camera/">
+            打造跨平台高效能 IP Camera 視訊串流伺服器
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">打造零延遲 AI 手勢作業系統控制器</h1>
+      
+      <div class="post-subtitle">在 Rust 中使用 OpenCV 5 DNN 與 MediaPipe ONNX (Rust 52 Projects #50)</div>
+      
+      <div class="post-meta">
+        <span class="post-date">August 8, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/opencv"><span class="label label-primary">opencv</span></a>
+        
+        <a href="/tags/computer-vision"><span class="label label-primary">computer-vision</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/gui"><span class="label label-primary">gui</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>rust-52-projects</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Aug 12, 2026 - <a href="/posts/2026/08-12-voice-assistant/">在 Rust 中實驗本機語音助理</a></li>
+  
+    <li>Aug 09, 2026 - <a href="/posts/2026/08-09-ip-camera/">打造跨平台高效能 IP Camera 視訊串流伺服器</a></li>
+  
+    <li>Aug 08, 2026 - <a href="/posts/2026/08-08-gesture-control/">打造零延遲 AI 手勢作業系統控制器</a></li>
+  
+    <li>Aug 07, 2026 - <a href="/posts/2026/08-07-depth-relief/">用 Rust 把 2D 相片變成 3D 列印浮雕</a></li>
+  
+    <li>Jun 28, 2026 - <a href="/posts/2026/06-28-face-mosaic/">影片自動人臉打碼</a></li>
+  
+    <li>Jun 27, 2026 - <a href="/posts/2026/06-27-rust-opencv-face-detection/">即時人臉與特徵點偵測</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner-vs-candle/">純手工 vs. 全功能框架</a></li>
+  
+    <li>May 30, 2026 - <a href="/posts/2026/05-30-tiny-llm-runner/">用純 Rust 跑 Llama</a></li>
+  
+    <li>May 25, 2026 - <a href="/posts/2026/05-25-llm-local-studio-4/">用 Rust 打造本地 LLM 工作站 (四)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-how-multimodal-llm-works/">理解多模態 LLM 原理</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-3/">用 Rust 打造本地 LLM 工作站 (三)</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-openai-api/">本地 LLM 工作站</a></li>
+  
+    <li>May 24, 2026 - <a href="/posts/2026/05-24-llm-local-studio-2/">用 Rust 打造本地 LLM 工作站 (二)</a></li>
+  
+    <li>May 21, 2026 - <a href="/posts/2026/05-21-llm-local-studio/">用 Rust 打造本地 LLM 工作站</a></li>
+  
+    <li>May 20, 2026 - <a href="/posts/2026/05-20-llm-gguf-parser/">用 Rust 手寫 GGUF 解析器</a></li>
+  
+    <li>Mar 21, 2026 - <a href="/posts/2026/03-21-bevy-rust-design/">Bevy 與 Rust 的共舞</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-emu/">NES 模擬器完成</a></li>
+  
+    <li>Mar 19, 2026 - <a href="/posts/2026/03-19-nes-apu/">NES APU 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-mapper/">NES Mapper 模擬器</a></li>
+  
+    <li>Mar 17, 2026 - <a href="/posts/2026/03-17-nes-joypad/">NES Joypad 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-ppu/">NES PPU 模擬器</a></li>
+  
+    <li>Mar 16, 2026 - <a href="/posts/2026/03-16-nes-cpu/">用 Rust 寫一顆 6502 CPU</a></li>
+  
+    <li>Feb 23, 2026 - <a href="/posts/2026/02-23-comic-viewer/">用 Iced 打造漫畫閱讀器</a></li>
+  
+    <li>Feb 18, 2026 - <a href="/posts/2026/02-18-media-metadata-explorer/">Rust 媒體元資料探索器</a></li>
+  
+    <li>Feb 15, 2026 - <a href="/posts/2026/02-15-tilesplit-wasm/">TileSplit WASM</a></li>
+  
+    <li>Feb 14, 2026 - <a href="/posts/2026/02-14-tilesplit/">TileSplit</a></li>
+  
+    <li>Feb 13, 2026 - <a href="/posts/2026/02-13-rust-proc-macro-builder-derive/">Rust Proc Macro</a></li>
+  
+    <li>Feb 09, 2026 - <a href="/posts/2026/02-09-wgpu-game-of-life/">WebGPU Game of Life</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-09-cargo-apk/">深入理解 cargo-apk</a></li>
+  
+    <li>Feb 08, 2026 - <a href="/posts/2026/02-08-flashcard-app/">間隔重複記憶卡 App</a></li>
+  
+    <li>Feb 07, 2026 - <a href="/posts/2026/02-07-guitar-fretboard/">吉他指板視覺化工具</a></li>
+  
+    <li>Jan 31, 2026 - <a href="/posts/2026/01-31-gpui-calculator/">GPUI 計算機實作</a></li>
+  
+    <li>Jan 06, 2026 - <a href="/posts/2026/01-06-rust-wasm-markdown-editor/">打造即時 Markdown 編輯器</a></li>
+  
+    <li>Jan 03, 2026 - <a href="/posts/2026/01-03-async-job-queue/">使用 Rust 實作非同步任務佇列</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/08-08-gesture-control/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>想像一下：完全不需要摸滑鼠與鍵盤，只要在 Webcam 前伸出食指就能滑順地移動游標、握緊拳頭就能點擊與拖曳視窗、伸出兩根手指就能滾動網頁，甚至快速向左或向右揮手就能瞬間切換 Windows 虛擬桌面！</p>
+<p>這就是 <strong><code>gesture-control</code></strong> 專案的起點。身為 <em>Rust 52 Projects</em> 挑戰的一部分，我希望嘗試用 <strong>Rust + OpenCV 5 DNN + MediaPipe ONNX</strong> 打造一個無鎖、低延遲且完全執行於背景的原生手勢作業系統控制器。</p>
+<p>坦白說，這套系統絕對離商業級的硬體產品（例如 Vision Pro 或立體深度感測器）還有一段距離，單眼 Webcam 亦有其物理上的局限性；但<strong>作為一個學習 Rust 跨語言 FFI、AI 視覺推論與時序演算法的實驗專案，它的表現已經足夠令人驚喜且樂趣十足</strong>。</p>
+<p>這篇文章將全面介紹 <code>gesture-control</code> 的系統架構與實現細節，包含<strong>兩階段 AI 視覺推論管線</strong>、<strong>自動左手翻轉推論 (Left-Hand Fallback)</strong>、<strong>時序追蹤與遲滯投票機制 (Hysteresis Voting)</strong>、<strong>360 度旋轉無關幾何算子</strong>，以及 <strong>Enigo 原生 OS 輸入模擬</strong>！</p>
+<hr>
+<h3 id="專案核心特色">專案核心特色</h3>
+<ul>
+<li><strong>高精度 AI 3D 骨骼追蹤</strong>：基於 MediaPipe Palm Detection (SSD) 與 21-Landmark 3D Hand Pose Estimator ONNX 模型。</li>
+<li><strong>自動左手翻轉推論 (Auto Left-Hand Fallback)</strong>：解析模型的 3 層輸出張量（含 Layer 2 右手性分數），利用雙向推論解決深度學習模型常見的「右手偏見（Right-hand Bias）」。</li>
+<li><strong>時序追蹤與遲滯投票 (Temporal Tracking &amp; Hysteresis Voting)</strong>：採用貪婪歐式距離配對與 $[-30, +30]$ 票數滑動視窗，消除左右手標籤閃爍與同手重複框（Ghost Hands）。</li>
+<li><strong>360 度旋轉無關幾何算子</strong>：基於手腕相對歐式距離比較，不受手掌旋轉角度影響。</li>
+<li><strong>眾數去顫濾波 (Mode-Based Debouncing)</strong>：統計歷史影格眾數，過濾過渡影格的誤觸。</li>
+<li><strong>無頭背景模式 (Headless Mode)</strong>：校正完畢後可關閉所有 GUI 視窗，達成零 GUI 開銷背景執行。</li>
+</ul>
+<hr>
+<h3 id="系統整體架構雙執行緒與管線解耦">系統整體架構：雙執行緒與管線解耦</h3>
+<p>為了保證游標移動的絕對順暢，專案採用多執行緒解耦架構：<strong>視訊解碼與 AI 推論</strong> 運作於獨立的 Vision 執行緒，而 <strong>OS 輸入模擬</strong> 則運作於主執行緒，兩者透過 Rust 標準庫的無鎖 Channel (<code>std::sync::mpsc</code>) 通訊。</p>
+
+  <div class="mermaid">
+    graph TD
+    A[Webcam 視訊擷取 640x480] -->|BGR 影格| B[OpenCV 5 DNN 視覺執行緒]
+    B -->|Palm Detection ONNX| C[192x192 掌心候選框 + 距離中心 NMS]
+    C -->|Hand Crop + WarpAffine 旋轉對齊| D[Handpose Estimation ONNX]
+    D -->|Layer 2 右手性雙向推論| E[Sub-millisecond 翻轉推論與反向映射]
+    E -->|回傳 21 個 3D 骨骼點| F[360 度旋轉幾何算子]
+    F -->|貪婪距離配對 + 遲滯投票| G[TrackedHand 時序追蹤器]
+    G -->|眾數滑動視窗 N=10| H[Mode Debouncing 低通濾波器]
+    H -->|GestureState Enum| I(std::sync::mpsc Channel)
+    I -->|GestureState| J[主執行緒 OS Controller Loop]
+    J -->|EMA 游標平滑化 + Win32 FFI| K[Native OS 滑鼠/鍵盤/虛擬桌面切換]
+  </div>
+
+<p>在入口點 <code>src/main.rs</code> 中，執行緒的分工與生命週期管理簡潔明瞭：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> cli <span style="color:#f92672">=</span> Cli::parse();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> show_preview <span style="color:#f92672">=</span> <span style="color:#f92672">!</span>cli.no_preview;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 建立跨執行緒 Channel
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (tx, rx) <span style="color:#f92672">=</span> std::sync::mpsc::channel();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 啟動視覺處理執行緒 (Vision Loop Thread)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> vision_handle <span style="color:#f92672">=</span> thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Err(e) <span style="color:#f92672">=</span> vision::run_vision_loop(cli.camera, tx, show_preview) {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">eprintln!</span>(<span style="color:#e6db74">&#34;Error in vision thread: </span><span style="color:#e6db74">{:?}</span><span style="color:#e6db74">&#34;</span>, e);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 在主執行緒運行 OS 輸入控制迴圈 (Controller Loop)
+</span></span></span><span style="display:flex;"><span>    controller::run_controller_loop(rx)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 4. 等待視覺執行緒安全結束
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#66d9ef">let</span> Err(e) <span style="color:#f92672">=</span> vision_handle.join() {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">eprintln!</span>(<span style="color:#e6db74">&#34;Failed to join vision thread: </span><span style="color:#e6db74">{:?}</span><span style="color:#e6db74">&#34;</span>, e);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h3 id="核心技術一mediapipe-兩階段-ai-視覺推論管線">核心技術一：MediaPipe 兩階段 AI 視覺推論管線</h3>
+<h4 id="1-掌心偵測與距離中心-nms-抑制">1. 掌心偵測與距離中心 NMS 抑制</h4>
+<p>手部追蹤的第一步是從 640×480 的視訊影格中定位手掌。MediaPipe 的 <code>palm_detection_mediapipe_2023feb.onnx</code> 模型接收 $192 \times 192$ 的輸入，在 2016 個預設 Anchor 上預測邊界框與 7 個手掌特徵點。</p>
+<p>為了防止傳統 IoU NMS 在同隻手掌上殘留「一大一小」的重複候選框，我們在 <code>src/palm.rs</code> 中加入了一層<strong>基於歐式距離的掌心中心抑制</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 若兩掌心中心距離小於現有框尺寸的 75%，判定為同一隻手並進行抑制
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> detections: Vec<span style="color:#f92672">&lt;</span>PalmDetection<span style="color:#f92672">&gt;</span> <span style="color:#f92672">=</span> Vec::new();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> det <span style="color:#66d9ef">in</span> raw_detections {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> duplicate <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> existing <span style="color:#66d9ef">in</span> <span style="color:#f92672">&amp;</span>detections {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> dx <span style="color:#f92672">=</span> existing.center.x <span style="color:#f92672">-</span> det.center.x;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> dy <span style="color:#f92672">=</span> existing.center.y <span style="color:#f92672">-</span> det.center.y;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> dist <span style="color:#f92672">=</span> (dx <span style="color:#f92672">*</span> dx <span style="color:#f92672">+</span> dy <span style="color:#f92672">*</span> dy).sqrt();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> min_size <span style="color:#f92672">=</span> existing.bbox.width.min(existing.bbox.height) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> dist <span style="color:#f92672">&lt;</span> min_size <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.75</span> {
+</span></span><span style="display:flex;"><span>            duplicate <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>; <span style="color:#75715e">// 抑制重複框
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>duplicate {
+</span></span><span style="display:flex;"><span>        detections.push(det);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="2-手掌旋轉對齊與-crop-仿射變換-warp_affine">2. 手掌旋轉對齊與 Crop 仿射變換 (<code>warp_affine</code>)</h4>
+<p>在將手部 Crop 丟入 <code>handpose_estimation_mediapipe_2023feb.onnx</code> (224×224) 之前，模型要求手掌必須「旋轉朝上」。我們根據掌心角度建立 2×3 仿射旋轉矩陣，進行平移與旋轉對齊：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 手掌旋轉對齊：建立 2x3 Affine Rotation Matrix
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> angle_rad <span style="color:#f92672">=</span> (palm.angle <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>) <span style="color:#f92672">*</span> std::<span style="color:#66d9ef">f64</span>::consts::<span style="color:#66d9ef">PI</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">180.0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> alpha <span style="color:#f92672">=</span> angle_rad.cos();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> beta <span style="color:#f92672">=</span> angle_rad.sin();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> rotation_matrix <span style="color:#f92672">=</span> Mat::new_rows_cols_with_default(<span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">3</span>, <span style="color:#66d9ef">CV_64F</span>, Scalar::all(<span style="color:#ae81ff">0.0</span>))<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> alpha;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> beta;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">2</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> alpha) <span style="color:#f92672">*</span> palm_center.x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">-</span> beta <span style="color:#f92672">*</span> palm_center.y <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>beta;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> alpha;
+</span></span><span style="display:flex;"><span><span style="color:#f92672">*</span>rotation_matrix.at_2d_mut::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f64</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>)<span style="color:#f92672">?</span> <span style="color:#f92672">=</span> beta <span style="color:#f92672">*</span> palm_center.x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span> <span style="color:#f92672">+</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> alpha) <span style="color:#f92672">*</span> palm_center.y <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f64</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 對整張影像進行仿射旋轉與 Crop 截取
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> rotated_image <span style="color:#f92672">=</span> Mat::default();
+</span></span><span style="display:flex;"><span>imgproc::warp_affine(<span style="color:#f92672">&amp;</span>frame, <span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> rotated_image, <span style="color:#f92672">&amp;</span>rotation_matrix, Size::new(frame.cols(), frame.rows()), <span style="color:#f92672">..</span>.)<span style="color:#f92672">?</span>;</span></span></code></pre></div>
+
+<h4 id="3-手法突破解決右模型偏見的-left-hand-auto-fallback">3. 手法突破：解決「右模型偏見」的 Left-Hand Auto-Fallback</h4>
+<p>MediaPipe 的 Handpose 模型會輸出 3 個層級（Output Layers）：</p>
+<ul>
+<li><strong>Layer 0</strong>：21 個 3D 關節點座標 $[1, 63]$</li>
+<li><strong>Layer 1</strong>：手部整體置信度分數 (Confidence Score)</li>
+<li><strong>Layer 2</strong>：<strong>右手性置信度分數 (Right-Handedness Score)</strong></li>
+</ul>
+<p>由於訓練資料集的偏差，模型對右手的辨識率極高，但對左手容易產生低分或扭曲。為了改善這個問題，我們實作了<strong>雙向推論與 Layer 2 右手性評估</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> evaluate <span style="color:#f92672">=</span> <span style="color:#f92672">|</span>img: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">Mat</span><span style="color:#f92672">|</span> -&gt; Result<span style="color:#f92672">&lt;</span>(<span style="color:#66d9ef">f32</span>, <span style="color:#66d9ef">f32</span>, Vector<span style="color:#f92672">&lt;</span>Mat<span style="color:#f92672">&gt;</span>)<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> blob <span style="color:#f92672">=</span> float_mat.reshape_nd(<span style="color:#ae81ff">1</span>, <span style="color:#f92672">&amp;</span>[<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">224</span>, <span style="color:#ae81ff">224</span>, <span style="color:#ae81ff">3</span>])<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    net.set_input(<span style="color:#f92672">&amp;</span>blob, <span style="color:#e6db74">&#34;&#34;</span>, <span style="color:#ae81ff">1.0</span>, Scalar::default())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> out_layers <span style="color:#f92672">=</span> Vector::<span style="color:#f92672">&lt;</span>Mat<span style="color:#f92672">&gt;</span>::new();
+</span></span><span style="display:flex;"><span>    net.forward(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> out_layers, <span style="color:#f92672">&amp;</span>net.get_unconnected_out_layers_names()<span style="color:#f92672">?</span>)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> score <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>out_layers.get(<span style="color:#ae81ff">1</span>)<span style="color:#f92672">?</span>.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>)<span style="color:#f92672">?</span>;      <span style="color:#75715e">// Layer 1: 置信度
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> handedness <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>out_layers.get(<span style="color:#ae81ff">2</span>)<span style="color:#f92672">?</span>.at_2d::<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">f32</span><span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>)<span style="color:#f92672">?</span>; <span style="color:#75715e">// Layer 2: 右手性得分
+</span></span></span><span style="display:flex;"><span>    Ok((score, handedness, out_layers))
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 同時對原始 Crop 與水平翻轉 Crop (rgb_flipped) 進行推論
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (score_unflipped, handedness_unflipped, out_unflipped) <span style="color:#f92672">=</span> evaluate(<span style="color:#f92672">&amp;</span>rgb)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> (score_flipped, handedness_flipped, out_flipped) <span style="color:#f92672">=</span> evaluate(<span style="color:#f92672">&amp;</span>rgb_flipped)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 模型永遠會給「看起來像右手」的影像更高的 Layer 2 分數
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 若翻轉後的影像分數更高，代表原始影像必定是「左手」！
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> is_left_hand <span style="color:#f92672">=</span> handedness_flipped <span style="color:#f92672">&gt;</span> handedness_unflipped;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 若為左手，採用翻轉影像的推論結果，並將 X 座標鏡射還原 (224.0 - X)
+</span></span></span></code></pre></div>
+
+<p>透過這種雙向推論機制，系統對左手與右手的識別穩定度有了顯著提升！</p>
+<hr>
+<h3 id="核心技術二時序追蹤與遲滯投票機制-hysteresis-voting">核心技術二：時序追蹤與遲滯投票機制 (Hysteresis Voting)</h3>
+<p>單影格推論容易受到極端角度或運動模糊干擾，造成左右手標籤在相鄰影格間跳動。為此，我們設計了 <strong><code>TrackedHand</code> 時序追蹤結構</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[derive(Clone)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">TrackedHand</span> {
+</span></span><span style="display:flex;"><span>    keypoints: Vec<span style="color:#f92672">&lt;</span>Point<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>    score: <span style="color:#66d9ef">f32</span>,
+</span></span><span style="display:flex;"><span>    center: <span style="color:#a6e22e">Point</span>,
+</span></span><span style="display:flex;"><span>    left_votes: <span style="color:#66d9ef">i32</span>,       <span style="color:#75715e">// 遲滯投票計數器 [-30..+30]
+</span></span></span><span style="display:flex;"><span>    is_left_hand: <span style="color:#66d9ef">bool</span>,    <span style="color:#75715e">// 最終鎖定的左右手標籤
+</span></span></span><span style="display:flex;"><span>    missed_frames: <span style="color:#66d9ef">usize</span>, <span style="color:#75715e">// 遮擋遺失影格補償計數
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="1-貪婪歐式距離配對-greedy-assignment">1. 貪婪歐式距離配對 (Greedy Assignment)</h4>
+<p>每一影格收到新的 raw 偵測結果時，計算所有歷史追蹤器與新偵測點的掌心距離，按距離從小到大（門檻 $<400\text{px}$）進行貪婪配對，更新中心座標與關節點。</p>
+<h4 id="2-遲滯投票機制-hysteresis-voting">2. 遲滯投票機制 (Hysteresis Voting)</h4>
+<p>新的偵測若判定為左手，<code>left_votes</code> 加 1；若為右手則減 1（限制在 $[-30, +30]$ 範圍內）。<strong>只有當票數累積達到 $+20$ 或 $-20$ 的絕對壓倒性門檻時，才允許切換 <code>is_left_hand</code> 狀態</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">*</span>is_left {
+</span></span><span style="display:flex;"><span>    tracker.left_votes <span style="color:#f92672">=</span> (tracker.left_votes <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>).min(<span style="color:#ae81ff">30</span>);
+</span></span><span style="display:flex;"><span>} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>    tracker.left_votes <span style="color:#f92672">=</span> (tracker.left_votes <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>).max(<span style="color:#f92672">-</span><span style="color:#ae81ff">30</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 遲滯門檻：防止單影格誤判造成的標籤閃爍
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> tracker.left_votes <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">20</span> {
+</span></span><span style="display:flex;"><span>    tracker.is_left_hand <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> tracker.left_votes <span style="color:#f92672">&lt;=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">20</span> {
+</span></span><span style="display:flex;"><span>    tracker.is_left_hand <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h4 id="3-遮擋遺失補償-missed-frame-interpolation">3. 遮擋遺失補償 (Missed Frame Interpolation)</h4>
+<p>當手指快速揮過或被短暫遮擋時，未配對到的追蹤器會保留最多 5 個影格（約 80ms），避免手勢在中途斷開：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (t_idx, tracker) <span style="color:#66d9ef">in</span> hand_trackers.iter_mut().enumerate() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>matched_tracker[t_idx] {
+</span></span><span style="display:flex;"><span>        tracker.missed_frames <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> tracker.missed_frames <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">5</span> {
+</span></span><span style="display:flex;"><span>            new_trackers.push(tracker.clone()); <span style="color:#75715e">// 保持追蹤
+</span></span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h3 id="核心技術三360-度旋轉無關幾何算子與眾數去顫">核心技術三：360 度旋轉無關幾何算子與眾數去顫</h3>
+<h4 id="1-旋轉無關的手指伸展判定">1. 旋轉無關的手指伸展判定</h4>
+<p>傳統演算法常假設手指朝上（檢查 $Y_{\text{tip}} < Y_{\text{pip}}$），手掌橫放即失靈。我們改用<strong>基於手腕（Wrist, Landmark 0）的相對歐氏距離比較</strong>：</p>
+$$\text{Extended} \iff \text{Dist}(\text{Wrist}, \text{Tip}) > \text{Dist}(\text{Wrist}, \text{PIP})$$
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> wrist <span style="color:#f92672">=</span> kps[<span style="color:#ae81ff">0</span>];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> index_ext <span style="color:#f92672">=</span> dist(wrist, kps[<span style="color:#ae81ff">8</span>]) <span style="color:#f92672">&gt;</span> dist(wrist, kps[<span style="color:#ae81ff">6</span>]);   <span style="color:#75715e">// 8: 食指尖, 6: 食指 PIP 關節
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> middle_ext <span style="color:#f92672">=</span> dist(wrist, kps[<span style="color:#ae81ff">12</span>]) <span style="color:#f92672">&gt;</span> dist(wrist, kps[<span style="color:#ae81ff">10</span>]); <span style="color:#75715e">// 12: 中指尖, 10: 中指 PIP 關節
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> ring_ext <span style="color:#f92672">=</span> dist(wrist, kps[<span style="color:#ae81ff">16</span>]) <span style="color:#f92672">&gt;</span> dist(wrist, kps[<span style="color:#ae81ff">14</span>]);   <span style="color:#75715e">// 16: 無名指尖, 14: 無名指 PIP 關節
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> pinky_ext <span style="color:#f92672">=</span> dist(wrist, kps[<span style="color:#ae81ff">20</span>]) <span style="color:#f92672">&gt;</span> dist(wrist, kps[<span style="color:#ae81ff">18</span>]);  <span style="color:#75715e">// 20: 小指尖, 18: 小指 PIP 關節
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> extended_count <span style="color:#f92672">=</span> (index_ext <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>) <span style="color:#f92672">+</span> (middle_ext <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>) <span style="color:#f92672">+</span> (ring_ext <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>) <span style="color:#f92672">+</span> (pinky_ext <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>);</span></span></code></pre></div>
+
+<p>由於歐氏距離具有旋轉不變性，無論手掌如何旋轉，伸展判斷皆相當穩定。</p>
+<h4 id="2-眾數滑動視窗去顫-mode-based-debouncing">2. 眾數滑動視窗去顫 (Mode-Based Debouncing)</h4>
+<p>利用 <code>VecDeque&lt;usize&gt;</code> 維持最近 $N$ 影格（預設 $N=10$）的手指數量歷史，計算統計眾數（Mode）作為最終結果，有效過濾姿態切換瞬間的脈衝雜訊。</p>
+<hr>
+<h3 id="手勢狀態機與-os-輸入模擬">手勢狀態機與 OS 輸入模擬</h3>
+<p>在 <code>src/controller.rs</code> 中，控制執行緒接收到 <code>GestureState</code> 後，利用 <code>enigo</code> 與 Win32 API 執行系統操作：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">手勢型態</th>
+					<th style="text-align: left">手指伸展數 / 特徵條件</th>
+					<th style="text-align: left">動作說明</th>
+					<th style="text-align: left">OS 模擬行為 (Enigo / Win32)</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>Hover</strong></td>
+					<td style="text-align: left">1 根手指（食指）</td>
+					<td style="text-align: left">游標平滑移動</td>
+					<td style="text-align: left">絕對座標定位至食指尖 ($X_{8}, Y_{8}$)</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Click / Drag</strong></td>
+					<td style="text-align: left">0 根手指（握拳 / Pinch）</td>
+					<td style="text-align: left">滑鼠點擊與拖曳</td>
+					<td style="text-align: left">發送 <code>Button::Left Press</code> + 移動</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Scroll</strong></td>
+					<td style="text-align: left">2 根手指（食指+中指）</td>
+					<td style="text-align: left">網頁高解析度滾動</td>
+					<td style="text-align: left">計算兩指中心垂直位移發送 <code>scroll</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Wave Left</strong></td>
+					<td style="text-align: left">4+ 根手指 + 快速向左揮</td>
+					<td style="text-align: left">虛擬桌面左切</td>
+					<td style="text-align: left">發送 <code>Win + Ctrl + LeftArrow</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Wave Right</strong></td>
+					<td style="text-align: left">4+ 根手指 + 快速向右揮</td>
+					<td style="text-align: left">虛擬桌面右切</td>
+					<td style="text-align: left">發送 <code>Win + Ctrl + RightArrow</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Idle</strong></td>
+					<td style="text-align: left">手部離開畫面</td>
+					<td style="text-align: left">釋放按鍵防卡死</td>
+					<td style="text-align: left">發送 <code>Button::Left Release</code></td>
+			</tr>
+	</tbody>
+</table>
+<p>看這段在 <code>src/controller.rs</code> 裡的核心事件迴圈：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run_controller_loop</span>(rx: <span style="color:#a6e22e">Receiver</span><span style="color:#f92672">&lt;</span>GestureState<span style="color:#f92672">&gt;</span>) -&gt; Result<span style="color:#f92672">&lt;</span>()<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> enigo <span style="color:#f92672">=</span> Enigo::new(<span style="color:#f92672">&amp;</span>Settings::default())<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> (screen_w, screen_h) <span style="color:#f92672">=</span> get_screen_size(); <span style="color:#75715e">// Win32 GetSystemMetrics
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> alpha <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.20</span><span style="color:#66d9ef">f32</span>; <span style="color:#75715e">// EMA 平滑係數
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> <span style="color:#66d9ef">let</span> Ok(state) <span style="color:#f92672">=</span> rx.recv() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> state {
+</span></span><span style="display:flex;"><span>            GestureState::Hover { x, y } <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> is_pressed {
+</span></span><span style="display:flex;"><span>                    enigo.button(Button::Left, Direction::Release)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                    is_pressed <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// EMA 平滑化算式
+</span></span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> target_x <span style="color:#f92672">=</span> alpha <span style="color:#f92672">*</span> x <span style="color:#f92672">+</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> alpha) <span style="color:#f92672">*</span> last_x;
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> target_y <span style="color:#f92672">=</span> alpha <span style="color:#f92672">*</span> y <span style="color:#f92672">+</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> alpha) <span style="color:#f92672">*</span> last_y;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> px <span style="color:#f92672">=</span> (target_x <span style="color:#f92672">*</span> (screen_w <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>)) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> py <span style="color:#f92672">=</span> (target_y <span style="color:#f92672">*</span> (screen_h <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>)) <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                enigo.move_mouse(px, py, Coordinate::Abs)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                last_x <span style="color:#f92672">=</span> target_x;
+</span></span><span style="display:flex;"><span>                last_y <span style="color:#f92672">=</span> target_y;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            GestureState::Click { x, y } <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> <span style="color:#f92672">!</span>is_pressed {
+</span></span><span style="display:flex;"><span>                    enigo.button(Button::Left, Direction::Press)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                    is_pressed <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// 拖曳游標平滑移動...
+</span></span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            GestureState::Scroll { dy } <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                scroll_accumulator <span style="color:#f92672">+=</span> dy;
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">let</span> scroll_clicks <span style="color:#f92672">=</span> scroll_accumulator.trunc() <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i32</span>;
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> scroll_clicks <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>                    enigo.scroll(<span style="color:#f92672">-</span>scroll_clicks, Axis::Vertical)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                    scroll_accumulator <span style="color:#f92672">-=</span> scroll_clicks <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            GestureState::WaveLeft <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// 觸發 Windows 切換虛擬桌面快捷鍵
+</span></span></span><span style="display:flex;"><span>                enigo.key(Key::Control, Direction::Press)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                enigo.key(Key::Meta, Direction::Press)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                enigo.key(Key::LeftArrow, Direction::Click)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                enigo.key(Key::Meta, Direction::Release)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>                enigo.key(Key::Control, Direction::Release)<span style="color:#f92672">?</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    Ok(())
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>而在 <code>src/vision.rs</code> 中，極速揮手（Wave Left / Right）則是透過時間差 $dt$ 計算平滑動態速度 $v_x$：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> dx <span style="color:#f92672">=</span> (palm_pt.x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>) <span style="color:#f92672">-</span> last_palm_x;
+</span></span><span style="display:flex;"><span>last_palm_x <span style="color:#f92672">=</span> palm_pt.x <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">f32</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> velocity <span style="color:#f92672">=</span> dx <span style="color:#f92672">/</span> dt;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> alpha_vel <span style="color:#f92672">=</span> (dt <span style="color:#f92672">*</span> <span style="color:#ae81ff">10.0</span>).clamp(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>);
+</span></span><span style="display:flex;"><span>velocity_x_smoothed <span style="color:#f92672">=</span> alpha_vel <span style="color:#f92672">*</span> velocity <span style="color:#f92672">+</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> alpha_vel) <span style="color:#f92672">*</span> velocity_x_smoothed;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> debounced_count <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">4</span> <span style="color:#f92672">&amp;&amp;</span> elapsed_wave <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">1.2</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> velocity_x_smoothed <span style="color:#f92672">&lt;</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">450.0</span> {
+</span></span><span style="display:flex;"><span>        current_state <span style="color:#f92672">=</span> GestureState::WaveLeft;
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> velocity_x_smoothed <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">450.0</span> {
+</span></span><span style="display:flex;"><span>        current_state <span style="color:#f92672">=</span> GestureState::WaveRight;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<hr>
+<h3 id="安裝校正與-headless-背景模式">安裝、校正與 Headless 背景模式</h3>
+<h4 id="1-下載-mediapipe-onnx-模型">1. 下載 MediaPipe ONNX 模型</h4>
+<p>專案提供 PowerShell 腳本自動下載 OpenCV Zoo 模型：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>.\download_models.ps1</span></span></code></pre></div>
+
+<p>這會將 <code>palm_detection_mediapipe_2023feb.onnx</code> 與 <code>handpose_estimation_mediapipe_2023feb.onnx</code> 下載至 <code>models/</code> 目錄。</p>
+<h4 id="2-互動校正">2. 互動校正</h4>
+<p>執行 <code>cargo run</code> 可開啟 GUI 視窗，即時調整 Trackbar 參數：</p>
+<ul>
+<li><strong>Palm Conf %</strong>：掌心偵測門檻（預設 65%）。</li>
+<li><strong>Pose Conf %</strong>：3D 骨骼點置信度門檻（預設 75%）。</li>
+<li><strong>Debounce Frames</strong>：去顫視窗影格數（預設 10 幀）。</li>
+</ul>
+<h4 id="3-headless-背景運行">3. Headless 背景運行</h4>
+<p>參數校正完成後，加上 <code>--no-preview</code> 即可進行零 GUI 開銷的背景執行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo run --release -- --no-preview</span></span></code></pre></div>
+
+<hr>
+<h3 id="品質保證自動化測試與-far-驗證">品質保證：自動化測試與 FAR 驗證</h3>
+<p>專案包含基本的 <code>#[cfg(test)]</code> 自動化測試套件，輔助驗證功能：</p>
+<ul>
+<li><strong>FAR (False Acceptance Rate) 假陽性測試</strong>：
+測試純黑影像 (<code>test_far_blank_image</code>)、靜態彩繪雜訊 (<code>test_far_noise_image</code>) 與幾何圖像 (<code>test_far_geometric_shapes</code>)，確保系統在無手狀態下不致誤觸。</li>
+</ul>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[test]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">test_far_blank_image</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> net <span style="color:#f92672">=</span> dnn::read_net_def(<span style="color:#e6db74">&#34;models/palm_detection_mediapipe_2023feb.onnx&#34;</span>).unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> frame <span style="color:#f92672">=</span> Mat::new_rows_cols_with_default(<span style="color:#ae81ff">480</span>, <span style="color:#ae81ff">640</span>, <span style="color:#66d9ef">CV_8UC3</span>, Scalar::all(<span style="color:#ae81ff">0.0</span>)).unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> result <span style="color:#f92672">=</span> <span style="color:#66d9ef">crate</span>::palm::detect_mediapipe_palm(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> net, <span style="color:#f92672">&amp;</span>frame, <span style="color:#ae81ff">0.65</span>).unwrap();
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert!</span>(result.is_empty(), <span style="color:#e6db74">&#34;FAR Failure: Palm detected in solid black image!&#34;</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<ul>
+<li><strong>實體影片時序斷言測試</strong>：
+讀取測試影片 <code>test_assets/one-hand-flipping.mp4</code>，驗證單手翻轉時系統不會重複生成 Ghost 追蹤器（<code>assert!(max_trackers &lt;= 1)</code>）。</li>
+</ul>
+<p>執行測試命令：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cargo test -- --nocapture</span></span></code></pre></div>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>running 7 tests
+</span></span><span style="display:flex;"><span>test vision::tests::test_load_mediapipe_onnx_models ... ok
+</span></span><span style="display:flex;"><span>test vision::tests::test_far_blank_image ... ok
+</span></span><span style="display:flex;"><span>test vision::tests::test_far_noise_image ... ok
+</span></span><span style="display:flex;"><span>test vision::tests::test_far_geometric_shapes ... ok
+</span></span><span style="display:flex;"><span>test vision::tests::test_video_one_hand_flipping ... ok
+</span></span><span style="display:flex;"><span>test result: ok. 7 passed; 0 failed</span></span></code></pre></div>
+
+<hr>
+<h3 id="實務限制與學習體會-limitations--learning-takeaways">實務限制與學習體會 (Limitations &amp; Learning Takeaways)</h3>
+<p>作為一個個人實驗與學習專案，客觀來說它仍有一些實務上的限制：</p>
+<ol>
+<li><strong>單眼 RGB Webcam 的物理極限</strong>：缺乏紅外線與 3D 深度感測器，在極暗光線、強烈背光或手掌大幅度遮擋時，追蹤穩定度仍無法與 Apple Vision Pro 或 Leap Motion 等專用硬體相提攜。</li>
+<li><strong>手臂肌肉疲勞 (Gorilla Arm Effect)</strong>：長時間懸空懸空手勢操控會導致手臂疲勞，在日常辦公或精細的像素級點擊時，實體滑鼠依然是不可替代的生產力工具。</li>
+<li><strong>全 CPU 推論開銷</strong>：雖然在現代電腦上能順暢執行，但若能進一步串接 TensorRT 或 DirectML 硬體加速，電力與 CPU 佔用表現會更好。</li>
+</ol>
+<p>但<strong>作為 <em>Rust 52 Projects</em> 挑戰的一部分，這個專案已經達成了很好的學習與驗證目的</strong>！它讓我完整體驗了如何在 Rust 中整合 OpenCV 5 FFI、處理複雜的神經網路張量輸出、用純 Rust 設計時序平滑演算法，以及透過 Enigo 進行系統級輸入注入。</p>
+<hr>
+<h3 id="學到的-rust-關鍵技術">學到的 Rust 關鍵技術</h3>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">技術主題</th>
+					<th style="text-align: left">應用與實現</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong><code>std::sync::mpsc</code> Channel</strong></td>
+					<td style="text-align: left">跨執行緒無鎖傳輸輕量 <code>GestureState</code> enum，確保 60 FPS 解耦</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>OpenCV 5 DNN 模組</strong></td>
+					<td style="text-align: left">使用 <code>dnn::read_net_def</code> 與 <code>reshape_nd</code> 進行 ONNX 權重解析與張量前處理</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Win32 FFI</strong></td>
+					<td style="text-align: left">宣告原生 <code>GetSystemMetrics</code> 動態取得多螢幕解析度</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>時序遲滯狀態機</strong></td>
+					<td style="text-align: left">透過貪婪歐式配對與 $[-30, +30]$ 遲滯投票鎖定左右手狀態</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>旋轉無關幾何算子</strong></td>
+					<td style="text-align: left">採用 3D 關節點相對於手腕的歐氏距離比值進行 360 度伸展判斷</td>
+			</tr>
+	</tbody>
+</table>
+<hr>
+<h3 id="結語">結語</h3>
+<p><code>gesture-control</code> 探索了用 Rust 打造即時電腦視覺工具的可能性。儘管它不完美，但作為一個探索型 side project，它好玩、有挑戰性，且充滿了技術趣味。</p>
+<p>歡迎前往 GitHub 專案庫查看程式碼並提出改進建議！</p>
+<hr>
+<h3 id="參考資源">參考資源</h3>
+<ul>
+<li><a href="https://github.com/p47t/rust-52-projects/tree/master/gesture-control">gesture-control 原始碼 Repo</a> — 本專案完整 Rust 程式碼</li>
+<li><a href="https://github.com/opencv/opencv_zoo">OpenCV Zoo — MediaPipe Models</a> — MediaPipe ONNX 模型官方庫</li>
+<li><a href="https://crates.io/crates/enigo">Enigo Crates.io</a> — Rust 跨平台 OS 輸入模擬庫</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>
