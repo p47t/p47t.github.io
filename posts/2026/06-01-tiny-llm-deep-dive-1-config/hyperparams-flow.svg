@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 980" width="1200" height="980">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+    <linearGradient id="card2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2e42"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+    <linearGradient id="block" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2e3450"/>
+      <stop offset="100%" stop-color="#1f2638"/>
+    </linearGradient>
+    <linearGradient id="accent2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff9e64"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
+    </linearGradient>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#bb9af7"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ff9e64"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="980" fill="url(#bg2)"/>
+  <rect x="50" y="40" width="160" height="4" fill="url(#accent2)" rx="2"/>
+
+  <text x="60" y="80" font-family="Arvo, serif" font-size="28" fill="#c0caf5" font-weight="bold">
+    Llama hyperparameters → inference flow
+  </text>
+  <text x="60" y="108" font-family="Arial, sans-serif" font-size="15" fill="rgba(192,202,245,0.65)">
+    每個 config 欄位控制管線中的哪一段？
+  </text>
+
+  <!-- Center pipeline boxes (x=380 .. 820, width=440) -->
+
+  <!-- 1. Input tokens -->
+  <g transform="translate(380, 150)">
+    <rect width="440" height="64" rx="10" fill="url(#card2)" stroke="#7dcfff" stroke-width="2"/>
+    <text x="220" y="30" font-family="Arvo, serif" font-size="16" fill="#7dcfff" text-anchor="middle" font-weight="bold">Input token ids</text>
+    <text x="220" y="52" font-family="monospace" font-size="13" fill="#c0caf5" text-anchor="middle">[seq_len]   (seq_len ≤ n_ctx)</text>
+  </g>
+
+  <!-- arrow -->
+  <path d="M 600 218 L 600 248" stroke="#bb9af7" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- 2. Embedding -->
+  <g transform="translate(380, 252)">
+    <rect width="440" height="64" rx="10" fill="url(#card2)" stroke="#9ece6a" stroke-width="2"/>
+    <text x="220" y="30" font-family="Arvo, serif" font-size="16" fill="#9ece6a" text-anchor="middle" font-weight="bold">Token embedding lookup</text>
+    <text x="220" y="52" font-family="monospace" font-size="13" fill="#c0caf5" text-anchor="middle">[vocab_size × n_embd]   →   h: [seq, n_embd]</text>
+  </g>
+
+  <path d="M 600 320 L 600 350" stroke="#bb9af7" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- 3. Transformer block (big box) -->
+  <g transform="translate(310, 354)">
+    <rect width="580" height="380" rx="14" fill="url(#block)" stroke="#bb9af7" stroke-width="2.5"/>
+    <text x="20" y="32" font-family="monospace" font-size="14" fill="#bb9af7">// repeat this block × n_layer</text>
+    <text x="560" y="32" font-family="monospace" font-size="13" fill="#e0af68" text-anchor="end">n_layer = depth</text>
+
+    <!-- 3a. RMSNorm -->
+    <g transform="translate(40, 54)">
+      <rect width="500" height="44" rx="8" fill="#1f2638" stroke="#7aa2f7" stroke-width="1.5"/>
+      <text x="20" y="28" font-family="Arvo, serif" font-size="14" fill="#7aa2f7" font-weight="bold">RMSNorm</text>
+      <text x="480" y="28" font-family="monospace" font-size="12" fill="rgba(192,202,245,0.75)" text-anchor="end">eps = rms_eps</text>
+    </g>
+
+    <!-- 3b. Attention -->
+    <g transform="translate(40, 110)">
+      <rect width="500" height="120" rx="8" fill="#1f2638" stroke="#f7768e" stroke-width="1.5"/>
+      <text x="20" y="26" font-family="Arvo, serif" font-size="14" fill="#f7768e" font-weight="bold">Multi-head attention (GQA)</text>
+      <g font-family="monospace" font-size="12" fill="#c0caf5">
+        <text x="20" y="50">Q proj   [n_embd × n_embd]      → n_head heads × head_dim</text>
+        <text x="20" y="68">K proj   [n_embd × kv_dim]      → n_head_kv heads × head_dim</text>
+        <text x="20" y="86">V proj   [n_embd × kv_dim]      → n_head_kv heads × head_dim</text>
+        <text x="20" y="104">RoPE on Q/K  (freq_base, rope_dim_count)   ·   O proj [n_embd²]</text>
+      </g>
+    </g>
+
+    <!-- 3c. RMSNorm -->
+    <g transform="translate(40, 240)">
+      <rect width="500" height="44" rx="8" fill="#1f2638" stroke="#7aa2f7" stroke-width="1.5"/>
+      <text x="20" y="28" font-family="Arvo, serif" font-size="14" fill="#7aa2f7" font-weight="bold">RMSNorm</text>
+    </g>
+
+    <!-- 3d. FFN -->
+    <g transform="translate(40, 296)">
+      <rect width="500" height="68" rx="8" fill="#1f2638" stroke="#9ece6a" stroke-width="1.5"/>
+      <text x="20" y="26" font-family="Arvo, serif" font-size="14" fill="#9ece6a" font-weight="bold">SwiGLU FFN</text>
+      <g font-family="monospace" font-size="12" fill="#c0caf5">
+        <text x="20" y="50">gate / up [n_embd × n_ff]   ·   down [n_ff × n_embd]</text>
+      </g>
+    </g>
+  </g>
+
+  <path d="M 600 738 L 600 768" stroke="#bb9af7" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- 4. Final norm -->
+  <g transform="translate(380, 772)">
+    <rect width="440" height="48" rx="10" fill="url(#card2)" stroke="#7aa2f7" stroke-width="2"/>
+    <text x="220" y="30" font-family="Arvo, serif" font-size="14" fill="#7aa2f7" text-anchor="middle" font-weight="bold">Final RMSNorm</text>
+  </g>
+
+  <path d="M 600 824 L 600 854" stroke="#bb9af7" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- 5. LM head -->
+  <g transform="translate(380, 858)">
+    <rect width="440" height="64" rx="10" fill="url(#card2)" stroke="#e0af68" stroke-width="2"/>
+    <text x="220" y="30" font-family="Arvo, serif" font-size="16" fill="#e0af68" text-anchor="middle" font-weight="bold">LM head</text>
+    <text x="220" y="52" font-family="monospace" font-size="13" fill="#c0caf5" text-anchor="middle">[n_embd × vocab_size]   →   logits: [vocab_size]</text>
+  </g>
+
+  <!-- ===== Left annotations: which param controls what ===== -->
+
+  <!-- n_ctx -> input tokens -->
+  <g font-family="monospace" font-size="13">
+    <text x="60" y="186" fill="#7dcfff" font-weight="bold">n_ctx</text>
+    <text x="60" y="204" fill="rgba(192,202,245,0.7)">max sequence length</text>
+    <path d="M 200 192 Q 290 192 378 184" stroke="#7dcfff" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)" stroke-dasharray="0"/>
+  </g>
+
+  <!-- vocab_size + n_embd -> embedding -->
+  <g font-family="monospace" font-size="13">
+    <text x="60" y="280" fill="#9ece6a" font-weight="bold">vocab_size</text>
+    <text x="60" y="298" fill="rgba(192,202,245,0.7)">how many distinct tokens</text>
+    <text x="60" y="318" fill="#9ece6a" font-weight="bold">n_embd</text>
+    <text x="60" y="336" fill="rgba(192,202,245,0.7)">hidden state width</text>
+    <path d="M 220 290 Q 300 290 378 286" stroke="#9ece6a" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- n_layer -> block -->
+  <g font-family="monospace" font-size="13">
+    <text x="60" y="400" fill="#e0af68" font-weight="bold">n_layer</text>
+    <text x="60" y="418" fill="rgba(192,202,245,0.7)">number of blocks stacked</text>
+    <path d="M 200 408 Q 250 408 308 388" stroke="#e0af68" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- rms_eps -> RMSNorm -->
+  <g font-family="monospace" font-size="13">
+    <text x="60" y="460" fill="#7aa2f7" font-weight="bold">rms_eps</text>
+    <text x="60" y="478" fill="rgba(192,202,245,0.7)">RMSNorm numeric floor</text>
+    <path d="M 200 468 Q 260 460 348 432" stroke="#7aa2f7" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- n_head, n_head_kv -> attention -->
+  <g font-family="monospace" font-size="13">
+    <text x="60" y="528" fill="#f7768e" font-weight="bold">n_head</text>
+    <text x="60" y="546" fill="rgba(192,202,245,0.7)">query heads</text>
+    <text x="60" y="566" fill="#f7768e" font-weight="bold">n_head_kv</text>
+    <text x="60" y="584" fill="rgba(192,202,245,0.7)">K/V heads (GQA)</text>
+    <text x="60" y="604" fill="rgba(192,202,245,0.55)">→ head_dim = n_embd/n_head</text>
+    <text x="60" y="622" fill="rgba(192,202,245,0.55)">→ kv_dim   = head_dim·n_head_kv</text>
+    <path d="M 240 552 Q 300 552 348 530" stroke="#f7768e" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- ===== Right annotations ===== -->
+
+  <!-- rope on attention -->
+  <g font-family="monospace" font-size="13">
+    <text x="900" y="546" fill="#bb9af7" font-weight="bold">rope_freq_base</text>
+    <text x="900" y="564" fill="rgba(192,202,245,0.7)">RoPE base period</text>
+    <text x="900" y="584" fill="#bb9af7" font-weight="bold">rope_dim_count</text>
+    <text x="900" y="602" fill="rgba(192,202,245,0.7)">how many dims rotate</text>
+    <path d="M 895 558 Q 880 552 850 540" stroke="#bb9af7" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- n_ff -> FFN -->
+  <g font-family="monospace" font-size="13">
+    <text x="900" y="680" fill="#9ece6a" font-weight="bold">n_ff</text>
+    <text x="900" y="698" fill="rgba(192,202,245,0.7)">FFN hidden width</text>
+    <text x="900" y="718" fill="rgba(192,202,245,0.55)">(typically ≈ 2.7 × n_embd)</text>
+    <path d="M 895 692 Q 880 690 850 680" stroke="#9ece6a" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <!-- vocab_size + n_embd -> LM head -->
+  <g font-family="monospace" font-size="13">
+    <text x="900" y="880" fill="#e0af68" font-weight="bold">vocab_size · n_embd</text>
+    <text x="900" y="898" fill="rgba(192,202,245,0.7)">size of LM head matrix</text>
+    <text x="900" y="918" fill="rgba(192,202,245,0.55)">(often the largest single block)</text>
+    <path d="M 895 892 Q 870 892 822 890" stroke="#e0af68" stroke-width="1.5" fill="none" marker-end="url(#arr-orange)"/>
+  </g>
+
+  <text x="1160" y="956" font-family="Arial, sans-serif" font-size="13" fill="rgba(255,255,255,0.4)" text-anchor="end">blog.simplypatrick.com</text>
+</svg>

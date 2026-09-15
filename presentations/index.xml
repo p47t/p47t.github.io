@@ -1,0 +1,383 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/presentations/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>0001-01-01 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title></title>
+      <link>https://blog.simplypatrick.com/presentations/2018-01-27-kotlin-coroutines-explained/slides/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/presentations/2018-01-27-kotlin-coroutines-explained/slides/</guid>
+      <description>&lt;h1 id=&#34;kotlin-coroutines-explained-with-examples&#34;&gt;Kotlin Coroutines Explained with Examples&lt;/h1&gt;
+&lt;h3 id=&#34;what-is-coroutine&#34;&gt;What is Coroutine?&lt;/h3&gt;
+&lt;p&gt;Coroutines are computer-program components that generalize subroutines for non-preemptive multitasking, by allowing multiple entry points for &lt;strong&gt;suspending&lt;/strong&gt; and &lt;strong&gt;resuming&lt;/strong&gt; execution at certain locations&lt;/p&gt;
+&lt;p&gt;&lt;small&gt;&amp;ndash; &lt;em&gt;&lt;a href=&#34;https://www.wikiwand.com/en/Coroutine&#34;&gt;Coroutine - Wikipedia&lt;/a&gt;&lt;/em&gt;&lt;/small&gt;&lt;/p&gt;
+&lt;hr&gt;
+&lt;p&gt;Basically, coroutines are computations that can be suspended without blocking a thread.&lt;/p&gt;
+&lt;p&gt;&lt;small&gt;&amp;ndash; Kotlin Reference / Functions and Lambdas / Coroutines&lt;/small&gt;&lt;/p&gt;
+&lt;h3 id=&#34;overview&#34;&gt;Overview&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Start a coroutine&lt;/li&gt;
+&lt;li&gt;Create a coroutine
+&lt;ul&gt;
+&lt;li&gt;Coroutine Internals&lt;/li&gt;
+&lt;li&gt;How to &lt;strong&gt;Suspend&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;How to &lt;strong&gt;Resume&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Concurrency Model&lt;/li&gt;
+&lt;li&gt;More about Threading&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;start-a-coroutine&#34;&gt;Start a coroutine&lt;/h2&gt;
+&lt;h3 id=&#34;coroutine-builder&#34;&gt;Coroutine Builder&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Use built-in &lt;strong&gt;coroutine builder&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;runBlocking{}&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;launch{}&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;async{}&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;buildSequence{}&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;produce{}&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;All these builders accept a &lt;em&gt;suspending lambda&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;example-runblocking&#34;&gt;Example: runBlocking&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;runBlocking&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; context: CoroutineContext = EmptyCoroutineContext,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; block: &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineScope&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; T
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): T&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;runBlocking { &lt;span style=&#34;color:#75715e&#34;&gt;// executed in calling thread
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;current thread: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${Thread.currentThread()}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;TimeUnit&lt;/span&gt;.SECONDS)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Don&amp;rsquo;t do this in UI thread &amp;lsquo;cause it is &lt;strong&gt;blocking&lt;/strong&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;example-launch&#34;&gt;Example: launch&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;launch&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; context: CoroutineContext,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; start: CoroutineStart = &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineStart&lt;/span&gt;.DEFAULT,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; block: &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineScope&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Job&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (i &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;100L&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; launch(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// executed in common thread pool
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;current thread: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${Thread.currentThread()}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  delay(i, &lt;span style=&#34;color:#a6e22e&#34;&gt;TimeUnit&lt;/span&gt;.SECONDS)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;after delay(&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$i&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;)&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;pitfall-launch&#34;&gt;Pitfall: launch&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; c = AtomicInteger()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (i &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1_000_000&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; launch(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  c.addAndGet(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;c = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${c.get()}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// WRONG!&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Print random value because of getting premature result before the computation is done.&lt;/p&gt;
+&lt;h3 id=&#34;solution-just-wait&#34;&gt;Solution: Just Wait&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; c = AtomicInteger()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; jobs = (&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1_000_000&lt;/span&gt;).map {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	launch(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;     c.addAndGet(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;runBlocking {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; jobs.foreach { &lt;span style=&#34;color:#66d9ef&#34;&gt;it&lt;/span&gt;.join() }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;c = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;${c.get()}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// CORRECT&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;example-async&#34;&gt;Example: &lt;code&gt;async{}&lt;/code&gt;&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;async&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; context: CoroutineContext,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; start: CoroutineStart = &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineStart&lt;/span&gt;.DEFAULT,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; block: &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;CoroutineScope&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; T
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Deferred&amp;lt;T&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; deferred = (&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1000&lt;/span&gt;).map { n &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; async(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;runBlocking {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; sum = deferred.sumBy { &lt;span style=&#34;color:#66d9ef&#34;&gt;it&lt;/span&gt;.await() }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;sum = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$sum&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// CORRECT
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;example-buildsequence&#34;&gt;Example: &lt;code&gt;buildSequence{}&lt;/code&gt;&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;buildSequence&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; builderAction: &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; SequenceBuilder&amp;lt;T&amp;gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Sequence&amp;lt;T&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; fibonacci = buildSequence {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; yield(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; cur = &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;var&lt;/span&gt; next = &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  yield(next)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; tmp = cur + next
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  cur = next
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  next = tmp
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;println(fibonacci.take(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;).joinToString())&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;example-produce&#34;&gt;Example: produce&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;E&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;produce&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; context: CoroutineContext,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; capacity: Int = &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; block: &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; ProducerScope&amp;lt;E&amp;gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): ProducerJob&amp;lt;E&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;produceSquares&lt;/span&gt;() = produce&amp;lt;Int&amp;gt;(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;5&lt;/span&gt;) send(x * x)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;create-a-coroutine&#34;&gt;Create a Coroutine&lt;/h2&gt;
+&lt;h3 id=&#34;suspendresume&#34;&gt;Suspend/Resume&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Convert your asynchronous operations into sequential logic by &lt;strong&gt;suspending&lt;/strong&gt; and &lt;strong&gt;resuming&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;Suspending is done by calling:
+&lt;ul&gt;
+&lt;li&gt;Suspending functions provided by specific coroutine builder, e.g. &lt;code&gt;send&lt;/code&gt; of &lt;code&gt;produce&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Common suspending functions provided by standard library, e.g. &lt;code&gt;delay&lt;/code&gt;, &lt;code&gt;run&lt;/code&gt;, &lt;code&gt;withTimeout&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Your own suspending functions&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;suspending-functions-provided-coroutine-builder&#34;&gt;Suspending Functions Provided Coroutine Builder&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;launch, async, runBlocking: &lt;code&gt;CoroutineScope&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;buildSequence: &lt;code&gt;SequenceBuilder&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;produce: &lt;code&gt;ProducerScope&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;suspending-function&#34;&gt;Suspending Function&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;doSomething&lt;/span&gt;(foo: Foo): Bar {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; otherSuspendFunc()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; anotherSuspendFunc()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Can only be called from coroutines and other suspending functions.&lt;/li&gt;
+&lt;li&gt;Transformed to a &lt;strong&gt;state machine&lt;/strong&gt; where states correspond to suspending calls.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;suspending-function-1&#34;&gt;Suspending Function&lt;/h3&gt;
+&lt;p&gt;Why marking a function explicitly as suspending function?&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Tell compiler that this function will suspend so that it should &lt;strong&gt;NOT&lt;/strong&gt; be called by normal functions.&lt;/li&gt;
+&lt;li&gt;It also indicates the position of &lt;em&gt;suspension points&lt;/em&gt; so that the compiler can figure out how many &lt;strong&gt;states&lt;/strong&gt; this function has.&lt;/li&gt;
+&lt;li&gt;Compiler also adds a hidden &lt;code&gt;Continuation&amp;lt;T&amp;gt;&lt;/code&gt; parameter to help this function resume from where it was suspended.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;implement-a-suspending-function&#34;&gt;Implement a Suspending Function&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;Start the asynchronous operation
+&lt;ul&gt;
+&lt;li&gt;There is no magic. The job still has to be done by some thread.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Setup the resume
+&lt;ul&gt;
+&lt;li&gt;Use whatever mechanism to detect the job is done and then resume the coroutine.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;And finally suspend&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;&lt;small&gt;2 and 3 can done in a single call to low-level API&lt;/small&gt;&lt;/p&gt;
+&lt;h3 id=&#34;resuming-a-coroutine&#34;&gt;Resuming a Coroutine&lt;/h3&gt;
+&lt;p&gt;Resuming is done by &lt;strong&gt;scheduling&lt;/strong&gt; calling to &lt;code&gt;Continuation&amp;lt;T&amp;gt;&lt;/code&gt; method in the future inside a suspending function.&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Continuation&lt;/span&gt;&amp;lt;&lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; T&amp;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; context: CoroutineContext
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;resume&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;value&lt;/span&gt;: T)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;resumeWithException&lt;/span&gt;(exception: Throwable)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;How can I get a &lt;code&gt;Continuation&amp;lt;T&amp;gt;&lt;/code&gt;?&lt;/p&gt;
+&lt;h3 id=&#34;scheduling-resume&#34;&gt;Scheduling Resume&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;By timer&lt;/li&gt;
+&lt;li&gt;By callback (yes!)&lt;/li&gt;
+&lt;li&gt;By another thread&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;low-level-api&#34;&gt;Low-level API&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;Continuation&lt;/strong&gt; can be got when &lt;strong&gt;suspending&lt;/strong&gt; a coroutine:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;inline&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;suspendCoroutine&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; crossline block: (Continuation&amp;lt;T&amp;gt;) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): T
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;inline&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;suspendCancellableCoroutine&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; holdCancellability: Boolean = &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; crossline block: (CancellableContinuation&amp;lt;T&amp;gt;) &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; Unit
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): T&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;Obtains &lt;strong&gt;the current continuation instance&lt;/strong&gt; inside suspend functions and &lt;strong&gt;suspends currently running coroutine&lt;/strong&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;a-simple-implementation-of-delay&#34;&gt;A Simple Implementation of Delay&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; executor =
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Executors&lt;/span&gt;.newSingleThreadScheduledExecutor {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  Thread(&lt;span style=&#34;color:#66d9ef&#34;&gt;it&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;scheduler&amp;#34;&lt;/span&gt;).apply { isDaemon = &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;delay&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; time: Long,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; unit: TimeUnit = &lt;span style=&#34;color:#a6e22e&#34;&gt;TimeUnit&lt;/span&gt;.MILLISECONDS
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Unit =
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; suspendCoroutine { cont &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  executor.schedule({ cont.resume(Unit) }, time, unit)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;the-offical-implementation-of-delay&#34;&gt;The Offical Implementation of Delay&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// simplified to fit in the slide
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;delay&lt;/span&gt;(t: Long) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (t &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;// don&amp;#39;t delay
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; suspendCancellableCoroutine { cont &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#75715e&#34;&gt;// relys on a Delay implementation provided in the context
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  cont.context.delay.scheduleResumeAfterDelay(time, cont)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; } &lt;span style=&#34;color:#75715e&#34;&gt;// suspension happens after running this block
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;suspendCancellableCoroutine&lt;/code&gt; provides an implementation of &lt;code&gt;CancellableContinuation&lt;/code&gt; to the block.&lt;/p&gt;
+&lt;h3 id=&#34;example-await-for-retrofit&#34;&gt;Example: &lt;code&gt;await()&lt;/code&gt; for Retrofit&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt;&amp;lt;T&amp;gt; Call&amp;lt;T&amp;gt;.await(): T =
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; suspendCancellableCoroutine { cont &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  cont.invokeOnCompletion {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;   &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (continuation.isCancelled) cancel()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; callback = &lt;span style=&#34;color:#66d9ef&#34;&gt;object&lt;/span&gt;: Callback&amp;lt;T&amp;gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;   &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;onFailure&lt;/span&gt;(c: Call&amp;lt;T&amp;gt;, t: Throwable) =
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    cont.tryToResume { &lt;span style=&#34;color:#66d9ef&#34;&gt;throw&lt;/span&gt; t }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;   &lt;span style=&#34;color:#66d9ef&#34;&gt;override&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;onResponse&lt;/span&gt;(c: Call&amp;lt;T&amp;gt;, r: Response&amp;lt;T&amp;gt;) =
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    cont.tryToResume {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;     r.isSuccessful &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;throw&lt;/span&gt; IllegalStateException(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;...&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;     r.body() &lt;span style=&#34;color:#f92672&#34;&gt;?:&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;throw&lt;/span&gt; IllegalStateException(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;...&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  enqueue(callback)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; } &lt;span style=&#34;color:#75715e&#34;&gt;// The actual suspension happens after running block&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;coroutines-ingredients&#34;&gt;Coroutines Ingredients&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Language support&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Suspending functions&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;High-level APIs&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Can be used directly in the user code&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Low-level APIs&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Core API in the Kotlin Standard Library&lt;/li&gt;
+&lt;li&gt;Can be used to create custom concurrency model&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;cooking-a-coroutine&#34;&gt;Cooking a Coroutine&lt;/h3&gt;
+&lt;p&gt;&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR70Re48nVLUrBy7crWv4oBTGeDsWKAYmYz2zFCb0NZCnUwd7vmh2LZFsJs9bgeBrLjs7oRrwV_rDQD/pub?w=541&amp;amp;h=426&#34; alt=&#34;center&#34;&gt;&lt;/p&gt;
+&lt;h3 id=&#34;suspendresume-1&#34;&gt;Suspend/Resume&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Suspend
+&lt;ul&gt;
+&lt;li&gt;When: by the end of lambda provide to low-level API is called&lt;/li&gt;
+&lt;li&gt;How: by calling low-level API&lt;/li&gt;
+&lt;li&gt;What: depending on which low-evel API is used&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;Resume
+&lt;ul&gt;
+&lt;li&gt;When: depending on how resume is &lt;strong&gt;scheduled&lt;/strong&gt; in suspending function&lt;/li&gt;
+&lt;li&gt;How: depending on the &lt;strong&gt;continuation implementation&lt;/strong&gt; in &lt;code&gt;CoroutineContext&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;high-level-concurrency-model&#34;&gt;High-level Concurrency Model&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;async/await&lt;/li&gt;
+&lt;li&gt;channels and select&lt;/li&gt;
+&lt;li&gt;generators/yield&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;custom-concurrency-model&#34;&gt;Custom Concurrency Model&lt;/h3&gt;
+&lt;p&gt;Two ways:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Use existing coroutine builder and create custom suspending functions&lt;/li&gt;
+&lt;li&gt;Create custom &lt;strong&gt;coroutine builder&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Coroutine Context&lt;/strong&gt;: Persistent context for the coroutine&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Coroutine Scope&lt;/strong&gt;: Receiver interface for generic coroutine builders&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;low-level-api-for-creating-a-coroutine-builder&#34;&gt;Low-level API for Creating a Coroutine Builder&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;(&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;suspend&lt;/span&gt; () &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; T).startCoroutine(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  c: Continuation&amp;lt;T&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &amp;lt;&lt;span style=&#34;color:#a6e22e&#34;&gt;R&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;&amp;gt; &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;(&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;R&lt;/span&gt;.() &lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt; T).createCoroutine(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; r: R, c: Continuation&amp;lt;T&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;): Continuation&amp;lt;Unit&amp;gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;lets-talk-about-thread&#34;&gt;Let&amp;rsquo;s Talk about Thread&lt;/h2&gt;
+&lt;h3 id=&#34;what-thread&#34;&gt;What thread?&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Depending on the context
+&lt;ul&gt;
+&lt;li&gt;a common pool of shared background threads if &lt;code&gt;CommonPool&lt;/code&gt; is specified&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Unconfined&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Custom ones, e.g. &lt;code&gt;Android&lt;/code&gt; for always running on Android main thread&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;what-will-thread-do-after-a-coroutine-is-suspended&#34;&gt;What will thread do after a coroutine is suspended?&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Execute another coroutine&lt;/li&gt;
+&lt;li&gt;Idle until any coroutine is resumed and assigned to the thread&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;who-will-resume-the-coroutine&#34;&gt;Who will resume the coroutine?&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;The thread calling &lt;code&gt;Continuation.resume&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Depending on how the task is done asynchronously.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;reference&#34;&gt;Reference&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html&#34;&gt;Kotlin Reference - Coroutines&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://kotlinlang.org/docs/tutorials/coroutines-basic-jvm.html&#34;&gt;Introduction to Kotlin Coroutines on the JVM&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/Kotlin/kotlin-coroutines/blob/master/kotlin-coroutines-informal.md&#34;&gt;Coroutines for Kotlin (Revision 3.2)&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://jonnyzzz.com/blog/2017/04/26/corotines-or-state-machine/&#34;&gt;Bytecode behind coroutines in Kotlin&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;thanks&#34;&gt;Thanks&lt;/h2&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
