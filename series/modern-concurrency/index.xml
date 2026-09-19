@@ -1,0 +1,1515 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/series/modern-concurrency/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-09-08 00:00:00 -0700 -0700</updated>
+    
+    <item>
+      <title>Lock-free 資料結構實戰：從 Treiber Stack、ABA 問題到安全記憶體回收</title>
+      <link>https://blog.simplypatrick.com/posts/2026/09-08-lock-free-data-structures/</link>
+      <pubDate>Tue, 08 Sep 2026 00:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/09-08-lock-free-data-structures/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/09-08-lock-free-data-structures/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;在上一篇 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/09-07-memory-ordering/&#34;&gt;《C++ 與 Rust 記憶體模型：從 Memory Ordering、硬體快取到 Safe Publication》&lt;/a&gt; 中，我們建立了對記憶體順序、編譯器重排、Store Buffer 與快取一致性的完整認知。我們明白了單一原子操作的成功，並不自動等同於周邊資料已經同步可見；唯有透過 Acquire-Release 配對，才能在多核心之間拉起堅固的因果同步橋樑。&lt;/p&gt;
+&lt;p&gt;掌握了記憶體模型這張入場券後，我們終於可以直面高效能並行程式設計的聖杯——&lt;strong&gt;無鎖資料結構（Lock-free Data Structures）&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;許多人剛接觸無鎖程式設計時，常有一種美麗的幻想：「只要把所有 &lt;code&gt;std::mutex&lt;/code&gt; 拿掉，改用 CAS（Compare-And-Swap）迴圈，程式碼就會奇蹟般地變快且沒有鎖衝突。」&lt;/p&gt;
+&lt;p&gt;然而，現實往往十分殘酷。當你拿掉互斥鎖的保護後，除了必須自行處理狀態移轉與記憶體順序外，還會立刻遭遇並行運算領域的兩大深水區：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;拓撲移轉的幽靈——ABA 問題&lt;/strong&gt;：指標位址相同，真的代表鏈結結構沒有改變過嗎？&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;記憶體生命週期的深淵——安全記憶體回收（Safe Memory Reclamation, SMR）&lt;/strong&gt;：當一個節點被某個執行緒從資料結構中拔除時，其他並行的讀者執行緒可能正剛讀出指標準備解引用（dereference）。如果此時直接 &lt;code&gt;delete&lt;/code&gt; 或釋放記憶體，就會引發致命的 Use-After-Free 記憶體損毀。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;本文將以經典的 &lt;strong&gt;Treiber Stack&lt;/strong&gt; 為基準，透過現代 C++20 與 Rust 的雙語言實作，深入解構 CAS 原語、狀態重試機制，並全面剖析 &lt;strong&gt;Tagged Pointer、Hazard Pointer、Epoch-Based Reclamation (EBR) 與 RCU&lt;/strong&gt; 四大安全記憶體回收架構的設計權衡。&lt;/p&gt;
+&lt;h2 id=&#34;從-memory-ordering-到-lock-free思維範式轉移&#34;&gt;從 Memory Ordering 到 Lock-Free：思維範式轉移&lt;/h2&gt;
+&lt;p&gt;在傳統的並行架構中，互斥鎖（Mutex）扮演著全能守護者的角色。當一個執行緒進入 &lt;code&gt;mutex.lock()&lt;/code&gt; 與 &lt;code&gt;mutex.unlock()&lt;/code&gt; 包夾的臨界區（Critical Section）時，Mutex 同時為我們解決了三件事：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph MutexRole[&amp;#34;Mutex 提供的三重保護&amp;#34;]
+        M1[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;1. 互斥性 (Mutual Exclusion)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 同一時間僅允許單一執行緒進入臨界區&amp;lt;/div&amp;gt;&amp;#34;]
+        M2[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;2. 記憶體同步 (Memory Ordering)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• unlock Release &amp;#43; lock Acquire 自動建立同步&amp;lt;/div&amp;gt;&amp;#34;]
+        M3[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;3. 生命週期安全 (Lifetime Safety)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 臨界區內刪除節點，絕無其他執行緒能同時讀取&amp;lt;/div&amp;gt;&amp;#34;]
+        M1 --&amp;gt; M2 --&amp;gt; M3
+    end
+
+    subgraph LockFreeRole[&amp;#34;Lock-Free 必須獨立解決的三大課題&amp;#34;]
+        L1[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;1. 狀態移轉 (State Transition)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 改由硬體原子 CAS 原語樂觀競爭處理&amp;lt;/div&amp;gt;&amp;#34;]
+        L2[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;2. 記憶體順序 (Memory Ordering)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 自行精確配置 Acquire / Release 語意&amp;lt;/div&amp;gt;&amp;#34;]
+        L3[&amp;#34;&amp;lt;div style=&amp;#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;3. 生命週期安全 (Lifetime Safety)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 必須引進專門的 SMR 回收協定保護節點&amp;lt;/div&amp;gt;&amp;#34;]
+        L1 --&amp;gt; L2 --&amp;gt; L3
+    end
+
+    MutexRole --&amp;gt;|&amp;#34;思維範式轉移&amp;#34;| LockFreeRole
+
+    style MutexRole fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    style LockFreeRole fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    classDef mBox fill:#24283b,stroke:#414868,stroke-width:1.5px,color:#c0caf5;
+    classDef lBox fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class M1,M2,M3 mBox;
+    class L1,L2,L3 lBox;&lt;/div&gt;
+
+&lt;p&gt;當我們決定移除 Mutex 時，上述三項保護全部煙消雲散。我們必須：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;用 &lt;strong&gt;CAS（Compare-And-Swap）&lt;/strong&gt; 取代臨界區互斥，讓多個執行緒樂觀競爭狀態轉移。&lt;/li&gt;
+&lt;li&gt;用 &lt;strong&gt;Acquire / Release / Relaxed&lt;/strong&gt; 精確標註每次原子讀寫，確保資料初始化與發布具備因果先後。&lt;/li&gt;
+&lt;li&gt;引進 &lt;strong&gt;安全記憶體回收（SMR）&lt;/strong&gt; 機制，接手原先由鎖保護的物件生命週期。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;既然 Mutex 能如此滴水不漏地提供三重防護，為什麼並行系統工程師依然對「擺脫互斥鎖」如此執著？這就必須從 Mutex 在微觀硬體與宏觀作業系統排程中所背負的隱形成本談起。&lt;/p&gt;
+&lt;h3 id=&#34;互斥鎖的真實代價從輕量原子到核心態深淵&#34;&gt;互斥鎖的真實代價：從輕量原子到核心態深淵&lt;/h3&gt;
+&lt;p&gt;許多人直覺認為「鎖就只是一道門，排隊通過即可」。但在現代多核心架構與搶佔式作業系統下，Mutex 的運作遠比想像中複雜。現代主流作業系統的 Mutex（如 Linux 的 Futex 或 Windows 的 SRWLock）均採用「快慢雙路徑」設計：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    Req[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px; text-align:center;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;執行緒請求加鎖&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;code&amp;gt;mutex.lock()&amp;lt;/code&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    FastCheck{&amp;#34;Fast-path 比對&amp;lt;br/&amp;gt;使用者態原子 CAS&amp;#34;}
+    InCS[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px; text-align:left;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;進入臨界區 (Critical Section)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• ⚡ 耗時約 10–25 ns&amp;lt;br/&amp;gt;• 無核心介入、無切換&amp;lt;/div&amp;gt;&amp;#34;]
+    SpinCheck{&amp;#34;自旋重試&amp;lt;br/&amp;gt;Spin-wait&amp;#34;}
+    SlowCall[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px; text-align:left;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;墜入 Slow-path 核心態&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 呼叫系統呼叫 &amp;lt;code&amp;gt;sys_futex(WAIT)&amp;lt;/code&amp;gt;&amp;lt;br/&amp;gt;• 執行緒掛起並移入等待佇列&amp;lt;/div&amp;gt;&amp;#34;]
+    CtxSwitch[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px; text-align:left;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;上下文切換 (Context Switch)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 💥 耗時 1,000–5,000 ns&amp;lt;br/&amp;gt;• CPU 調度其他執行緒執行&amp;lt;/div&amp;gt;&amp;#34;]
+    Wakeup[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px; text-align:left;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;持有者釋放與喚醒&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 呼叫 &amp;lt;code&amp;gt;sys_futex(WAKE)&amp;lt;/code&amp;gt;&amp;lt;br/&amp;gt;• ❄️ 冷快取、TLB Miss、快取行彈跳&amp;lt;/div&amp;gt;&amp;#34;]
+
+    Req --&amp;gt; FastCheck
+    FastCheck --&amp;gt;|無競爭| InCS
+    FastCheck --&amp;gt;|發生競爭| SpinCheck
+    SpinCheck --&amp;gt;|自旋獲鎖成功| InCS
+    SpinCheck --&amp;gt;|自旋超時失敗| SlowCall
+    SlowCall --&amp;gt; CtxSwitch
+    CtxSwitch --&amp;gt; Wakeup
+    Wakeup --&amp;gt; InCS
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef warn fill:#24283b,stroke:#e0af68,stroke-width:1.5px,color:#e0af68;
+    classDef danger fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class Req proc;
+    class FastCheck,SpinCheck branch;
+    class InCS ok;
+    class SlowCall warn;
+    class CtxSwitch,Wakeup danger;&lt;/div&gt;
+
+&lt;p&gt;這套混合架構雖然極大化了無競爭情境的效能，但只要並發度提高並引發持續競爭，Mutex 的連鎖代價便會逐一浮現：&lt;/p&gt;
+&lt;h4 id=&#34;上下文切換與核心態調度開銷&#34;&gt;上下文切換與核心態調度開銷&lt;/h4&gt;
+&lt;p&gt;在無競爭的快樂路徑（Happy Path）上，&lt;code&gt;mutex.lock()&lt;/code&gt; 僅是一次純使用者態的原子操作，耗時通常在 10 到 25 奈秒之間。然而，一旦多個執行緒同時爭搶鎖，自旋未果的執行緒就必須發起系統呼叫（如 Linux 的 &lt;code&gt;SYS_futex&lt;/code&gt;），將自己掛起並交出 CPU。&lt;/p&gt;
+&lt;p&gt;一次完整的上下文切換（Context Switch）涉及暫存器狀態保存、進入核心態排程器佇列、切換虛擬記憶體頁表與上下文環境。這段延遲直接暴增至 &lt;strong&gt;1,000 到 5,000 奈秒&lt;/strong&gt;（數量級約在 1 到 5 微秒，視架構與負載而定），比一次純記憶體操作慢了整整兩到三個數量級。&lt;/p&gt;
+&lt;h4 id=&#34;快取污染與快取行彈跳&#34;&gt;快取污染與快取行彈跳&lt;/h4&gt;
+&lt;p&gt;當一個被掛起的執行緒在數微秒後被排程器重新喚醒時，極有可能被分派到另一個閒置的 CPU 核心上執行。這會帶來嚴重的快取懲罰：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;該執行緒原本在 L1/L2 快取中快取的熱點資料早已失效（Cold Cache Misses），甚至需要重新走 TLB 查表。&lt;/li&gt;
+&lt;li&gt;多個核心爭奪同一個 Mutex 內部狀態變數時，每次加鎖與解鎖的原子寫入都會觸發快取一致性協定（如 MESI/MOESI）在多核心互連架構上引發大量無效化訊息。這會造成嚴重的&lt;strong&gt;快取行彈跳&lt;/strong&gt;（Cacheline Bouncing），使該快取行的互連流量飽和，甚至拖慢共享同一快取階層的其他無關工作。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;護送效應與擴展性懸崖&#34;&gt;護送效應與擴展性懸崖&lt;/h4&gt;
+&lt;p&gt;當系統面臨高度並發時，鎖的等待佇列會形成惡性循環的「護送效應」（Convoy Effect）。由於每個執行緒被喚醒時都要承擔額外的核心調度延遲，即使臨界區內的運算只有短短 20 奈秒，整個系統的推進節奏也會被微秒級的喚醒排程完全綁架。&lt;/p&gt;
+&lt;p&gt;此時系統不僅面臨阿姆達爾定律（Amdahl&amp;rsquo;s Law）所定義的循序上限（臨界區限制了理論最大加速比），更會觸發嚴重的負向擴展（Negative Scaling）：增加更多的 CPU 核心非但無法提升吞吐量，反而因為更激烈的鎖競爭、快取行彈跳風暴與微秒級排程調度延遲放大，導致整體效能呈懸崖式暴跌。&lt;/p&gt;
+&lt;h4 id=&#34;優先權反轉&#34;&gt;優先權反轉&lt;/h4&gt;
+&lt;p&gt;在具備執行緒優先權的即時或多工作業系統中，Mutex 存在著名的結構性缺陷——&lt;strong&gt;優先權反轉&lt;/strong&gt;（Priority Inversion）：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;低優先權執行緒獲取了鎖，進入臨界區。&lt;/li&gt;
+&lt;li&gt;隨後，中優先權執行緒搶佔了 CPU（中優先權工作不需要該鎖，但優先級高於低優先權）。&lt;/li&gt;
+&lt;li&gt;此時高優先權執行緒被喚醒，需要獲取同一個鎖，但由於低優先權執行緒被中優先權卡住而無法執行，高優先權執行緒被迫無限期等待。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;1997 年美國 NASA 的火星探測器「火星拓荒者號」（Mars Pathfinder）便曾因為資訊匯流排 Mutex 發生優先權反轉，導致高優先權的資料收集任務嚴重逾時，觸發系統看門狗（Watchdog）不斷重新開機。&lt;/p&gt;
+&lt;h4 id=&#34;不可組合性與死鎖風險&#34;&gt;不可組合性與死鎖風險&lt;/h4&gt;
+&lt;p&gt;鎖缺乏代數上的組合性（Locks do not compose）。兩個單獨看來無懈可擊、內部各自用 Mutex 保護的執行緒安全函式，在交叉呼叫時若未能嚴格遵循完全一致的加鎖順序，就會在多執行緒交錯下瞬間觸發&lt;strong&gt;死鎖&lt;/strong&gt;（Deadlock）。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼需要無鎖不可妥協的場景與系統保證&#34;&gt;為什麼需要無鎖：不可妥協的場景與系統保證&lt;/h3&gt;
+&lt;p&gt;正因為 Mutex 存在上述硬體與排程層面的代價，在特定工程領域中，我們並非單純為了「追求理論效能」，而是面對硬性約束時「不得不採用無鎖」。無鎖資料結構的核心價值在於提供兩大不可替代的保證：&lt;strong&gt;系統級進度保證&lt;/strong&gt;與&lt;strong&gt;低且可預測的長尾延遲&lt;/strong&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;系統級進度保證杜絕命運綁定&#34;&gt;系統級進度保證：杜絕命運綁定&lt;/h4&gt;
+&lt;p&gt;基於互斥鎖的系統存在著嚴重的&lt;strong&gt;命運綁定&lt;/strong&gt;（Fate Sharing）：一旦持有鎖的執行緒因為任何非預期事件（被作業系統強制暫停、遭遇分頁置換 Page Fault、觸發例外、甚至被外部訊號直接殺死），&lt;strong&gt;所有正在等待該鎖的其他執行緒都將全數卡死或永久阻塞&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;無鎖演算法消除了「鎖的所有權」概念。沒有任何一個執行緒具備獨佔資源的特權；執行緒之間只透過硬體原語競逐狀態轉移。即使某個執行緒在執行途中被作業系統隨機凍結，其他執行緒依然能各憑本事持續推進。&lt;/p&gt;
+&lt;h4 id=&#34;消除長尾延遲&#34;&gt;消除長尾延遲&lt;/h4&gt;
+&lt;p&gt;在金融高頻交易（HFT）、即時競價、分散式儲存引擎與資料庫 WAL（Write-Ahead Log）的關鍵路徑上，系統衡量標準不是「平均延遲（P50）有多低」，而是「99.9% 甚至 99.99% 的長尾延遲（P99 / P99.9）有多穩定」。&lt;/p&gt;
+&lt;p&gt;Mutex 偶發的鎖競爭與 Context Switch 會在微秒層級造成嚴重的延遲抖動（Jitter）。Lock-Free 演算法將操作完全收斂在純使用者態與 CPU 執行單元內，徹底拔除了核心態排程介入的可能性，提供了極高確定性的延遲表現。&lt;/p&gt;
+&lt;h4 id=&#34;嚴格禁止睡眠的極限環境&#34;&gt;嚴格禁止睡眠的極限環境&lt;/h4&gt;
+&lt;p&gt;在許多系統底層場景中，呼叫任何可能讓執行緒陷入睡眠的 Mutex 操作，在語法或規範上是&lt;strong&gt;被絕對嚴格禁止的&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;中斷處理常式（ISR）與訊號處理函式（Signal Handlers）&lt;/strong&gt;：硬體中斷與 Linux 訊號發生在特殊的非同步上下文，該上下文根本沒有獨立的排程實體可供掛起，且必須保證非同步信號安全（Async-Signal-Safe）。一旦在此處嘗試加鎖並陷入睡眠，將導致系統崩潰或瞬間死鎖。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;即時音訊處理（Real-time Audio DSP）&lt;/strong&gt;：在 CoreAudio、JACK 或 ASIO 等音訊框架中，處理回呼函式必須在數微秒至數百微秒的嚴格時限內將音訊緩衝區填滿。若因 Mutex 競爭觸發 Context Switch，哪怕只延誤了 10 微秒，都會引發音訊緩衝區欠載（Buffer Underrun），在使用者耳機中產生刺耳的破音或爆音。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;非同步協程執行緒池（Async Runtime Worker Threads）&lt;/strong&gt;：在 Tokio、Go Runtime 等 M:N 協程排程體系中，少數幾個工作執行緒負責輪番執行成千上萬個非同步協程（Coroutines / Tasks）。如果某個協程的工作函式呼叫了傳統的 Blocking Mutex 並陷入核心態睡眠，將導致該 OS 執行緒上排隊的所有其他協程一併陷入飢餓與癱瘓。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;進度保證等級lock-freewait-free-與-obstruction-free&#34;&gt;進度保證等級：Lock-Free、Wait-Free 與 Obstruction-Free&lt;/h3&gt;
+&lt;p&gt;在學術與系統規格中，「無鎖」並非單純指「程式碼中沒有搜尋到 mutex 關鍵字」，而是對系統並行推進能力的嚴格數學承諾：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Obstruction-Free&lt;/strong&gt;（無障礙）：最弱的保證。只要一個執行緒在執行時&lt;strong&gt;其他執行緒全部暫停&lt;/strong&gt;，該執行緒保證能在有限步驟內完成操作。若多個執行緒持續活鎖競爭，則不保證進展。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Lock-Free&lt;/strong&gt;（無鎖）：保證整個系統在巨觀上持續有進度（System-wide Progress）。即使作業系統在任何時刻隨機將某些執行緒掛起（Suspend）或降低優先權，剩餘的執行緒中&lt;strong&gt;至少有一個&lt;/strong&gt;一定能持續完成操作。但個別執行緒可能會遭遇飢餓（Starvation）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Wait-Free&lt;/strong&gt;（無等待）：最強的進度保證。每一個執行緒都保證能在有限的步驟內（Bounded Steps）完成操作，徹底杜絕了個別執行緒的飢餓現象。通常需要搭配昂貴的協同幫忙（Helping Scheme）機制。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;一般的並行佇列與堆疊多半落在 &lt;strong&gt;Lock-Free&lt;/strong&gt; 等級。&lt;/p&gt;
+&lt;h2 id=&#34;核心原子原語compare-and-swap-cas-的運作機制&#34;&gt;核心原子原語：Compare-And-Swap (CAS) 的運作機制&lt;/h2&gt;
+&lt;p&gt;Lock-Free 資料結構的心臟是 &lt;strong&gt;CAS 操作&lt;/strong&gt;。在 C++ 中體現為 &lt;code&gt;atomic::compare_exchange_weak&lt;/code&gt; 與 &lt;code&gt;compare_exchange_strong&lt;/code&gt;；在 Rust 中則為 &lt;code&gt;AtomicPtr::compare_exchange_weak&lt;/code&gt; 與 &lt;code&gt;compare_exchange&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;CAS 操作將「比較目前值是否符合預期」與「寫入新數值」合併為語言層級不可分割的原子讀改寫（Read-Modify-Write, RMW）操作（在底層硬體上可能對應單一指令如 x86 &lt;code&gt;CMPXCHG&lt;/code&gt;、或 ARM/RISC-V 的 LL/SC 指令對）：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    CAS_Start[&amp;#34;&amp;lt;div style=&amp;#39;width:290px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;CAS 原語呼叫&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;code&amp;gt;CAS(target, expected, desired)&amp;lt;/code&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    Check{&amp;#34;目標數值比對&amp;lt;br/&amp;gt;*target == expected ?&amp;#34;}
+    DoStore[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;原子替換成功 (Success)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 寫入新值：&amp;lt;code&amp;gt;*target = desired&amp;lt;/code&amp;gt;&amp;lt;br/&amp;gt;• 狀態回傳：&amp;lt;code&amp;gt;true&amp;lt;/code&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    DoUpdate[&amp;#34;&amp;lt;div style=&amp;#39;width:260px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;比對失敗 (Failure)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 更新預期：&amp;lt;code&amp;gt;expected = *target&amp;lt;/code&amp;gt;&amp;lt;br/&amp;gt;• 不修改 target，回傳 &amp;lt;code&amp;gt;false&amp;lt;/code&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+
+    CAS_Start --&amp;gt; Check
+    Check --&amp;gt;|比對成功| DoStore
+    Check --&amp;gt;|比對失敗| DoUpdate
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef fail fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class CAS_Start proc;
+    class Check branch;
+    class DoStore ok;
+    class DoUpdate fail;&lt;/div&gt;
+
+&lt;p&gt;如果目標記憶體目前的值等於 &lt;code&gt;expected&lt;/code&gt;，硬體就將其替換為 &lt;code&gt;desired&lt;/code&gt; 並回傳成功；如果不等於，硬體放棄寫入，並自動將目前記憶體的最新值寫回 &lt;code&gt;expected&lt;/code&gt; 變數中，回傳失敗。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼-cas-需要兩個-memory-ordering-參數&#34;&gt;為什麼 CAS 需要兩個 Memory Ordering 參數？&lt;/h3&gt;
+&lt;p&gt;檢視 C++ 與 Rust 的 CAS 函式簽名，你會發現它們都要求傳入兩個 ordering：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// C++
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;compare_exchange_weak&lt;/span&gt;(T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; expected, T desired,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                           std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order success,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                           std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order failure);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// Rust
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;compare_exchange_weak&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    current: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; T,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    new: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; T,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    success: &lt;span style=&#34;color:#a6e22e&#34;&gt;Ordering&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    failure: &lt;span style=&#34;color:#a6e22e&#34;&gt;Ordering&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; T, &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;為什麼不能只用一個 ordering？&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;成功時&lt;/strong&gt;（Success）：執行了實質的讀改寫（RMW），我們正在發布新的狀態給其他執行緒，因此可以使用 &lt;code&gt;Release&lt;/code&gt;、&lt;code&gt;Acquire&lt;/code&gt;、&lt;code&gt;AcqRel&lt;/code&gt; 或 &lt;code&gt;SeqCst&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;失敗時&lt;/strong&gt;（Failure）：沒有發生任何寫入操作！失敗的 CAS 本質上是一次純讀取的載入（將目標位址的最新值寫回 &lt;code&gt;expected&lt;/code&gt;）。因為沒有寫入，所以在語意上失敗 ordering &lt;strong&gt;不能要求 &lt;code&gt;Release&lt;/code&gt; 或 &lt;code&gt;AcqRel&lt;/code&gt; 效果&lt;/strong&gt;；同時在 C++ 規範中，失敗 ordering &lt;strong&gt;不得嚴於成功 ordering&lt;/strong&gt;（例如成功為 &lt;code&gt;Relaxed&lt;/code&gt; 時，失敗不得為 &lt;code&gt;Acquire&lt;/code&gt;）；而在 Rust 中若傳入不合法的失敗 ordering 亦會在執行期引發 panic。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;weak-與-strong-的本質差異&#34;&gt;&lt;code&gt;weak&lt;/code&gt; 與 &lt;code&gt;strong&lt;/code&gt; 的本質差異&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;compare_exchange_strong&lt;/code&gt;&lt;/strong&gt;：保證只有在當前值不等於 &lt;code&gt;expected&lt;/code&gt; 時才會回傳 &lt;code&gt;false&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;compare_exchange_weak&lt;/code&gt;&lt;/strong&gt;：允許在當前值明明等於 &lt;code&gt;expected&lt;/code&gt; 的情況下，依然因為硬體因素（例如 ARM/RISC-V 的 LL/SC 快取行被踢出、中斷或 context switch）而發生&lt;strong&gt;虛假失敗&lt;/strong&gt;（Spurious Failure）。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;最佳實踐原則&lt;/strong&gt;：在絕大多數 Lock-free 演算法中，CAS 本身就被包裹在一個重試迴圈裡。此時&lt;strong&gt;通常建議優先考慮 &lt;code&gt;compare_exchange_weak&lt;/code&gt;&lt;/strong&gt;。在弱記憶體架構（如 ARM64）上，&lt;code&gt;weak&lt;/code&gt; 能直接映射到最精簡的單對 LL/SC（&lt;code&gt;ldaxr&lt;/code&gt;/&lt;code&gt;stlxr&lt;/code&gt;）指令，免去 &lt;code&gt;strong&lt;/code&gt; 為了防止硬體虛假失敗所額外生成的內部重試迴圈包裝（但在 x86 等強記憶體架構上，兩者皆編譯為 &lt;code&gt;lock cmpxchg&lt;/code&gt;，效能表現相同）。&lt;/p&gt;
+&lt;h2 id=&#34;經典實戰treiber-stack-雙語言基準實作不含-smr&#34;&gt;經典實戰：Treiber Stack 雙語言基準實作（不含 SMR）&lt;/h2&gt;
+&lt;p&gt;Treiber Stack（由 R. Kent Treiber 於 1986 年提出）是無鎖領域中最基礎、最優雅的資料結構。它本質上是一個單向鏈結串列，所有操作都僅集中在單一原子指標——&lt;code&gt;head&lt;/code&gt; 上：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart LR
+    subgraph StackTopo[&amp;#34;Treiber Stack 拓撲狀態 (單向鏈結結構)&amp;#34;]
+        Head[&amp;#34;&amp;lt;div style=&amp;#39;width:120px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;head 指標&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;原子指標 (CAS)&amp;lt;/div&amp;gt;&amp;#34;]
+        NodeA[&amp;#34;&amp;lt;div style=&amp;#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;Node A&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;val: 10&amp;lt;br/&amp;gt;next ➔&amp;lt;/div&amp;gt;&amp;#34;]
+        NodeB[&amp;#34;&amp;lt;div style=&amp;#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;Node B&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;val: 20&amp;lt;br/&amp;gt;next ➔&amp;lt;/div&amp;gt;&amp;#34;]
+        NodeC[&amp;#34;&amp;lt;div style=&amp;#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;Node C&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;val: 30&amp;lt;br/&amp;gt;next ➔&amp;lt;/div&amp;gt;&amp;#34;]
+        NullNode[&amp;#34;&amp;lt;div style=&amp;#39;width:85px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;nullptr&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;堆疊底部&amp;lt;/div&amp;gt;&amp;#34;]
+
+        Head --&amp;gt; NodeA
+        NodeA --&amp;gt; NodeB
+        NodeB --&amp;gt; NodeC
+        NodeC --&amp;gt; NullNode
+    end
+
+    style StackTopo fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    classDef headBox fill:#24283b,stroke:#7dcfff,stroke-width:2px,color:#7dcfff;
+    classDef nodeBox fill:#1f2335,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef nullBox fill:#16161e,stroke:#565f89,stroke-width:1px,color:#565f89;
+
+    class Head headBox;
+    class NodeA,NodeB,NodeC nodeBox;
+    class NullNode nullBox;&lt;/div&gt;
+
+&lt;blockquote&gt;&lt;p&gt;⚠️ &lt;strong&gt;重要實作前提&lt;/strong&gt;：本節程式碼為&lt;strong&gt;不含 SMR（安全記憶體回收）的教學基準實作&lt;/strong&gt;，旨在精確解構 CAS 狀態轉移與 Acquire/Release 配對。它的正確性嚴格建立在三個限制邊界假設上：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;節點不得就地釋放（不得中途呼叫 &lt;code&gt;delete&lt;/code&gt; 或歸還給記憶體配置器）。&lt;/li&gt;
+&lt;li&gt;節點不得重複 push，且呼叫端不得在其他執行緒可能持有指標時修改節點欄位。&lt;/li&gt;
+&lt;li&gt;節點生命週期維持至所有執行緒完全 join 離場後，由擁有者統一釋放（杜絕並行執行時的 Use-After-Free）。
+在未引入後續章節探討的 SMR 安全回收協定前，切勿將此裸指標實作直接移植至生產環境！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/blockquote&gt;&lt;h3 id=&#34;c20-實作&#34;&gt;C++20 實作&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;atomic&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;cassert&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;iostream&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;thread&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;vector&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;template&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TreiberStack&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Node&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        T data;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; next{&lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;explicit&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Node&lt;/span&gt;(T val) &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; data(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;move(val)) {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;private&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 注意：在主流 64 位元架構上 std::atomic&amp;lt;Node*&amp;gt;::is_always_lock_free 為 true。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 在特殊嵌入式或非原生字長環境下，需透過 is_lock_free() 確認硬體無鎖保證。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;atomic&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Node&lt;span style=&#34;color:#f92672&#34;&gt;*&amp;gt;&lt;/span&gt; head_{&lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;public&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    TreiberStack() &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;default&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;~&lt;/span&gt;TreiberStack() &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;default&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 禁止複製與搬移以確保原子指標位址固定
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    TreiberStack(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;delete&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;operator&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;delete&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;push&lt;/span&gt;(Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; new_node) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 步驟 1：使用 relaxed load 取得目前的 head
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 理由：我們此處只是讀取指標位址賦予 new_node-&amp;gt;next，
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 尚未 dereference 舊節點，不需要任何跨執行緒同步。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; head_.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 步驟 2：CAS 迴圈
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 成功的 CAS 使用 release：確保 new_node 的 data 與 next 初始化完成後才發布。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 失敗的 CAS 使用 relaxed：若失敗，old_head 會被自動更新，直接進入下一輪。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            new_node&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;next &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; old_head;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;head_.compare_exchange_weak(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            old_head, new_node,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_release,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;pop&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 步驟 1：使用 acquire load 取得目前的 head
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 理由：我們接下來必須安全讀取 old_head-&amp;gt;next，因此必須與當初 push 該節點的 release store 同步！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; head_.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_acquire);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (old_head &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 讀取下一個節點（此時依賴前面 load 或上一次失敗 CAS 的 acquire 同步）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; next_node &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; old_head&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;next;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 步驟 2：CAS 嘗試將 head 移向 next_node
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 成功：使用 acquire 保持防禦性同步。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 失敗：關鍵！失敗 ordering 必須也是 acquire！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 理由：若 CAS 失敗，old_head 會被更新為另一個執行緒剛 push 上去的新節點；
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 下一輪迴圈會立刻執行 old_head-&amp;gt;next，此處的 acquire 才能與該執行緒 push 的 release 建立因果同步！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (head_.compare_exchange_weak(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    old_head, next_node,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_acquire,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_acquire)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; old_head;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;; &lt;span style=&#34;color:#75715e&#34;&gt;// stack 為空
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; stack;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;Node n1(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;Node n2(&lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 多執行緒並行 Push
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t1([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] { stack.push(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;n1); });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t2([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] { stack.push(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;n2); });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t2.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 多執行緒並行 Pop
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; res1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;typename&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;::&lt;/span&gt;Node&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; res2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t3([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] { res1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; stack.pop(); });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t4([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] { res2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; stack.pop(); });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t3.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t4.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(res1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; res2 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(res1 &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; res2);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(res1&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;data &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; res2&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;data &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;30&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(stack.pop() &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Treiber Stack operations completed successfully.&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;rust-實作&#34;&gt;Rust 實作&lt;/h3&gt;
+&lt;p&gt;在 Rust 中，裸指標的解引用屬於 &lt;code&gt;unsafe&lt;/code&gt; 操作。Rust 的型別系統迫使我們明確寫出哪些假設是由程式員擔保的：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::atomic::{AtomicPtr, Ordering};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::Arc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::thread;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Node&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; data: &lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; next: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;new&lt;/span&gt;(data: &lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Self {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            data,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            next: &lt;span style=&#34;color:#a6e22e&#34;&gt;std&lt;/span&gt;::ptr::null_mut(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;TreiberStack&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    head: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicPtr&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 實作 Send 與 Sync：這是作者對型別安全不變量的承諾
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 只要 T: Send，節點所有權在 pop 時即可安全轉移跨執行緒存取；
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 由於內部 head 為 AtomicPtr，亦滿足多執行緒共用參照的安全性。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T: Send&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; Send &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T: Send&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; Sync &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; TreiberStack&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;new&lt;/span&gt;() -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Self&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Self {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            head: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicPtr&lt;/span&gt;::new(std::ptr::null_mut()),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;push&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self, new_node: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;assert!&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;new_node.is_null());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.head.load(Ordering::Relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;loop&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 安全保證：呼叫者保證在此刻獨占 new_node
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;new_node).next &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; old_head;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 成功 Release 發布新節點；失敗 Relaxed 載入最新 head 重試
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; self.head.compare_exchange_weak(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                old_head,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                new_node,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ordering::Release,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ordering::Relaxed,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            ) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ok(_) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Err(actual) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; actual,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;pop&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;self) -&amp;gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.head.load(Ordering::Acquire);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;old_head.is_null() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 安全保證：基準範例保證節點在全部執行緒離場前不會被 free
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_node &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; { (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;old_head).next };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 成功 Acquire 獲取；失敗 Acquire 確保下輪解引用 actual 時具備同步保護
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; self.head.compare_exchange_weak(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                old_head,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                next_node,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ordering::Acquire,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ordering::Acquire,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            ) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Ok(_) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; old_head,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                Err(actual) &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; old_head &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; actual,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        std::ptr::null_mut()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 輔助型別：封裝裸指標以符合 Send 要求，安全傳遞進 thread::spawn
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;SendPtr&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T: Send&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; Send &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; SendPtr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; SendPtr&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;into_inner&lt;/span&gt;(self) -&amp;gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self.&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; stack &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::new(TreiberStack::new());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; node1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Box::new(Node::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; node2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Box::new(Node::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; n1_ptr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; SendPtr(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;node1 &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; n2_ptr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; SendPtr(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;node2 &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; Node&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; s1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;stack);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; s1.push(n1_ptr.into_inner()));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; s2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;stack);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; s2.push(n2_ptr.into_inner()));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t2.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; s3 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;stack);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t3 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; SendPtr(s3.pop()));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; s4 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;stack);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t4 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; SendPtr(s4.pop()));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; t3.join().unwrap().into_inner();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; t4.join().unwrap().into_inner();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;assert!&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;r1.is_null() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;r2.is_null());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;assert_ne!&lt;/span&gt;(r1, r2);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; sum &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; { (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;r1).data &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;r2).data };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;assert_eq!&lt;/span&gt;(sum, &lt;span style=&#34;color:#ae81ff&#34;&gt;30&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;assert!&lt;/span&gt;(stack.pop().is_null());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Rust TreiberStack executed safely.&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;線性化點linearization-point剖析&#34;&gt;線性化點（Linearization Point）剖析&lt;/h3&gt;
+&lt;p&gt;在並行驗證理論中，一個無鎖操作必須存在一個確切的原子瞬間，使得該操作在該時刻「邏輯生效」，這被稱為&lt;strong&gt;線性化點&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;push&lt;/code&gt; 的線性化點&lt;/strong&gt;：CAS 成功將 &lt;code&gt;head&lt;/code&gt; 指向 &lt;code&gt;new_node&lt;/code&gt; 的那一瞬間。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;pop&lt;/code&gt; 的線性化點&lt;/strong&gt;（非空）：CAS 成功將 &lt;code&gt;head&lt;/code&gt; 指向 &lt;code&gt;next_node&lt;/code&gt; 的那一瞬間。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;pop&lt;/code&gt; 的線性化點&lt;/strong&gt;（為空）：當 &lt;code&gt;head.load(Acquire)&lt;/code&gt; 讀到 &lt;code&gt;nullptr&lt;/code&gt; 的那一瞬間。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;致命幽靈aba-問題深度剖析&#34;&gt;致命幽靈：ABA 問題深度剖析&lt;/h2&gt;
+&lt;p&gt;現在，讓我們放寬前面基準實作的假設：「允許節點被重複使用或歸還配置器」。災難立刻降臨。&lt;/p&gt;
+&lt;p&gt;這就是並行計算中最著名的陷阱——&lt;strong&gt;ABA 問題&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;aba-問題如何發生&#34;&gt;ABA 問題如何發生？&lt;/h3&gt;
+&lt;p&gt;假設目前的 Stack 拓撲為 &lt;code&gt;head -&amp;gt; [A] -&amp;gt; [B] -&amp;gt; [C]&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;此時有兩個執行緒 T1 與 T2 正在執行 &lt;code&gt;pop()&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;sequenceDiagram
+    autonumber
+    participant T1 as 執行緒 1 (T1)
+    participant Stack as 共享狀態 (head)
+    participant T2 as 執行緒 2 (T2)
+
+    Note over Stack: head 指向 A&amp;lt;br/&amp;gt;A.next = B, B.next = C
+    T1-&amp;gt;&amp;gt;Stack: 讀取 head = A
+    T1-&amp;gt;&amp;gt;T1: 讀取 next = A.next (值為 B)
+    Note over T1: T1 被作業系統 Context Switch 掛起！&amp;lt;br/&amp;gt;(暫停在 CAS 執行前)
+
+    T2-&amp;gt;&amp;gt;Stack: 執行 pop() 成功取出 A
+    T2-&amp;gt;&amp;gt;Stack: 執行 pop() 成功取出 B
+    Note over Stack: 此時 head 指向 C
+    T2-&amp;gt;&amp;gt;T2: 將節點 A 重新利用或修改
+    T2-&amp;gt;&amp;gt;Stack: 執行 push(A) (A.next 設為 C)
+    Note over Stack: 目前 head 重新指向 A！&amp;lt;br/&amp;gt;但拓撲已變成 A -&amp;gt; C
+
+    Note over T1: T1 被喚醒，準備執行 CAS！
+    T1-&amp;gt;&amp;gt;Stack: CAS(head, expected=A, desired=B)
+    Note over Stack,T1: 檢查 head 目前值為 A，與 expected 相等！&amp;lt;br/&amp;gt;CAS 宣告成功！將 head 設為 B！
+    Note over Stack: 災難降臨：&amp;lt;br/&amp;gt;head 被指向了已被釋放或移走的 B！&amp;lt;br/&amp;gt;節點 C 永久遺失，引發記憶體損毀！&lt;/div&gt;
+
+&lt;h3 id=&#34;拆解-aba-的本質&#34;&gt;拆解 ABA 的本質&lt;/h3&gt;
+&lt;p&gt;當 T1 喚醒並嘗試執行 CAS 時，它僅僅比對了 &lt;code&gt;head == A&lt;/code&gt;。
+在 T1 的眼裡：「head 的記憶體位址依然是 A，代表沒有人動過這個 stack！」
+但實際上，整個 Stack 經歷了 &lt;strong&gt;A → B → A&lt;/strong&gt; 的劇烈變動：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;B 早已被 T2 取走並可能已被 &lt;code&gt;delete&lt;/code&gt; 釋放。&lt;/li&gt;
+&lt;li&gt;節點 A 雖然位址回到頂端，但它的 &lt;code&gt;next&lt;/code&gt; 已經從原先的 B 變成了 C。&lt;/li&gt;
+&lt;li&gt;T1 盲目地將 &lt;code&gt;head&lt;/code&gt; 覆寫為暫存的 &lt;code&gt;B&lt;/code&gt;，直接導致：
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;資料遺失&lt;/strong&gt;：節點 C 脫離了鏈結串列，發生記憶體洩漏。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;記憶體損毀&lt;/strong&gt;（Use-After-Free）：&lt;code&gt;head&lt;/code&gt; 指向了一個已經被 T2 釋放的無效位址 B，下一個呼叫 &lt;code&gt;pop()&lt;/code&gt; 的執行緒解引用 &lt;code&gt;head-&amp;gt;next&lt;/code&gt; 時將立刻崩潰（Crash / Segment Fault）！&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;ABA 的核心教訓是：&lt;strong&gt;指標位址相等，絕不代表資料結構的內部拓撲與歷史狀態未曾改變&lt;/strong&gt;！&lt;/p&gt;
+&lt;h2 id=&#34;四大安全記憶體回收機制safe-memory-reclamation&#34;&gt;四大安全記憶體回收機制（Safe Memory Reclamation）&lt;/h2&gt;
+&lt;p&gt;為了解決 ABA 問題以及多執行緒並行釋放節點時的 Use-After-Free，學界與工業界發展出了四種主流機制。在深入細節前，我們必須先釐清一條核心界線：&lt;strong&gt;Tagged Pointer 與後三種 SMR 機制的防護目標有著本質區別&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Tagged Pointer&lt;/strong&gt;：本質是「狀態變更偵測協定」。它透過版本號偵測指標位址相同時的拓撲演變，但計數器仍有溢位循環（Wraparound）的理論可能，且它&lt;strong&gt;完全無法防護節點的解引用生命週期&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Hazard Pointer / EBR / RCU&lt;/strong&gt;：屬於真正的「安全記憶體回收（SMR）協定」。它們的主要目標是確保「只要有任何讀者可能解引用某個節點，該節點的物理記憶體就絕不會被釋放」。在工程實踐中，這直接消除了最常見的 ABA 根源（即節點被釋放後遭記憶體配置器原地重用）；但若演算法本身存在非記憶體重用引起的語意 ABA，仍需搭配版本號處理。&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    SMR[&amp;#34;&amp;lt;div style=&amp;#39;width:520px; padding:6px 12px 10px 12px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;安全記憶體回收與防護機制 (Safe Memory Reclamation, SMR)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;解決無鎖資料結構中的 ABA 陷阱與 Use-After-Free 記憶體安全核心課題&amp;lt;/div&amp;gt;&amp;#34;]
+
+    subgraph Solutions[&amp;#34;四大主流回收演算法架構&amp;#34;]
+        direction LR
+        subgraph GroupA[&amp;#34;狀態檢測與讀者看板&amp;#34;]
+            direction TB
+            M1[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;1. Tagged Pointer&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 單調遞增版本標記 (DWCAS / 壓縮指標)&amp;lt;br/&amp;gt;• 攔截 ABA，但無法防護生命週期&amp;lt;/div&amp;gt;&amp;#34;]
+            M2[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;2. Hazard Pointer (C&amp;#43;&amp;#43;26)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 讀者公開登記目前存取節點&amp;lt;br/&amp;gt;• 精確保護單一節點，回收邊界明確&amp;lt;/div&amp;gt;&amp;#34;]
+            M1 --&amp;gt; M2
+        end
+
+        subgraph GroupB[&amp;#34;世代標記與寬限期回收&amp;#34;]
+            direction TB
+            M3[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;3. Epoch-Based (EBR)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 全域 Epoch 推進 &amp;#43; 三代分桶批次回收&amp;lt;br/&amp;gt;• 讀者近乎零代價，Rust 生態首選&amp;lt;/div&amp;gt;&amp;#34;]
+            M4[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;4. Read-Copy-Update (RCU)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 寫入者複製副本，寬限期延遲釋放&amp;lt;br/&amp;gt;• 讀者近乎零屏障，Linux 經典&amp;lt;/div&amp;gt;&amp;#34;]
+            M3 --&amp;gt; M4
+        end
+        GroupA -.- GroupB
+    end
+
+    SMR --&amp;gt; Solutions
+
+    style Solutions fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    style GroupA fill:#1f2335,stroke:#bb9af7,stroke-width:1px,color:#bb9af7;
+    style GroupB fill:#1f2335,stroke:#7dcfff,stroke-width:1px,color:#7dcfff;
+
+    classDef root fill:#24283b,stroke:#7dcfff,stroke-width:2px,color:#7dcfff;
+    classDef cardA fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef cardB fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+
+    class SMR root;
+    class M1,M2 cardA;
+    class M3,M4 cardB;&lt;/div&gt;
+
+&lt;h3 id=&#34;tagged--versioned-pointer代數標記指標&#34;&gt;Tagged / Versioned Pointer（代數標記指標）&lt;/h3&gt;
+&lt;p&gt;最直接的直覺是：既然只看指標會被騙，那我們在指標旁邊加上一個&lt;strong&gt;單調遞增的版本號&lt;/strong&gt;（Tag / Counter）！&lt;/p&gt;
+&lt;p&gt;每次對 &lt;code&gt;head&lt;/code&gt; 進行修改時，不僅更新指標，還將版本號加 1：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;狀態演變：
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;(指標 A, 版本 1) ➜ (指標 B, 版本 2) ➜ (指標 C, 版本 3) ➜ (指標 A, 版本 4)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;當 T1 甦醒嘗試執行 CAS 時：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;T1 預期的狀態是 &lt;code&gt;(A, 1)&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;目前 &lt;code&gt;head&lt;/code&gt; 的實際狀態是 &lt;code&gt;(A, 4)&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;CAS 判定兩者不相等，失敗&lt;/strong&gt;！ABA 被成功攔截。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;實作方式與限制&#34;&gt;實作方式與限制&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;雙倍寬度 CAS（DWCAS）&lt;/strong&gt;：在 64-bit 系統上，指標佔 64-bit，計數器佔 64-bit，總共需要 128-bit 的原子 CAS（x86-64 的 &lt;code&gt;CMPXCHG16B&lt;/code&gt; 或 AArch64 的 &lt;code&gt;CASP&lt;/code&gt;）。需注意在部分平臺上 128-bit 原子操作可能非硬體原生無鎖（需透過 &lt;code&gt;is_lock_free()&lt;/code&gt; 驗證），且在高頻競爭下版本計數器仍存在循環繞回（Wraparound）風險。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;指標壓縮（Pointer Packing）&lt;/strong&gt;：在 64-bit 虛擬位址空間中，指標僅使用規範位址（Canonical Address）的低位元。在四級分頁（48-bit 虛擬位址）下，使用者空間位址的高 16 位元可被借用作為版本標記；若在五級分頁（57-bit 虛擬位址）架構下，則僅剩最高 7 位元可用。&lt;strong&gt;重大相容性限制&lt;/strong&gt;：嵌入標記後的指標並非合法位址，解引用前必須先透過 bitmask 遮罩清除標記；且在 AArch64 架構上，硬體功能如頂部字節忽略（TBI）、記憶體標記擴展（MTE）與指標認證（PAC）皆會使用指標高位元，任意壓縮指標會破壞跨平台可攜性。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;重大盲點&lt;/strong&gt;：Tagged Pointer 能偵測狀態改變，但&lt;strong&gt;完全無法保護記憶體生命週期&lt;/strong&gt;！如果在 T1 讀取 &lt;code&gt;old_head-&amp;gt;next&lt;/code&gt; 的瞬間，節點 A 的記憶體已經被 T2 歸還給作業系統（&lt;code&gt;munmap&lt;/code&gt;），T1 的讀取操作依然會直接觸發硬體分頁錯誤（Page Fault）崩潰！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;hazard-pointer風險指標&#34;&gt;Hazard Pointer（風險指標）&lt;/h3&gt;
+&lt;p&gt;由 Maged Michael 於 2004 年提出（論文發表於 2002 年），已正式納入 &lt;strong&gt;C++26 標準庫&lt;/strong&gt;（&lt;code&gt;std::hazard_pointer&lt;/code&gt;）。&lt;/p&gt;
+&lt;p&gt;Hazard Pointer 的設計哲學是：讀者在存取某個節點前，先在全域公開的看板（Hazard Pointer Array）上宣告：「我正在閱讀指標 P，誰都不准釋放它！」&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    HP_1[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;1. 讀取指標&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;讀取 &amp;lt;code&amp;gt;head&amp;lt;/code&amp;gt; 取得當前節點指標 &amp;lt;code&amp;gt;P&amp;lt;/code&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    HP_2[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;2. 登記看板 (Publish)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;將 &amp;lt;code&amp;gt;P&amp;lt;/code&amp;gt; 寫入當前執行緒的 Hazard Slot&amp;lt;/div&amp;gt;&amp;#34;]
+    HP_3{&amp;#34;二次驗證 (Recheck)&amp;lt;br/&amp;gt;head == P ?&amp;#34;}
+    HP_Retry[&amp;#34;&amp;lt;div style=&amp;#39;width:220px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;重試迴圈&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 清除 Hazard Slot 標記&amp;lt;br/&amp;gt;• 重新讀取 &amp;lt;code&amp;gt;head&amp;lt;/code&amp;gt; 重試&amp;lt;/div&amp;gt;&amp;#34;]
+    HP_4[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;4. 安全存取節點 (Safe Access)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 其他執行緒保證不會釋放 &amp;lt;code&amp;gt;P&amp;lt;/code&amp;gt;&amp;lt;br/&amp;gt;• 安全解引用 &amp;lt;code&amp;gt;P-&amp;gt;next&amp;lt;/code&amp;gt; 進行運算&amp;lt;/div&amp;gt;&amp;#34;]
+    HP_5[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;5. 解除保護 (Release)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;操作完成，清除 Hazard Slot 登記&amp;lt;/div&amp;gt;&amp;#34;]
+
+    HP_1 --&amp;gt; HP_2
+    HP_2 --&amp;gt; HP_3
+    HP_3 --&amp;gt;|被搶先修改| HP_Retry
+    HP_Retry -.-&amp;gt;|重新讀取| HP_1
+    HP_3 --&amp;gt;|驗證通過| HP_4
+    HP_4 --&amp;gt; HP_5
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef retry fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+
+    class HP_1,HP_2,HP_5 proc;
+    class HP_3 branch;
+    class HP_Retry retry;
+    class HP_4 ok;&lt;/div&gt;
+
+&lt;h4 id=&#34;回收流程retire&#34;&gt;回收流程（Retire）&lt;/h4&gt;
+&lt;p&gt;當某個執行緒成功將節點 P 從 Stack 中 pop 出來時，它&lt;strong&gt;不能立刻釋放 P&lt;/strong&gt;。而是將 P 放入該執行緒私有的「待回收清單（Retired List）」。
+當 Retired List 累積到一定閾值時，執行緒發動垃圾回收：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;掃描系統中所有執行緒目前登記的 Hazard Pointer 看板。&lt;/li&gt;
+&lt;li&gt;如果節點 P 出現在任何一個看板上，說明仍有讀者正在讀取它，&lt;strong&gt;保留 P&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;如果沒有任何看板引用 P，說明所有讀者都已經知曉 P 已被移除，&lt;strong&gt;安全釋放 P&lt;/strong&gt;（&lt;code&gt;delete&lt;/code&gt; 或 &lt;code&gt;free&lt;/code&gt;）。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;優點&lt;/strong&gt;：記憶體回收上限有嚴格保證，不會因個別執行緒暫停而導致記憶體無限制膨脹；對單一節點保護精確。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;缺點&lt;/strong&gt;：讀者存取節點時需寫入並重新驗證當前執行緒的 Hazard Slot，且回收端（Reclaimer）掃描所有執行緒看板時需負擔全域記憶體屏障開銷；此外走訪長鏈結串列時需要動態維護多個 Hazard Slot。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;epoch-based-reclamation-ebr&#34;&gt;Epoch-Based Reclamation (EBR)&lt;/h3&gt;
+&lt;p&gt;Epoch-Based Reclamation 是目前高效能無鎖資料結構（特別是 Rust 生態系，如標竿庫 &lt;code&gt;crossbeam-epoch&lt;/code&gt;）最廣泛採用的方案。&lt;/p&gt;
+&lt;p&gt;EBR 不去逐一追蹤每一個節點，而是將整個系統的時間切分成 &lt;strong&gt;世代&lt;/strong&gt;（Epoch，例如 0, 1, 2）：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph GlobalEpoch[&amp;#34;全域狀態 (Global System State)&amp;#34;]
+        GE[&amp;#34;&amp;lt;div style=&amp;#39;width:450px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;全域 Epoch 計數器 (Global Epoch: E)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 全域單調推進 (0 ➔ 1 ➔ 2 ➔ 0 循環)&amp;lt;br/&amp;gt;• 當所有活躍執行緒皆離開舊世代時，全域推進到下一代&amp;lt;/div&amp;gt;&amp;#34;]
+    end
+
+    subgraph ThreadWork[&amp;#34;讀者執行緒存取生命週期 (Reader Lifecycle)&amp;#34;]
+        direction LR
+        Pin[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;進入臨界區：pin()&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 登記本地為世代 E&amp;lt;br/&amp;gt;• 宣告自身活躍中&amp;lt;/div&amp;gt;&amp;#34;]
+        Read[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;走訪無鎖資料結構&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 安全解引用節點&amp;lt;br/&amp;gt;• 零額外硬體屏障&amp;lt;/div&amp;gt;&amp;#34;]
+        Unpin[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;離開臨界區：unpin()&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 清除活躍登記&amp;lt;br/&amp;gt;• 允許世代推進&amp;lt;/div&amp;gt;&amp;#34;]
+        Pin --&amp;gt;|&amp;#34;存取&amp;#34;| Read
+        Read --&amp;gt;|&amp;#34;完成&amp;#34;| Unpin
+    end
+
+    subgraph RetireQueue[&amp;#34;待回收佇列：三代分桶防護 (Three-Epoch Buckets)&amp;#34;]
+        direction LR
+        B2[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;當前世代 (Epoch E)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 收集被 pop 移除節點&amp;lt;br/&amp;gt;• 尚有當代讀者存取中&amp;lt;/div&amp;gt;&amp;#34;]
+        B1[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;上一世代 (Epoch E-1)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 等待舊世代讀者離場&amp;lt;br/&amp;gt;• 暫緩釋放&amp;lt;/div&amp;gt;&amp;#34;]
+        B0[&amp;#34;&amp;lt;div style=&amp;#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;安全世代 (Epoch E-2)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 絕無讀者持有指標&amp;lt;br/&amp;gt;• &amp;lt;b&amp;gt;★ 安全批次釋放&amp;lt;/b&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+        B2 --&amp;gt;|&amp;#34;推進&amp;#34;| B1
+        B1 --&amp;gt;|&amp;#34;推進&amp;#34;| B0
+    end
+
+    GlobalEpoch --&amp;gt;|&amp;#34;標記世代&amp;#34;| ThreadWork
+    ThreadWork --&amp;gt;|&amp;#34;節點退役入桶&amp;#34;| RetireQueue
+
+    style GlobalEpoch fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    style ThreadWork fill:#16161e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style RetireQueue fill:#16161e,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+
+    classDef glob fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+    classDef work fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef ret fill:#24283b,stroke:#9ece6a,stroke-width:1.5px,color:#c0caf5;
+
+    class GE glob;
+    class Pin,Read,Unpin work;
+    class B0,B1,B2 ret;&lt;/div&gt;
+
+&lt;h4 id=&#34;ebr-的黃金準則&#34;&gt;EBR 的黃金準則&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;任何執行緒在存取無鎖結構前，必須先呼叫 &lt;code&gt;guard = epoch::pin()&lt;/code&gt;。這會將當前執行緒標記為活躍，並綁定在當前全域 Epoch。&lt;/li&gt;
+&lt;li&gt;只要執行緒處於 &lt;code&gt;pin()&lt;/code&gt; 狀態，它所看見的所有節點都&lt;strong&gt;保證不會被釋放&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;被移除的節點會被標記退役（Retire）並丟入當前 Epoch 的垃圾箱。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;推進世代&lt;/strong&gt;：當系統發現所有曾活躍於前一世代的執行緒皆已離場（不再 pin 在較舊世代）時，全域 Epoch 即可安全推進至下一代。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;安全回收&lt;/strong&gt;：處於 &lt;code&gt;(E - 2)&lt;/code&gt; 世代的垃圾，保證沒有任何存活的讀者能看見，&lt;strong&gt;可以安全批次釋放&lt;/strong&gt;！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;優點&lt;/strong&gt;：在 &lt;code&gt;pin()&lt;/code&gt; 期間，讀取任何節點&lt;strong&gt;完全不需要任何原子寫入或硬體屏障&lt;/strong&gt;，效能幾乎等同於讀取一般指標，非常適合走訪大規模樹狀結構或跳躍表（SkipList）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;缺點（致命傷）&lt;/strong&gt;：若有任何一個執行緒呼叫了 &lt;code&gt;pin()&lt;/code&gt; 後發生長久停頓（例如執行耗時計算、被作業系統搶佔或發生 I/O 阻塞），全域 Epoch 將&lt;strong&gt;無法推進&lt;/strong&gt;。這會導致垃圾回收被無限期延宕，系統中累積的退役節點記憶體無界膨脹，最終引發 OOM（Out of Memory）！值得澄清的是，這只會卡住記憶體回收流程，其他執行緒在資料結構本身的 push/pop 運作依然能持續推進。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;read-copy-update-rcu&#34;&gt;Read-Copy-Update (RCU)&lt;/h3&gt;
+&lt;p&gt;RCU 是 Linux 核心中支撐百萬級網路轉發與檔案系統路由的核心機制，亦有使用者空間實作（Userspace RCU, liburcu）。此外，C++26 草案亦已正式納入 &lt;code&gt;&amp;lt;rcu&amp;gt;&lt;/code&gt; 標頭檔支援。&lt;/p&gt;
+&lt;p&gt;RCU 特別針對 &lt;strong&gt;讀極多、寫極少&lt;/strong&gt;（Read-Mostly）的資料結構設計：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Reader&lt;/strong&gt;：透過 &lt;code&gt;rcu_read_lock()&lt;/code&gt; 進入臨界區，&lt;strong&gt;不執行任何鎖定、不修改任何共享計數器&lt;/strong&gt;，直接讀取指標。讀取開銷近乎為零。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Writer&lt;/strong&gt;：不能就地修改資料。必須先複製一份舊資料副本，在副本上完成修改，接著透過原子指標替換（Release store）將入口切換到新版本。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;寬限期（Grace Period）與非阻塞回呼&lt;/strong&gt;：切換入口後，舊版本資料不能立刻釋放。Writer 可呼叫 &lt;code&gt;synchronize_rcu()&lt;/code&gt; 阻塞等待，直到切換前就已進入臨界區的所有舊讀者&lt;strong&gt;全部執行完畢離場&lt;/strong&gt;；或呼叫非阻塞的 &lt;code&gt;call_rcu()&lt;/code&gt; 註冊回呼函式，待寬限期結束後由背景機制非同步安全銷毀舊版本資料。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;四大記憶體回收機制架構對比&#34;&gt;四大記憶體回收機制架構對比&lt;/h3&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;機制&lt;/th&gt;
+					&lt;th&gt;保護粒度&lt;/th&gt;
+					&lt;th&gt;讀取端開銷&lt;/th&gt;
+					&lt;th&gt;記憶體上限保證&lt;/th&gt;
+					&lt;th&gt;對執行緒長久停頓（Stall）敏感度&lt;/th&gt;
+					&lt;th&gt;典型應用場景&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;Tagged Pointer&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;單一指標&lt;/td&gt;
+					&lt;td&gt;零額外讀取負擔（需 DWCAS）&lt;/td&gt;
+					&lt;td&gt;無（無法解決釋放引發的崩潰）&lt;/td&gt;
+					&lt;td&gt;不敏感&lt;/td&gt;
+					&lt;td&gt;僅防範拓撲 ABA，需搭配其他回收方案&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;Hazard Pointer&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;個別節點&lt;/td&gt;
+					&lt;td&gt;中等（每次解引用需寫入全域狀態並下屏障）&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;嚴格保證&lt;/strong&gt;（垃圾量有明確上限）&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;極佳&lt;/strong&gt;（單一執行緒暫停僅卡住少數節點）&lt;/td&gt;
+					&lt;td&gt;節點數量少、執行緒可能隨機掛起或有即時性要求之系統&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;Epoch-Based (EBR)&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;整段操作臨界區&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;極低&lt;/strong&gt;（僅進入/離開時標記，走訪零負擔）&lt;/td&gt;
+					&lt;td&gt;弱（取決於最慢的執行緒）&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;極高&lt;/strong&gt;（單一執行緒停頓會拖垮全域回收）&lt;/td&gt;
+					&lt;td&gt;高效能記憶體快取、跨執行緒並行 Map/SkipList（如 &lt;code&gt;crossbeam&lt;/code&gt;）&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;RCU&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;整個資料版本&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;近乎為零&lt;/strong&gt;（普通指標存取）&lt;/td&gt;
+					&lt;td&gt;弱（寬限期內需維持雙版本）&lt;/td&gt;
+					&lt;td&gt;高（需等待寬限期排空）&lt;/td&gt;
+					&lt;td&gt;路由表、設定檔更新、讀極多寫極少之系統服務&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;全部改成-seqcst也救不了生命週期&#34;&gt;全部改成 SeqCst，也救不了生命週期&lt;/h2&gt;
+&lt;p&gt;並行開發者常犯的一個危險認知是：「既然 memory ordering 這麼複雜，我乾脆把全專案的原子操作全部改成 &lt;code&gt;std::memory_order_seq_cst&lt;/code&gt; 或 &lt;code&gt;Ordering::SeqCst&lt;/code&gt;，這樣不就萬無一失了嗎？」&lt;/p&gt;
+&lt;p&gt;讓我們用一個最殘酷的時序交錯來擊碎這個幻想：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;假設 head 指標全域採用 SeqCst，不使用任何 SMR 回收防護：
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;執行緒 1 (Reader)                     執行緒 2 (Reclaimer)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;------------------------------------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Node* p = head.load(SeqCst);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;// 此時 p 存放節點 A 的記憶體位址
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                                      head.compare_exchange_strong(p, p-&amp;gt;next, SeqCst);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                                      // 成功將 A 從鏈結中移除！
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                                      delete p; // 釋放節點 A 的記憶體！
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;int val = p-&amp;gt;data; // USE-AFTER-FREE 災難！
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;// 記憶體已被釋放，甚至已被作業系統收回，直接觸發 Segment Fault！&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在這個時序中：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;執行緒 1 的 load 是完全合法的 &lt;code&gt;SeqCst&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;執行緒 2 的 CAS 與 &lt;code&gt;delete&lt;/code&gt; 也是完全合法的 &lt;code&gt;SeqCst&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;整個過程中&lt;strong&gt;沒有任何違反記憶體順序的情形發生&lt;/strong&gt;！&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;然而，&lt;strong&gt;程式依然崩潰了&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;這是因為：&lt;strong&gt;Memory Ordering 管的是變數寫入與觀察的可見性因果；而 SMR 管的是底層記憶體區塊實體是否依然存活合法&lt;/strong&gt;！
+最強的記憶體順序也無法穿越空間，阻止作業系統將已經 &lt;code&gt;free&lt;/code&gt; 掉的記憶體分頁標記為無效。&lt;/p&gt;
+&lt;h3 id=&#34;lock-free-程式碼審查三大檢驗清單&#34;&gt;Lock-Free 程式碼審查三大檢驗清單&lt;/h3&gt;
+&lt;p&gt;在審查任何無鎖演算法或資料結構時，請務必按照以下三大獨立維度逐一檢驗：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;狀態轉移正確性&lt;/strong&gt;（State Transition &amp;amp; CAS）：
+&lt;ul&gt;
+&lt;li&gt;CAS 的條件是否足以代表系統真實狀態？&lt;/li&gt;
+&lt;li&gt;是否存在指標重複配置造成的 ABA 偽成功？（是否需要 Tagged Pointer 或版本號？）&lt;/li&gt;
+&lt;li&gt;失敗重試路徑是否會發生死迴圈或活鎖？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;可見性同步保證&lt;/strong&gt;（Memory Ordering）：
+&lt;ul&gt;
+&lt;li&gt;新節點在寫入原子變數對外發布前，內部資料是否使用 &lt;code&gt;Release&lt;/code&gt; 確立因果？&lt;/li&gt;
+&lt;li&gt;讀者在解引用指標前，是否使用 &lt;code&gt;Acquire&lt;/code&gt; 與發布者建立 &lt;code&gt;synchronizes-with&lt;/code&gt;？&lt;/li&gt;
+&lt;li&gt;CAS 的失敗 ordering 是否正確排除了 &lt;code&gt;Release&lt;/code&gt;，並在需要重試解引用時維持了 &lt;code&gt;Acquire&lt;/code&gt;？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;記憶體生命週期安全&lt;/strong&gt;（Safe Memory Reclamation）：
+&lt;ul&gt;
+&lt;li&gt;當指標被載入到執行緒暫存器後，到真正存取完畢期間，該記憶體區塊是否受到 HP 或 EBR 的保護？&lt;/li&gt;
+&lt;li&gt;節點退役（Retire）後，是否有嚴格的寬限期或計數比對機制，確認所有並行讀者全數離場才執行物理釋放？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;ai-在無鎖程式設計中的角色輔助撰寫與形式驗證&#34;&gt;AI 在無鎖程式設計中的角色：輔助撰寫與形式驗證&lt;/h2&gt;
+&lt;p&gt;隨著大型語言模型（LLM）與 AI 輔助程式設計工具（如 Claude Code）的普及，許多開發者開始嘗試讓 AI 撰寫或最佳化無鎖資料結構。在一般業務邏輯中，AI 能大幅提升產能；但在並行程式設計——尤其是弱記憶體模型與硬體原子原語的世界裡，AI 究竟是強大夥伴，還是潛伏的定時炸彈？&lt;/p&gt;
+&lt;p&gt;我們應該如何正確運用 AI 來輔助無鎖程式設計與程式碼驗證？&lt;/p&gt;
+&lt;h3 id=&#34;為什麼不能盲目信任-ai-寫出的-lock-free-程式碼&#34;&gt;為什麼不能盲目信任 AI 寫出的 Lock-Free 程式碼？&lt;/h3&gt;
+&lt;p&gt;無鎖程式設計本質上是&lt;strong&gt;極端交錯狀態下的離散數學&lt;/strong&gt;。而現今的 LLM 是基於機率分佈預測下一個 token 的模型，擅長提取常見模式，但在面對非直覺的底層硬體特性時，極易產生隱蔽盲區：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;幻覺與過度簡化&lt;/strong&gt;（The Naive Loop Illusion）：當你要求 AI「用 C++ 寫一個無鎖 Stack」時，它幾乎千篇一律會給出教科書式的裸指標 CAS 迴圈。這段程式碼在單執行緒或低並發測試時完全正常，但 AI 往往對 ABA 問題隻字不提，更完全忽略了節點被 &lt;code&gt;delete&lt;/code&gt; 後並行讀者引發的 Use-After-Free 崩潰。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;記憶體順序的隨機性&lt;/strong&gt;：在要求 AI 最佳化效能時，AI 經常在沒有精確因果依據的情況下，將 &lt;code&gt;SeqCst&lt;/code&gt; 降級為 &lt;code&gt;Relaxed&lt;/code&gt;，遺漏關鍵的 &lt;code&gt;Acquire&lt;/code&gt; 讀取屏障或 &lt;code&gt;Release&lt;/code&gt; 發布屏障；或者在 CAS 失敗分支上錯誤地配置了未定義的記憶體順序。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;生命週期管理的缺失&lt;/strong&gt;：實作一個健全的 Hazard Pointer 或 EBR 機制需要極度嚴謹的批次狀態機（包含執行緒註冊、看板掃描、世代三代推進等）。AI 往往只能生成空有函式骨架的虛構實作，在真實高並發壓力下瞬間被記憶體洩漏或懸置指標擊垮。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;未經嚴格驗證的 AI 無鎖程式碼，最危險之處在於它&lt;strong&gt;看起來無比正確&lt;/strong&gt;——編譯毫無警告，單元測試跑過一萬次也全數通過，卻在生產環境的 ARM64 伺服器連續運行數天後偶然觸發非法記憶體存取。&lt;/p&gt;
+&lt;h3 id=&#34;ai-的真實價值作為對抗性審查員adversarial-reviewer&#34;&gt;AI 的真實價值：作為對抗性審查員（Adversarial Reviewer）&lt;/h3&gt;
+&lt;p&gt;既然不能讓 AI 閉眼裸寫核心無鎖邏輯，AI 的真正威力該如何發揮？答案是&lt;strong&gt;翻轉角色&lt;/strong&gt;：不要讓 AI 當「架構師」，而是讓它擔任「對抗性質疑者」（Red Teaming Reviewer）。&lt;/p&gt;
+&lt;p&gt;人類工程師在審查自己撰寫的並行程式碼時，極容易陷入思維定勢（Confirmation Bias），預設執行緒會照著自己構想的理想順序前進。而 AI 沒有這種心理負擔，只要給予正確的約束，它能高效扮演挑錯的黑客角色。&lt;/p&gt;
+&lt;h4 id=&#34;提示詞設計策略逼問邊界交錯&#34;&gt;提示詞設計策略：逼問邊界交錯&lt;/h4&gt;
+&lt;p&gt;在請 AI 審查人類撰寫的無鎖程式碼時，避免使用「這段程式碼有沒有問題？」這種寬泛提問，而應當給予明確的底層架構約束：&lt;/p&gt;
+&lt;blockquote&gt;&lt;p&gt;&lt;strong&gt;針對弱記憶體模型的審查 Prompt 範例&lt;/strong&gt;：&lt;br&gt;
+「請扮演資深並行系統核心工程師。審查以下 C++20 無鎖佇列的 &lt;code&gt;pop()&lt;/code&gt; 實作。請特別假設運行於 ARM64 架構（具備 Store Buffer 與弱記憶體順序）：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;請檢查 &lt;code&gt;head.load&lt;/code&gt; 與後續存取內部欄位之間，是否存在任何指令重排（Reordering）可能讀取到未初始化的資料？&lt;/li&gt;
+&lt;li&gt;請構造一個精確的雙執行緒交錯時序（Interleaving trace），證明在特定的 CAS 失敗重試路徑上，是否可能發生 ABA 或存取已被釋放的記憶體？&lt;/li&gt;
+&lt;li&gt;列出所有你認為可以進一步降級或必須升級的 &lt;code&gt;std::memory_order&lt;/code&gt;，並嚴格給出因果依據。」&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/blockquote&gt;&lt;p&gt;在這種對抗性約束下，AI 能極其迅速地指出人類肉眼容易漏看的分支細節，例如「CAS 失敗時 &lt;code&gt;expected&lt;/code&gt; 更新與下一次重試讀取之間的屏障漏洞」。&lt;/p&gt;
+&lt;h3 id=&#34;終極閉環ai-結合符號模型檢查formal-verification&#34;&gt;終極閉環：AI 結合符號模型檢查（Formal Verification）&lt;/h3&gt;
+&lt;p&gt;無論是人類專家還是 AI 審查，本質上都依賴經驗推演，無法窮舉龐大的並行交錯空間。要在工程上獲得真正的數學級確定性，必須將 AI 融入&lt;strong&gt;形式化驗證工具鏈&lt;/strong&gt;（Formal Verification Toolchain）：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph HumanPhase[&amp;#34;人類工程師核心主導&amp;#34;]
+        H1[&amp;#34;&amp;lt;div style=&amp;#39;width:460px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;架構設計與狀態機定義&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 定義無鎖拓撲、CAS 不變量與 SMR 回收策略&amp;lt;/div&amp;gt;&amp;#34;]
+    end
+
+    subgraph AIPhase[&amp;#34;AI 協同分析與測試生成 (LLM Augmented)&amp;#34;]
+        direction LR
+        A1[&amp;#34;&amp;lt;div style=&amp;#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;對抗性代碼審查&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 弱記憶體重排推演&amp;lt;br/&amp;gt;• 構造極限 ABA 交錯&amp;lt;/div&amp;gt;&amp;#34;]
+        A2[&amp;#34;&amp;lt;div style=&amp;#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;驗證套件生成&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 自動產出 Loom 測試&amp;lt;br/&amp;gt;• 轉譯 TLA&amp;#43; / GenMC 規格&amp;lt;/div&amp;gt;&amp;#34;]
+        A1 -.- A2
+    end
+
+    subgraph VerifyPhase[&amp;#34;確定性形式驗證 (Formal Verification)&amp;#34;]
+        direction LR
+        V1[&amp;#34;&amp;lt;div style=&amp;#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;Loom / GenMC 窮舉&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 探索所有並行排程狀態&amp;lt;br/&amp;gt;• 捕捉百萬分之一時序 Bug&amp;lt;/div&amp;gt;&amp;#34;]
+        V2[&amp;#34;&amp;lt;div style=&amp;#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;TSan 動態競爭偵測&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 記憶體存取插樁分析&amp;lt;br/&amp;gt;• 攔截底層 Data Race&amp;lt;/div&amp;gt;&amp;#34;]
+        V1 -.- V2
+    end
+
+    HumanPhase --&amp;gt; AIPhase
+    AIPhase --&amp;gt; VerifyPhase
+    VerifyPhase --&amp;gt; Result{&amp;#34;形式驗證結果？&amp;#34;}
+
+    Result --&amp;gt;|通過驗證| Deploy[&amp;#34;&amp;lt;div style=&amp;#39;width:250px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;★ 具備數學保證的生產級實作&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;通過全狀態空間探索與壓力測試&amp;lt;/div&amp;gt;&amp;#34;]
+    Result --&amp;gt;|發現反例| Fix[&amp;#34;&amp;lt;div style=&amp;#39;width:250px; padding:4px 8px 8px 8px; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;反例日誌分析 (Trace Analysis)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;AI 解讀報錯時序，輔助定位修補&amp;lt;/div&amp;gt;&amp;#34;]
+
+    style HumanPhase fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    style AIPhase fill:#16161e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style VerifyPhase fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+
+    classDef human fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+    classDef ai fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef verify fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef fail fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class H1 human;
+    class A1,A2 ai;
+    class V1,V2 verify;
+    class Result branch;
+    class Deploy ok;
+    class Fix fail;&lt;/div&gt;
+
+&lt;h4 id=&#34;讓-ai-生成-loom-與-genmc-形式測試-harness&#34;&gt;讓 AI 生成 Loom 與 GenMC 形式測試 Harness&lt;/h4&gt;
+&lt;p&gt;撰寫形式化測試套件（如 Rust 的 &lt;code&gt;loom&lt;/code&gt; 或 C++ 的 &lt;code&gt;GenMC&lt;/code&gt;）相當繁瑣，需將所有原生型別替換為模型檢查器的特定原語。這恰好是 AI 的絕佳施展場域：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Prompting 任務&lt;/strong&gt;：「將以下這段生產級 Treiber Stack 的 Rust 實作，改寫為 &lt;code&gt;loom&lt;/code&gt; 模型測試案例。使用 &lt;code&gt;loom::sync::atomic&lt;/code&gt; 與 &lt;code&gt;loom::thread&lt;/code&gt;，設定 2 個執行緒同時進行並行 push 與 pop，驗證是否滿足 LIFO 屬性與記憶體無外洩。」&lt;/li&gt;
+&lt;li&gt;AI 能在數秒內生成規範的驗證環境，讓模型檢查器窮舉成千上萬種合法執行緒排程。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;讓-ai-解讀反例追蹤日誌counterexample-trace&#34;&gt;讓 AI 解讀反例追蹤日誌（Counterexample Trace）&lt;/h4&gt;
+&lt;p&gt;當模型檢查器發現錯誤時，輸出的反例日誌往往龐大無比，列出數十個排程步驟與記憶體存取歷史。人類工程師需要花費數小時追蹤究竟是哪一個執行緒的哪一行指令觸發了狀態不一致。&lt;/p&gt;
+&lt;p&gt;此時將反例日誌餵給 AI：&lt;/p&gt;
+&lt;blockquote&gt;&lt;p&gt;「這是在執行 GenMC 模型檢查時回報的失敗日誌。請追蹤 Execution Graph，指出在第幾個 step 時發生了哪兩個記憶體存取的因果斷裂？是哪一行程式碼的 memory ordering 不足以建立 synchronizes-with？」&lt;/p&gt;
+&lt;/blockquote&gt;&lt;p&gt;AI 具備強大的符號模式匹配能力，能精準從數百行交錯記錄中萃取出關鍵的因果漏洞，並給予精準的修復建議。&lt;/p&gt;
+&lt;p&gt;透過「人類定架構 ➔ AI 擬推演並編寫測試模型 ➔ 符號檢查器嚴密證明 ➔ AI 解讀反例日誌」的閉環體系，我們才能真正將 AI 的敏捷性與形式驗證的數學嚴謹性結合，打造出堅不可摧的生產級無鎖系統。&lt;/p&gt;
+&lt;h2 id=&#34;結語何時該用-lock-free&#34;&gt;結語：何時該用 Lock-Free？&lt;/h2&gt;
+&lt;p&gt;無鎖資料結構擁有極致的吞吐潛力與避免優先權反轉（Priority Inversion）的優雅特質，但它的實作代價無比高昂。每一行看似平凡的指標操作背後，都牽動著 CPU 管線排空、快取一致性廣播、ABA 防護與記憶體延後回收的複雜協同。&lt;/p&gt;
+&lt;p&gt;在工程實踐中，我們應當抱持審慎客觀的態度：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;95% 的業務場景&lt;/strong&gt;：優先使用現代作業系統高度最佳化的標準鎖（如基於 Futex 的 &lt;code&gt;std::mutex&lt;/code&gt; 或 Rust 的 &lt;code&gt;parking_lot::Mutex&lt;/code&gt;）。現代互斥鎖在無競爭情況下僅是一次輕量的原子 CAS，開銷僅數十奈秒，且心智負擔極低。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;高頻交易、核心驅動與底層基礎設施&lt;/strong&gt;：在極度要求低延遲、不可容忍鎖定阻塞（如即時音訊處理、高並發網路事件循環 Reactor）的關鍵路徑上，投入精力設計並驗證 Lock-Free 結構。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;站在巨人的肩膀上&lt;/strong&gt;：若需要使用無鎖結構，盡量選用經過工業級形式化驗證（如 TLA+）與龐大測試套件（如 ThreadSanitizer、Loom）錘鍊的成熟庫（如 Rust 的 &lt;code&gt;crossbeam&lt;/code&gt;，C++ 的 Folly 或 Intel TBB），切忌在未經深思熟慮前自行在生產環境手寫無鎖記憶體回收器。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;透過這兩篇文章的梳理，我們從底層硬體快取與記憶體模型的微觀世界，一路跨越至無鎖拓撲與安全記憶體回收的宏觀架構。並行程式設計雖然充滿挑戰，但只要掌握了因果順序與生命週期的雙重視角，看似詭譎多變的多執行緒世界，終將呈現出清晰嚴謹的工程之美。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>C&#43;&#43; 與 Rust 記憶體模型：從 Memory Ordering、硬體快取到 Safe Publication</title>
+      <link>https://blog.simplypatrick.com/posts/2026/09-07-memory-ordering/</link>
+      <pubDate>Mon, 07 Sep 2026 00:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/09-07-memory-ordering/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/09-07-memory-ordering/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;在單一執行緒（thread）裡，先執行 &lt;code&gt;X = 10&lt;/code&gt;，接著執行 &lt;code&gt;Y = 20&lt;/code&gt;，直覺上我們會認定「第一件事做完，才做第二件事」。但當另一個執行緒讀到 &lt;code&gt;Y == 20&lt;/code&gt; 時，我們能不能百分之百相信 &lt;code&gt;X&lt;/code&gt; 此時也已經是 10？&lt;/p&gt;
+&lt;p&gt;答案是否定的。&lt;/p&gt;
+&lt;p&gt;要回答這個問題，必須深入認識 &lt;strong&gt;記憶體模型（Memory Model）&lt;/strong&gt;：它是一份語言規格與硬體架構之間的法律契約，嚴格規範了多個執行緒存取共享記憶體時，哪些讀取結果是合法的，以及各執行緒之間如何建立可信的同步關係。&lt;/p&gt;
+&lt;p&gt;無論是 C++（自 C++11 起確立，並在 C++20 持續演進的 &lt;code&gt;&amp;lt;atomic&amp;gt;&lt;/code&gt;）還是 Rust（標準庫中的 &lt;code&gt;std::sync::atomic&lt;/code&gt; 與 &lt;code&gt;core::sync::atomic::Ordering&lt;/code&gt;），兩者背後採用的是同一套源自 C++11 的記憶體模型哲學。如果沒有搞懂這套規則，直接跳去寫 CAS（Compare-And-Swap）或無鎖資料結構，往往會把「原子數值更新成功」與「周邊資料已被安全觀察」混為一談，埋下極難除錯的並行競爭缺陷。&lt;/p&gt;
+&lt;p&gt;本文將從計算機硬體管線與語言標準出發，全方位拆解 C++ 與 Rust 的記憶體順序（Memory Ordering）機制。&lt;/p&gt;
+&lt;h2 id=&#34;記憶體模型本質寫入順序不等於觀察順序&#34;&gt;記憶體模型本質：寫入順序不等於觀察順序&lt;/h2&gt;
+&lt;p&gt;在現代多核心系統中，高階語言的程式碼順序（Program Order）絕不等於實際硬體上各核心觀察到的時間順序。&lt;/p&gt;
+&lt;p&gt;編譯器為了極大化運算效率，會進行指令重排（Instruction Reordering）、暫存器提升（Register Promotion）或死碼消除；CPU 為了避免等待緩慢的記憶體匯流排，會透過亂序執行（Out-of-Order Execution）、暫存寫入緩衝區（Store Buffer）與推測性讀取（Speculative Load）來填滿運算管線。這一切在單一執行緒中都受到 &lt;strong&gt;as-if 原則&lt;/strong&gt; 保護——只要單執行緒的最終執行結果與原始順序一致，任何重排都是合法的。&lt;/p&gt;
+&lt;p&gt;但當另一個執行緒從另一顆核心觀察這塊記憶體時，as-if 的保護罩就瞬間失效了。&lt;/p&gt;
+&lt;h3 id=&#34;誰動了我的程式碼從高階軟體到晶片硬體的重排層級&#34;&gt;誰動了我的程式碼？從高階軟體到晶片硬體的重排層級&lt;/h3&gt;
+&lt;p&gt;當我們在原始碼中寫下兩行看似簡單的賦值操作時，這兩行指令在真正轉化為電晶體狀態改變的漫長路途中，必須穿透多個軟硬體抽象層。&lt;/p&gt;
+&lt;p&gt;為了榨乾現代處理器的每一分運算潛力，從編譯器最佳化到矽晶片電路，各層級都被賦予了重排與快取的自由：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph Layer1[&amp;#34;高階軟體與編譯器層 (Compiler Layer)&amp;#34;]
+        direction LR
+        L1_Code[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;高階語言原始碼 (Source Code)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 循序語意：C&amp;#43;&amp;#43; / Rust Program Order&amp;lt;br/&amp;gt;• 單執行緒 as-if 原則保障結果正確&amp;lt;br/&amp;gt;• 尚未考慮多核心記憶體可見性問題&amp;lt;/div&amp;gt;&amp;#34;]
+        L1_Opt[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;編譯器最佳化 (Optimization)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 指令調度 (Scheduling)：隱藏管線延遲&amp;lt;br/&amp;gt;• 暫存器提升 (Promotion)：延遲寫回記憶體&amp;lt;br/&amp;gt;• 冗餘消除 (DSE / CSE)：刪除中間存取&amp;lt;/div&amp;gt;&amp;#34;]
+        L1_Code --&amp;gt;|&amp;#34;編譯與轉換&amp;#34;| L1_Opt
+    end
+
+    subgraph Layer2[&amp;#34;處理器執行核心 (CPU Core &amp;amp; Execution Pipeline)&amp;#34;]
+        direction LR
+        L2_Core[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;超純量管線與執行引擎 (Pipeline)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 指令解碼為微操作 (μops) 平行派發&amp;lt;br/&amp;gt;• 分支預測與推測讀取 (Speculative Load)&amp;lt;br/&amp;gt;• 保留站 (Reservation Station) 動態調度&amp;lt;/div&amp;gt;&amp;#34;]
+        L2_ROB[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;亂序執行與引退機制 (ROB)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 運算元資料就緒即脫離循序執行&amp;lt;br/&amp;gt;• 重排序緩衝區 (ROB)：維護暫存器假象&amp;lt;br/&amp;gt;• 指令循序引退 (In-order Retirement)&amp;lt;/div&amp;gt;&amp;#34;]
+        L2_Core --&amp;gt;|&amp;#34;微操作引退&amp;#34;| L2_ROB
+    end
+
+    subgraph Layer3[&amp;#34;核心記憶體介面 (Memory Subsystem Interface)&amp;#34;]
+        direction LR
+        L3_SB[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;寫入緩衝區 (Store Buffer)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 吸收寫入延遲，非同步背景排空 (Drain)&amp;lt;br/&amp;gt;• 支援寫入合併 (Store Merging)&amp;lt;br/&amp;gt;• &amp;lt;b&amp;gt;★ 物理根源：誘發 Store-Load 亂序&amp;lt;/b&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+        L3_IQ[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;無效化佇列 (Invalidate Queue)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 暫存跨核心失效請求，延遲確認 (ACK)&amp;lt;br/&amp;gt;• 避免 CPU 等待快取行使無效廣播&amp;lt;br/&amp;gt;• 弱架構下引發過期快取資料讀取&amp;lt;/div&amp;gt;&amp;#34;]
+        L3_SB &amp;lt;---&amp;gt;|&amp;#34;記憶體介面協調&amp;#34;| L3_IQ
+    end
+
+    subgraph Layer4[&amp;#34;快取階層與多核心互連 (Cache Hierarchy &amp;amp; Interconnect)&amp;#34;]
+        direction LR
+        L4_Cache[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;多層級快取階層 (Cache Hierarchy)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 本地 L1 / L2 快取與共享 L3 快取&amp;lt;br/&amp;gt;• 快取未命中 (Miss) 產生巨大延遲落差&amp;lt;br/&amp;gt;• 造成各變數寫入發布時程產生偏斜&amp;lt;/div&amp;gt;&amp;#34;]
+        L4_Bus[&amp;#34;&amp;lt;div style=&amp;#39;width:280px; text-align:left; line-height:1.4;&amp;#39;&amp;gt;&amp;lt;b&amp;gt;快取一致性互連網路 (Interconnect)&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• MESI / MOESI 協定維持快取行狀態&amp;lt;br/&amp;gt;• &amp;lt;b&amp;gt;局限：僅保證單一位址，不保證跨位址順序&amp;lt;/b&amp;gt;&amp;lt;br/&amp;gt;• 晶片互連網路 (Ring/Mesh) 傳播延遲差&amp;lt;/div&amp;gt;&amp;#34;]
+        L4_Cache &amp;lt;---&amp;gt;|&amp;#34;快取行狀態維護&amp;#34;| L4_Bus
+    end
+
+    Layer1 --&amp;gt;|&amp;#34;發射機器碼&amp;#34;| Layer2
+    Layer2 --&amp;gt;|&amp;#34;寫入指令提交&amp;#34;| Layer3
+    Layer3 --&amp;gt;|&amp;#34;非同步排空寫入 / 快取失效協調&amp;#34;| Layer4
+
+    style Layer1 fill:#1a1e2e,stroke:#3b4261,stroke-width:1.5px,color:#7aa2f7;
+    style Layer2 fill:#1a1e2e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style Layer3 fill:#1a1e2e,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    style Layer4 fill:#1a1e2e,stroke:#2ac3de,stroke-width:1.5px,color:#2ac3de;
+
+    classDef sw fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef core fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef mem fill:#24283b,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    classDef hw fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class L1_Code,L1_Opt sw;
+    class L2_Core,L2_ROB core;
+    class L3_SB,L3_IQ mem;
+    class L4_Cache,L4_Bus hw;&lt;/div&gt;
+
+&lt;p&gt;以下由上至下（從軟體層深入至硬體晶片）逐一解析各層級如何「篡改」我們的指令順序：&lt;/p&gt;
+&lt;h4 id=&#34;高階語言與編譯器最佳化層compiler-optimization&#34;&gt;高階語言與編譯器最佳化層（Compiler Optimization）&lt;/h4&gt;
+&lt;p&gt;編譯器是第一道重排關卡。在不違反單執行緒 as-if 原則的前提下，現代靜態編譯器（如 Clang、GCC、Rustc）會進行極為激進的重整：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;指令調度（Instruction Scheduling）&lt;/strong&gt;：為了隱藏記憶體存取延遲或填補管線空泡（Bubble），編譯器會將沒有資料相依性（Data Dependency）的無關指令互相調換位置。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;暫存器提升（Register Promotion）&lt;/strong&gt;：將頻繁讀寫的變數直接鎖定在 CPU 暫存器中，跳過記憶體讀寫。這意味著一個核心對變數的修改可能長久停留在暫存器內，根本沒有寫出到記憶體中，使得其他核心毫無察覺。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;冗餘存取消除（Dead Store / Common Subexpression Elimination）&lt;/strong&gt;：若編譯器判定某個變數在短時間內被重複寫入，它甚至可能直接抹除中間的寫入動作（例如將連續的 &lt;code&gt;flag = 1; flag = 2;&lt;/code&gt; 直接最佳化為 &lt;code&gt;flag = 2;&lt;/code&gt;）。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;處理器管線與亂序執行out-of-order-execution&#34;&gt;處理器管線與亂序執行（Out-of-Order Execution）&lt;/h4&gt;
+&lt;p&gt;穿過編譯器產生的機器碼後，指令進入 CPU 核心管線。在現代超純量處理器中，硬體並不會死板地一行行依序執行指令：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;推測執行與分支預測（Speculative Execution）&lt;/strong&gt;：當處理器遇到條件分支時，不會乾等條件計算完成，而是依據歷史紀錄猜測分支走向，並提前載入後續指令所需的資料（Speculative Load）。若預測成功，程式效率翻倍；但在多核心視角下，這意味著「後面的讀取操作」在實體時間軸上提早於「前面的條件判斷」發生。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;動態調度（Dynamic Scheduling / Reservation Stations）&lt;/strong&gt;：CPU 前端將複雜指令拆解為微操作（$\mu\text{ops}$）後分派給多個平行的執行單元（ALU、Load、Store）。只要某個運算單元的資料就緒，就能立刻插隊執行，不受原始指令先後束縛。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;重排序緩衝區（Reorder Buffer, ROB）&lt;/strong&gt;：為了維持單核心的確定性，CPU 透過 ROB 機制讓所有指令在暫存器更新與例外處理時維持循序引退（In-order Retirement）。但請注意：&lt;strong&gt;ROB 僅負責處理器內部的暫存器假象，記憶體的真實寫入在引退後才交由記憶體子系統接手！&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;寫入緩衝區與記憶體介面store-buffer--memory-interface&#34;&gt;寫入緩衝區與記憶體介面（Store Buffer &amp;amp; Memory Interface）&lt;/h4&gt;
+&lt;p&gt;當寫入指令從 CPU 核心引退後，它並不會直接寫入快取，而是被丟入核心內部的 &lt;strong&gt;Store Buffer（寫入緩衝區）&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;為什麼需要 Store Buffer？&lt;/strong&gt;：CPU 核心運算頻率極高（3~5 GHz），而快取存取需要數個週期。如果每執行一次寫入都要等待快取確認所有權，處理器管線將發生嚴重停頓。因此 CPU 將寫入丟入 Store Buffer 後即視為完成，由 Store Buffer 在背景非同步將資料排空（Drain）至 L1 快取。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Store-Load 亂序的物理溫床&lt;/strong&gt;：當核心執行「寫入 A、讀取 B」時，寫入 A 尚滯留在 Store Buffer 中，而讀取 B 卻已經直接從快取中取出了舊值。從外部觀察者看來，這就像讀取 B 跑到了寫入 A 之前！這正是 x86-64 唯一允許的硬體亂序現象。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;快取階層與多核心互連網路cache-hierarchy--interconnect-fabric&#34;&gt;快取階層與多核心互連網路（Cache Hierarchy &amp;amp; Interconnect Fabric）&lt;/h4&gt;
+&lt;p&gt;最後，資料離開 Store Buffer 進入快取階層：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;快取命中延遲不均（Cache Latency Disparity）&lt;/strong&gt;：若變數 X 發生快取未命中（Cache Miss，需向外部 L3 或主記憶體索取），而變數 Y 剛好命中 L1 快取，弱記憶體模型架構（如 ARM64）的硬體可能優先將 Y 寫入並向外發布，使得原本先寫入的 X 反而在時間上落後。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;快取一致性協定的局限（MESI Coherence Limit）&lt;/strong&gt;：MESI / MOESI 協定只負責維護「&lt;strong&gt;單一快取行（單一記憶體位址）&lt;/strong&gt;」在各核心快取狀態的唯一性。它完全不保證多個不同記憶體位址之間的傳播因果。不同位址的快取無效化訊息在晶片互連網路（Ring Bus 或 Mesh）中傳播時，可能因為路由擁塞而產生時間差。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;軟體記憶體模型memory-model的契約角色&#34;&gt;軟體記憶體模型（Memory Model）的契約角色&lt;/h4&gt;
+&lt;p&gt;正因為從高階軟體到硬體電路存在如此多層級的重排自由，如果沒有一套統一規範，跨平台並行程式設計將寸步難行。&lt;/p&gt;
+&lt;p&gt;這就是 &lt;strong&gt;語言層級記憶體模型（Software Memory Model）&lt;/strong&gt; 誕生的根本目的：
+它在混亂的底層現實與純粹的高階語意之間築起一道契約牆。開發者透過標註 &lt;code&gt;Relaxed&lt;/code&gt;、&lt;code&gt;Acquire&lt;/code&gt;、&lt;code&gt;Release&lt;/code&gt; 或 &lt;code&gt;SeqCst&lt;/code&gt;，精確指示編譯器在適當的位置插入 &lt;strong&gt;編譯器屏障（Compiler Barrier）&lt;/strong&gt; 抑制指令重排，並發射對應架構的 &lt;strong&gt;硬體記憶體屏障指令（Memory Fence）&lt;/strong&gt; 強迫管線與 Store Buffer 排空，以最小的效能代價換取跨核心因果的一致性。&lt;/p&gt;
+&lt;h3 id=&#34;原子性atomicity與記憶體順序memory-ordering&#34;&gt;原子性（Atomicity）與記憶體順序（Memory Ordering）&lt;/h3&gt;
+&lt;p&gt;在深入討論前，必須嚴格釐清這兩個經常被混淆的概念：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Atomicity（原子性）&lt;/strong&gt;：指的是對單一變數的存取操作不可分割。在讀取或寫入時，不會讀到其他執行緒只寫了一半的破碎資料（Tearing）。例如 64-bit 整數寫入在 32-bit 架構上若未做原子防護，可能會被拆成兩個 32-bit 指令，導致讀者拿到上半部舊值與下半部新值的混亂狀態。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Memory Ordering（記憶體順序）&lt;/strong&gt;：指的是不同記憶體存取操作之間的&lt;strong&gt;可見性順序與同步保證&lt;/strong&gt;。當你看到某個旗標被設定為 &lt;code&gt;true&lt;/code&gt; 時，能否安全相信在該旗標設定之前所準備的所有資料（包括非原子的一般變數）都已經在你的核心中完整可見？&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;使用原子型別（C++ 的 &lt;code&gt;std::atomic&amp;lt;T&amp;gt;&lt;/code&gt; 或 Rust 的 &lt;code&gt;AtomicI32&lt;/code&gt;、&lt;code&gt;AtomicBool&lt;/code&gt; 等）保證了操作的不可分割性；而你在每次操作時所指定的 &lt;code&gt;memory_order&lt;/code&gt;，則決定了它要對周邊其他記憶體存取施加多強的順序約束。&lt;/p&gt;
+&lt;h3 id=&#34;四大核心因果關係&#34;&gt;四大核心因果關係&lt;/h3&gt;
+&lt;p&gt;C++ 與 Rust 的記憶體模型使用數學上的偏序關係（Partial Order）來定義並行操作的合法性。其中最關鍵的四個概念如下：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph ThreadA[&amp;#34;執行緒 A&amp;#34;]
+        A1[&amp;#34;一般變數寫入 data = 42&amp;#34;]
+        A2[&amp;#34;Release Store ready = true&amp;#34;]
+        A1 -- &amp;#34;sequenced-before&amp;#34; --&amp;gt; A2
+    end
+
+    subgraph ThreadB[&amp;#34;執行緒 B&amp;#34;]
+        B1[&amp;#34;Acquire Load ready == true&amp;#34;]
+        B2[&amp;#34;一般變數讀取 assert(data == 42)&amp;#34;]
+        B1 -- &amp;#34;sequenced-before&amp;#34; --&amp;gt; B2
+    end
+
+    A2 -- &amp;#34;synchronizes-with&amp;lt;br/&amp;gt;(reads-from 成功配對)&amp;#34; --&amp;gt; B1
+    A1 -. &amp;#34;happens-before (推導成立)&amp;#34; .-&amp;gt; B2
+
+    classDef proc fill:#1f2335,stroke:#414868,stroke-width:1.5px,color:#c0caf5;
+    classDef sync fill:#24283b,stroke:#bb9af7,stroke-width:2px,color:#bb9af7;
+    classDef safe fill:#24283b,stroke:#9ece6a,stroke-width:2px,color:#9ece6a;
+
+    class A1,B2 proc;
+    class A2 sync;
+    class B1 safe;&lt;/div&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;sequenced-before（循序先於）&lt;/strong&gt;：同一執行緒內部的程式執行順序。在 Thread A 裡，程式碼上一行 sequenced-before 下一行。&lt;strong&gt;單靠此關係無法跨越執行緒邊界。&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;reads-from（讀取自）&lt;/strong&gt;：某個執行緒的 load 操作讀取到了另一個執行緒的 store 操作所寫入的值。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;synchronizes-with（同步於）&lt;/strong&gt;：跨執行緒的關鍵橋樑。當一個帶有 Release 語意的 store 被另一個帶有 Acquire 語意的 load 成功讀到（reads-from 成立）時，這兩個操作之間就建立了 synchronizes-with 關係。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;happens-before（先發生於）&lt;/strong&gt;：由 sequenced-before 與 synchronizes-with 組合傳遞而成的全域偏序關係。如果操作 A happens-before 操作 B，則 A 對記憶體所做的所有修改，對於 B 都是保證可見的。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;最核心的原則是：&lt;strong&gt;單純「我讀到了你寫入的數值（reads-from）」，並不代表「你在寫入該數值前所做的所有事情，都已經同步給我（happens-before）」。&lt;/strong&gt; 必須使用正確的 memory ordering 才能建立起跨執行緒的同步橋樑。&lt;/p&gt;
+&lt;h2 id=&#34;思考實驗relaxed-為什麼可能讀到-0-20&#34;&gt;思考實驗：Relaxed 為什麼可能讀到 0, 20？&lt;/h2&gt;
+&lt;p&gt;為了驗證我們的直覺盲點，來看這個經典的訊息傳遞（Message Passing）問題。&lt;/p&gt;
+&lt;p&gt;假設全域有兩個整數變數 &lt;code&gt;X&lt;/code&gt; 與 &lt;code&gt;Y&lt;/code&gt;，初始值皆為 0。兩個執行緒同時執行，且全部採用限制最弱的 &lt;code&gt;relaxed&lt;/code&gt; 順序：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Thread A             Thread B
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;X = 10 (relaxed)     y = Y  (relaxed)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Y = 20 (relaxed)     x = X  (relaxed)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;執行緒 B 先讀取 &lt;code&gt;Y&lt;/code&gt; 存入暫存變數 &lt;code&gt;y&lt;/code&gt;，接著讀取 &lt;code&gt;X&lt;/code&gt; 存入暫存變數 &lt;code&gt;x&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;在 C++ 與 Rust 的記憶體模型規範下，程式結束時 &lt;code&gt;(x, y)&lt;/code&gt; 可能的數值有哪些？&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;A. &lt;code&gt;(0, 0)&lt;/code&gt;：Thread B 在 Thread A 尚未寫入任何值前就讀完了。&lt;/li&gt;
+&lt;li&gt;B. &lt;code&gt;(10, 0)&lt;/code&gt;：Thread B 讀取 &lt;code&gt;Y&lt;/code&gt; 時 Thread A 尚未寫入 &lt;code&gt;Y&lt;/code&gt;；讀取 &lt;code&gt;X&lt;/code&gt; 時 Thread A 已經寫入 &lt;code&gt;X&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;C. &lt;code&gt;(10, 20)&lt;/code&gt;：Thread B 成功讀取到 Thread A 的所有最新寫入。&lt;/li&gt;
+&lt;li&gt;D. &lt;code&gt;(0, 20)&lt;/code&gt;：Thread B 明明已經看到了後寫入的 &lt;code&gt;Y = 20&lt;/code&gt;，卻讀到了先寫入的 &lt;code&gt;X&lt;/code&gt; 初始值 0！&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;答案是：&lt;strong&gt;A、B、C、D 全部都是標準規範所允許的合法結果！&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;最令人難以接受的是選項 D：既然 Thread B 已經看到了後寫入的 &lt;code&gt;Y = 20&lt;/code&gt;，為什麼竟然還能讀到舊的 &lt;code&gt;X = 0&lt;/code&gt;？&lt;/p&gt;
+&lt;h3 id=&#34;c-與-rust-程式碼驗證&#34;&gt;C++ 與 Rust 程式碼驗證&lt;/h3&gt;
+&lt;p&gt;我們來用現代 C++20 與 Rust 分別寫出這段邏輯：&lt;/p&gt;
+&lt;h4 id=&#34;c20-實作&#34;&gt;C++20 實作&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;atomic&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;iostream&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;thread&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;atomic&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; X{&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;atomic&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; Y{&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; x &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; y &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t1([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        X.store(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Y.store(&lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t2([&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;] {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Y.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; X.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t2.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Result: x = &amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; x &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;, y = &amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; y &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;\n&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;rust-實作&#34;&gt;Rust 實作&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::atomic::{AtomicI32, Ordering};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::Arc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::thread;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;SharedData&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    x: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicI32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    y: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicI32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; data &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::new(SharedData {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        x: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicI32&lt;/span&gt;::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        y: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicI32&lt;/span&gt;::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; d1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;data);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        d1.x.store(&lt;span style=&#34;color:#ae81ff&#34;&gt;10&lt;/span&gt;, Ordering::Relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        d1.y.store(&lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;, Ordering::Relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; d2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;data);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; y &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; d2.y.load(Ordering::Relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; x &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; d2.x.load(Ordering::Relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        (x, y)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; (x, y) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; t2.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Result: x = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;, y = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, x, y);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這兩段程式在語言規格中是完全等價的。&lt;code&gt;Relaxed&lt;/code&gt; 順序只給予兩個保證：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;單一操作的原子性&lt;/strong&gt;：不會讀到撕裂的半個整數。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;單一變數的修改順序（Modification Order）一致&lt;/strong&gt;：對於同一個變數 &lt;code&gt;X&lt;/code&gt;，所有執行緒看到的修改順序是一致的（不可能看到 &lt;code&gt;X&lt;/code&gt; 先變成 10 又無緣無故變回 0）。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;但是，&lt;strong&gt;&lt;code&gt;Relaxed&lt;/code&gt; 完全不提供跨變數之間的順序保證，也不建立跨執行緒的同步關係。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;當 Thread B 讀取到 &lt;code&gt;Y == 20&lt;/code&gt; 時，這僅僅是一次孤立的 &lt;code&gt;reads-from&lt;/code&gt;，並沒有 &lt;code&gt;synchronizes-with&lt;/code&gt; 伴隨產生。因此，Thread A 對 &lt;code&gt;X&lt;/code&gt; 的寫入與 Thread B 對 &lt;code&gt;X&lt;/code&gt; 的讀取之間&lt;strong&gt;不存在 happens-before 關係&lt;/strong&gt;。Thread B 讀到 0 是完全合法的。&lt;/p&gt;
+&lt;p&gt;如果你在常見的 x86-64 桌上型電腦上重複執行這段程式一百萬次，可能永遠都不會看到 &lt;code&gt;(0, 20)&lt;/code&gt; 出現。這是因為 x86-64 硬體架構具備極強的記憶體順序保證（TSO，Total Store Order），硬體本身不允許 store-store 或 load-load 亂序。但在 ARM64（AArch64，如 Apple Silicon、多數智慧型手機與現代雲端伺服器）等弱記憶體架構上，或是在激進的最佳化編譯器面前，&lt;code&gt;(0, 20)&lt;/code&gt; 是隨時可能發生的真實情況。&lt;/p&gt;
+&lt;p&gt;在未定義同步保證的程式碼上測試一百萬次不報錯，絕不等於程式是正確的。&lt;/p&gt;
+&lt;h2 id=&#34;硬體真實樣貌編譯器store-buffer-與快取一致性&#34;&gt;硬體真實樣貌：編譯器、Store Buffer 與快取一致性&lt;/h2&gt;
+&lt;p&gt;語言層級的 Memory Model 定義了「什麼是合法的」，而編譯器與 CPU 硬體則負責「如何兌現（或打破）這些約定」。&lt;/p&gt;
+&lt;p&gt;了解底層硬體運作，能幫助我們建立直觀的物理心智模型：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    subgraph CPUCore0[&amp;#34;CPU 核心 0 (Writer)&amp;#34;]
+        ALU0[&amp;#34;執行管線 (ALU)&amp;#34;]
+        SB0[&amp;#34;Store Buffer (暫存未寫入快取之資料)&amp;#34;]
+        ALU0 -- &amp;#34;寫入&amp;#34; --&amp;gt; SB0
+    end
+
+    subgraph CPUCore1[&amp;#34;CPU 核心 1 (Reader)&amp;#34;]
+        ALU1[&amp;#34;執行管線 (ALU)&amp;#34;]
+        LQ1[&amp;#34;Load Queue / Invalidate Queue&amp;#34;]
+        LQ1 -- &amp;#34;推測讀取&amp;#34; --&amp;gt; ALU1
+    end
+
+    subgraph MemorySubsystem[&amp;#34;快取子系統 (Cache Subsystem)&amp;#34;]
+        L1_0[&amp;#34;L1 / L2 快取 (Core 0)&amp;#34;]
+        L1_1[&amp;#34;L1 / L2 快取 (Core 1)&amp;#34;]
+        Interconnect[&amp;#34;快取一致性匯流排 (MESI/MOESI Protocol)&amp;#34;]
+        L1_0 &amp;lt;--&amp;gt; Interconnect
+        L1_1 &amp;lt;--&amp;gt; Interconnect
+    end
+
+    SB0 -- &amp;#34;非同步排空 (Drain)&amp;#34; --&amp;gt; L1_0
+    Interconnect -- &amp;#34;使無效 (Invalidate)&amp;#34; --&amp;gt; LQ1
+
+    classDef core fill:#1f2335,stroke:#414868,stroke-width:1px,color:#c0caf5;
+    classDef buffer fill:#24283b,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    classDef bus fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class ALU0,ALU1 core;
+    class SB0,LQ1 buffer;
+    class L1_0,L1_1,Interconnect bus;&lt;/div&gt;
+
+&lt;h3 id=&#34;store-buffer寫入緩衝區&#34;&gt;Store Buffer（寫入緩衝區）&lt;/h3&gt;
+&lt;p&gt;CPU 核心的時脈在數 GHz，而存取快取（Cache）需要數個週期，存取主記憶體（RAM）甚至需要上百個週期。如果 CPU 每做一次寫入都要等快取行（Cache Line）取得所有權並確認寫入完成，執行管線將頻繁停頓（Stall）。&lt;/p&gt;
+&lt;p&gt;因此，現代 CPU 核心在管線與快取之間加入了一個硬體佇列——&lt;strong&gt;Store Buffer&lt;/strong&gt;。
+當核心執行 store 指令時，它將位址與數值直接丟進 Store Buffer，隨即宣告指令完成，管線繼續執行下一條指令。Store Buffer 會在背景非同步地將資料排空（Drain）至 L1 快取。&lt;/p&gt;
+&lt;p&gt;這就產生了時間差：&lt;strong&gt;本核心已經在邏輯上完成了寫入，但該數值根本還沒進入快取系統，其他核心完全看不見。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;在前面的例子中（此場景特別容易發生在弱記憶體架構如 ARM64 上）：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;核心 0 執行 &lt;code&gt;X = 10&lt;/code&gt;，丟入 Store Buffer。&lt;/li&gt;
+&lt;li&gt;核心 0 接著執行 &lt;code&gt;Y = 20&lt;/code&gt;，也丟入 Store Buffer。&lt;/li&gt;
+&lt;li&gt;如果 &lt;code&gt;Y&lt;/code&gt; 所在的快取行原本就處於核心 0 的 Modified 狀態，而 &lt;code&gt;X&lt;/code&gt; 所在的快取行發生了快取未命中（Cache Miss），弱架構硬體可能優先將 &lt;code&gt;Y = 20&lt;/code&gt; 排入快取並廣播給其他核心，而 &lt;code&gt;X = 10&lt;/code&gt; 仍被滯留在 Store Buffer 裡！&lt;/li&gt;
+&lt;li&gt;結果核心 1 的快取先收到了 &lt;code&gt;Y = 20&lt;/code&gt;，卻在讀取 &lt;code&gt;X&lt;/code&gt; 時拿到舊值 0。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;快取一致性協定cache-coherence不能拯救跨變數順序&#34;&gt;快取一致性協定（Cache Coherence）不能拯救跨變數順序&lt;/h3&gt;
+&lt;p&gt;常有人誤以為：「我們有 MESI / MOESI 快取一致性協定，快取不是隨時保持一致嗎？為什麼還會亂序？」&lt;/p&gt;
+&lt;p&gt;這個理解偏差在於：&lt;strong&gt;快取一致性協定僅僅保證「單一記憶體位址（單一快取行）」在所有核心之間的狀態轉換是一致的。&lt;/strong&gt;
+它能保證對於同一個變數 &lt;code&gt;X&lt;/code&gt;，所有核心最終會看到相同的修改歷史（即 Modification Order），但它&lt;strong&gt;完全不負責協調多個不同記憶體位址（&lt;code&gt;X&lt;/code&gt; 與 &lt;code&gt;Y&lt;/code&gt;）之間的寫入先後順序！&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;跨變數的先後順序，必須依賴記憶體屏障（Memory Barrier）或專屬的原子指令來強制約束硬體管線與 Store Buffer。&lt;/p&gt;
+&lt;h3 id=&#34;強記憶體模型-vs-弱記憶體模型&#34;&gt;強記憶體模型 vs 弱記憶體模型&lt;/h3&gt;
+&lt;p&gt;硬體架構在記憶體順序的嚴格程度上分為兩大陣營：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;硬體架構&lt;/th&gt;
+					&lt;th&gt;記憶體模型類別&lt;/th&gt;
+					&lt;th&gt;硬體可能發生的重排&lt;/th&gt;
+					&lt;th&gt;特性與編譯產物&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;x86-64 / AMD64&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;強模型（TSO, Total Store Order）&lt;/td&gt;
+					&lt;td&gt;唯一允許的是 &lt;strong&gt;Store-Load 亂序&lt;/strong&gt;（本核心寫入尚未離開 Store Buffer，隨後的讀取先行完成）&lt;/td&gt;
+					&lt;td&gt;不會發生 Store-Store 或 Load-Load 亂序。普通的 Acquire Load 與 Release Store 編譯後都是一般 &lt;code&gt;MOV&lt;/code&gt; 指令，零額外硬體代價！&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;AArch64 (ARM64) / RISC-V&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;弱模型（Weakly-Ordered）&lt;/td&gt;
+					&lt;td&gt;&lt;strong&gt;所有組合皆可亂序&lt;/strong&gt;：Store-Store、Load-Load、Load-Store、Store-Load&lt;/td&gt;
+					&lt;td&gt;擁有極致的管線吞吐量。需要明確的指令如 &lt;code&gt;STLR&lt;/code&gt;（Store-Release）、&lt;code&gt;LDAR&lt;/code&gt;（Load-Acquire）或 &lt;code&gt;DMB&lt;/code&gt;（Data Memory Barrier）來確保順序。&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h4 id=&#34;組合語言對照release-store-與-acquire-load&#34;&gt;組合語言對照：Release Store 與 Acquire Load&lt;/h4&gt;
+&lt;p&gt;看編譯器產生的真實組合語言能讓我們對代價一目了然：&lt;/p&gt;
+&lt;h5 id=&#34;x86-64-組合語言&#34;&gt;x86-64 組合語言&lt;/h5&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code class=&#34;language-assembly&#34; data-lang=&#34;assembly&#34;&gt;# std::memory_order_release / Ordering::Release
+mov DWORD PTR [rdi], 20       # 普通的 MOV 就天生具備 Release 效果（硬體禁止 Store-Store 重排）
+
+# std::memory_order_acquire / Ordering::Acquire
+mov eax, DWORD PTR [rsi]       # 普通的 MOV 就天生具備 Acquire 效果（硬體禁止 Load-Load 重排）
+
+# std::memory_order_seq_cst (Store)
+# 方式 1 (GCC / Clang 常見)：xchg 存取記憶體時硬體自帶隱含 LOCK 前綴，具全域屏障效果
+xchg DWORD PTR [rdi], eax
+
+# 方式 2 (MSVC 常見)：一般 mov 寫入，隨後接 mfence 強迫清空 Store Buffer
+mov DWORD PTR [rdi], eax
+mfence                        # 或使用 lock or DWORD PTR [rsp], 0 作為屏障&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h5 id=&#34;aarch64-arm64-組合語言&#34;&gt;AArch64 (ARM64) 組合語言&lt;/h5&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code class=&#34;language-assembly&#34; data-lang=&#34;assembly&#34;&gt;# std::memory_order_release / Ordering::Release
+stlr w0, [x1]                 # STLR (Store-Release Register)：排空 Store Buffer 中先前的寫入
+
+# std::memory_order_acquire / Ordering::Acquire
+ldar w0, [x1]                 # LDAR (Load-Acquire Register)：阻止後續讀取被推測執行重排到此指令前&lt;/code&gt;&lt;/pre&gt;
+
+&lt;div class=&#34;markdown-alert markdown-alert-note&#34;&gt;
+  &lt;div class=&#34;markdown-alert-title&#34;&gt;&lt;i class=&#34;fa fa-info-circle&#34;&gt;&lt;/i&gt;&lt;span&gt;&amp;nbsp;Note&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class=&#34;markdown-alert-content&#34;&gt;&lt;p&gt;&lt;strong&gt;為什麼 &lt;code&gt;xchg&lt;/code&gt; 沒有顯式寫出 &lt;code&gt;lock&lt;/code&gt; 前綴？&lt;/strong&gt;&lt;br&gt;
+依據 Intel x86-64 架構規範（Intel SDM），當 &lt;code&gt;XCHG&lt;/code&gt; 指令的運算元涉及記憶體時，CPU 硬體會自動視為自帶隱含的 &lt;code&gt;LOCK&lt;/code&gt; 前綴（Implicit LOCK），因此組譯時不需寫出 &lt;code&gt;lock xchg&lt;/code&gt;。它具有全屏障（Full Barrier）效果，會強迫清空本核心的 Store Buffer，防止 x86 唯一允許發生的硬體重排（Store-Load 亂序），達成全域順序一致（SeqCst）的保證。&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;&lt;p&gt;重要觀念：&lt;strong&gt;Release 不是把快取直接寫回主記憶體（RAM），Acquire 也不是清空快取再去讀 RAM！&lt;/strong&gt;
+所有的讀寫依然發生在高速快取階層中。Release/Acquire 指令的作用是約束核心內部&lt;strong&gt;編譯器重排、Store Buffer 排空時程與推測讀取管線&lt;/strong&gt;，確保各核心快取在交換 MESI 訊息時能夠維持因果先後。&lt;/p&gt;
+&lt;h2 id=&#34;acquire-與-release訊息傳遞與-safe-publication&#34;&gt;Acquire 與 Release：訊息傳遞與 Safe Publication&lt;/h2&gt;
+&lt;p&gt;既然 &lt;code&gt;Relaxed&lt;/code&gt; 無法傳遞順序保證，那麼正確的跨執行緒資料發布方式是什麼？&lt;/p&gt;
+&lt;p&gt;這就是並行程式設計中最核心、最經典的模式：&lt;strong&gt;Acquire-Release 同步（Safe Publication）&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;語意規範&#34;&gt;語意規範&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Release Store（發布寫入）&lt;/strong&gt;：
+在當前執行緒中，&lt;strong&gt;所有排在該 Release Store 之前的記憶體存取（不論是一般變數還是原子變數），都絕對不能被編譯器或 CPU 重排到該 Release Store 之後。&lt;/strong&gt;
+這就像在寫入點築起一道向下的單向屏障，確保「所有先前的資料準備工作，在旗標發布的那一刻都已就緒」。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Acquire Load（獲取讀取）&lt;/strong&gt;：
+在當前執行緒中，&lt;strong&gt;所有排在該 Acquire Load 之後的記憶體存取，都絕對不能被編譯器或 CPU 重排到該 Acquire Load 之前。&lt;/strong&gt;
+這是一道向上的單向屏障，確保「在成功看到發布旗標之前，絕不提前讀取後續依賴的資料內容」。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;建立同步橋樑&#34;&gt;建立同步橋樑&lt;/h3&gt;
+&lt;p&gt;當執行緒 B 的 Acquire Load 成功讀取到執行緒 A 的 Release Store 所寫入的值時（&lt;code&gt;reads-from&lt;/code&gt;），兩者之間就正式建立了 &lt;strong&gt;&lt;code&gt;synchronizes-with&lt;/code&gt;&lt;/strong&gt; 關係！&lt;/p&gt;
+&lt;p&gt;透過因果鏈條的串聯：
+&lt;/p&gt;
+$$\text{A 的資料準備} \xrightarrow{\text{sequenced-before}} \text{A 的 Release Store} \xrightarrow{\text{synchronizes-with}} \text{B 的 Acquire Load} \xrightarrow{\text{sequenced-before}} \text{B 讀取資料}$$&lt;p&gt;&lt;strong&gt;&lt;code&gt;happens-before&lt;/code&gt; 關係正式成立！&lt;/strong&gt; B 保證能讀到 A 在 Release Store 之前所做的所有修改。&lt;/p&gt;
+&lt;h3 id=&#34;雙語言實作安全發布指標safe-publication&#34;&gt;雙語言實作：安全發布指標（Safe Publication）&lt;/h3&gt;
+&lt;p&gt;在實務上，我們經常需要初始化一個龐大的結構，然後將指標發布給多個工作執行緒。如果沒有正確的 memory ordering，其他執行緒可能會讀到尚未初始化完成的垃圾資料。&lt;/p&gt;
+&lt;h4 id=&#34;c20-實作-1&#34;&gt;C++20 實作&lt;/h4&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;atomic&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;cassert&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;iostream&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;thread&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Payload&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; id;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; data[&lt;span style=&#34;color:#ae81ff&#34;&gt;1024&lt;/span&gt;];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;atomic&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Payload&lt;span style=&#34;color:#f92672&#34;&gt;*&amp;gt;&lt;/span&gt; g_payload{&lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;producer&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; p &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;new&lt;/span&gt; Payload();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    p&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;id &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;42&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; (&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; i &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;; i &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1024&lt;/span&gt;; &lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;i) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        p&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;data[i] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; i &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Release store: 確保 payload 內容初始化完成後，指標才對外可見
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_payload.store(p, std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_release);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;consumer&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Payload&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; p &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 輪詢等待指標發布
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; ((p &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; g_payload.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_acquire)) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nullptr&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;this_thread&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;yield();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// Acquire load 成功與 producer 的 release store 同步
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 此處保證讀到的 payload 欄位絕對是初始化後的值！
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(p&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;id &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;42&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    assert(p&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;data[&lt;span style=&#34;color:#ae81ff&#34;&gt;100&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;200&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Consumer successfully read payload: id = &amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; p&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;id &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;\n&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t2(consumer);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;thread&lt;/span&gt; t1(producer);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t2.join();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;delete&lt;/span&gt; g_payload.load(std&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;memory_order_relaxed);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;rust-實作-1&#34;&gt;Rust 實作&lt;/h4&gt;
+&lt;p&gt;在 Rust 中，我們可以使用標準庫的 &lt;code&gt;AtomicPtr&lt;/code&gt; 或高階封裝來表達相同的 Safe Publication 語意：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::atomic::{AtomicPtr, Ordering};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::Arc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::thread;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Payload&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    id: &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    data: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Channel&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ptr: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicPtr&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Payload&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; channel &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::new(Channel {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        ptr: &lt;span style=&#34;color:#a6e22e&#34;&gt;AtomicPtr&lt;/span&gt;::new(std::ptr::null_mut()),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; producer_ch &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;channel);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t1 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; payload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Box::new(Payload {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            id: &lt;span style=&#34;color:#ae81ff&#34;&gt;42&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            data: (&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;1024&lt;/span&gt;).map(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;i&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; i &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;).collect(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 將 Box 轉換為裸指標，放棄自動釋放所有權
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; raw &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Box::into_raw(payload);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// Ordering::Release: 確保前面的欄位寫入全部就緒，才發布指標
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        producer_ch.ptr.store(raw, Ordering::Release);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; consumer_ch &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Arc::clone(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;channel);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; t2 &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; thread::spawn(&lt;span style=&#34;color:#66d9ef&#34;&gt;move&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; raw;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 輪詢等待發布
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;loop&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// Ordering::Acquire: 與 Release store 建立同步
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            raw &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; consumer_ch.ptr.load(Ordering::Acquire);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;raw.is_null() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            thread::yield_now();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 安全解引用：Acquire 保證 payload 記憶體內容完整可見
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; payload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;*&lt;/span&gt;raw;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#a6e22e&#34;&gt;assert_eq!&lt;/span&gt;(payload.id, &lt;span style=&#34;color:#ae81ff&#34;&gt;42&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#a6e22e&#34;&gt;assert_eq!&lt;/span&gt;(payload.data[&lt;span style=&#34;color:#ae81ff&#34;&gt;100&lt;/span&gt;], &lt;span style=&#34;color:#ae81ff&#34;&gt;200&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Consumer successfully read payload: id = &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, payload.id);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 回收記憶體，轉回 Box 自動 drop
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; _ &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Box::from_raw(raw);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    });
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t1.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t2.join().unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;注意這個重要細節：&lt;code&gt;Payload&lt;/code&gt; 的內部欄位完全不需要是原子型別！
+一般變數的寫入之所以能在沒有 data race 的情況下被安全讀取，正是因為 Release 與 Acquire 在兩端築起了因果同步的堤防。&lt;/p&gt;
+&lt;h3 id=&#34;release-sequence發布序列&#34;&gt;Release Sequence（發布序列）&lt;/h3&gt;
+&lt;p&gt;C++ 與 Rust 規格中還有一個極具威力的規則：&lt;strong&gt;Release Sequence&lt;/strong&gt;。
+如果執行緒 A 執行了一個 Release Store，隨後其他執行緒對同一個原子變數執行了一連串的讀改寫操作（Read-Modify-Write, RMW，如 &lt;code&gt;fetch_add&lt;/code&gt; 或 CAS），即使這些中間的 RMW 操作使用的是 &lt;code&gt;relaxed&lt;/code&gt; 順序，只要最後某個執行緒 C 使用 Acquire Load 讀到了這個序列中的任何一個值，執行緒 C &lt;strong&gt;依然保證能與執行緒 A 的原始 Release Store 建立同步！&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;這項特性是後續構建無鎖佇列與無鎖堆疊（如 Treiber Stack）的重要基石。&lt;/p&gt;
+&lt;h2 id=&#34;acqrel-與-seqcst全域總序的代價與適用時機&#34;&gt;AcqRel 與 SeqCst：全域總序的代價與適用時機&lt;/h2&gt;
+&lt;p&gt;除了單向的 Acquire 與 Release，標準庫還提供了 &lt;code&gt;AcqRel&lt;/code&gt; 與最強大的 &lt;code&gt;SeqCst&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;acqrelacquire-release-組合語意&#34;&gt;AcqRel（Acquire-Release 組合語意）&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;std::memory_order_acq_rel&lt;/code&gt;（Rust 中為 &lt;code&gt;Ordering::AcqRel&lt;/code&gt;）專門用於 &lt;strong&gt;讀改寫操作（RMW）&lt;/strong&gt;，如 &lt;code&gt;fetch_add&lt;/code&gt;、&lt;code&gt;fetch_sub&lt;/code&gt; 或 &lt;code&gt;compare_exchange&lt;/code&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;讀取部分&lt;/strong&gt; 具備 Acquire 語意：接收先前其他執行緒發布的資料。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;寫入部分&lt;/strong&gt; 具備 Release 語意：將本次更新連同先前的資料變更發布給後續的執行緒。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;最典型的範例是&lt;strong&gt;參考計數（Reference Counting）&lt;/strong&gt;，例如 C++ 的 &lt;code&gt;std::shared_ptr&lt;/code&gt; 或 Rust 的 &lt;code&gt;Arc&lt;/code&gt;：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;計數增加（Clone / Retain）&lt;/strong&gt;：使用 &lt;code&gt;Relaxed&lt;/code&gt; 即可，因為增加引用只是為了防止物件被提前釋放，不需要同步資料。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;計數減少（Drop / Release）&lt;/strong&gt;：使用 &lt;code&gt;AcqRel&lt;/code&gt; 或 &lt;code&gt;Release&lt;/code&gt; 扣減。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;最後一個持有者析構（Free）&lt;/strong&gt;：在計數扣減至 0 時，必須執行一次 &lt;code&gt;Acquire&lt;/code&gt;（或在釋放路徑上設置 Acquire fence），以確保所有先前持有該物件的執行緒所做的寫入操作，在此刻的析構函式執行前都已完全同步可見！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;seqcst順序一致性sequentially-consistent&#34;&gt;SeqCst（順序一致性，Sequentially Consistent）&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;std::memory_order_seq_cst&lt;/code&gt;（Rust 中為 &lt;code&gt;Ordering::SeqCst&lt;/code&gt;）是兩大語言的&lt;strong&gt;預設原子順序&lt;/strong&gt;。如果你呼叫 &lt;code&gt;atomic.store(val)&lt;/code&gt; 或 &lt;code&gt;atomic.load()&lt;/code&gt; 而不傳入 ordering 參數，編譯器預設就會套用 &lt;code&gt;seq_cst&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;seqcst-提供了什麼保證&#34;&gt;SeqCst 提供了什麼保證？&lt;/h4&gt;
+&lt;p&gt;&lt;code&gt;SeqCst&lt;/code&gt; 除了包含 Acquire 與 Release 的全部單向屏障效果之外，還附加了一個最強硬的保證：
+&lt;strong&gt;系統中所有標記為 &lt;code&gt;SeqCst&lt;/code&gt; 的原子操作，都遵循一個單一的、全域一致的執行總序（Single Total Order）。所有核心看到的這一組操作順序是完全相同的！&lt;/strong&gt;&lt;/p&gt;
+&lt;h4 id=&#34;為什麼-acquire-release-不夠用經典的-dekker-演算法矛盾&#34;&gt;為什麼 Acquire-Release 不夠用？經典的 Dekker 演算法矛盾&lt;/h4&gt;
+&lt;p&gt;很多人會問：既然 Acquire 與 Release 已經能完成訊息傳遞，為什麼還需要 &lt;code&gt;SeqCst&lt;/code&gt;？&lt;/p&gt;
+&lt;p&gt;來看這個互斥鎖演算法的核心原型（Dekker&amp;rsquo;s Algorithm 的旗標判定）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;初始值：flag1 = false, flag2 = false
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Thread 1                  Thread 2
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;flag1.store(true, rel);   flag2.store(true, rel);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;if (!flag2.load(acq)) {   if (!flag1.load(acq)) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    // 進入臨界區             // 進入臨界區
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}                         }&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;如果兩個執行緒全部使用 Acquire / Release：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Thread 1 的 Release 阻止前面的存取往下移，Acquire 阻止後面的存取往上移。&lt;/li&gt;
+&lt;li&gt;但 Release 與 Acquire &lt;strong&gt;並不阻止這兩行程式碼彼此交錯！&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;在底層硬體上，Thread 1 的 &lt;code&gt;store&lt;/code&gt; 還滯留在 Store Buffer 裡時，隨後的 &lt;code&gt;load&lt;/code&gt; 已經先去讀取 &lt;code&gt;flag2&lt;/code&gt;（此時仍為 &lt;code&gt;false&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;同一時間，Thread 2 也在 Store Buffer 滯留 &lt;code&gt;flag2&lt;/code&gt;，並讀取到 &lt;code&gt;flag1 == false&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;結果：Thread 1 與 Thread 2 同時認為對方尚未請求進入臨界區，雙雙進入臨界區，互斥鎖徹底崩潰！&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這就是 Store-Load 亂序。要解決這個問題，必須要求兩個執行緒對「寫入自己的旗標」與「讀取對方的旗標」建立一個&lt;strong&gt;所有人公認的全域先後順序&lt;/strong&gt;。只有 &lt;code&gt;SeqCst&lt;/code&gt; 能強制發出全域記憶體屏障（x86 的 &lt;code&gt;MFENCE&lt;/code&gt; 或 &lt;code&gt;XCHG&lt;/code&gt;，ARM 的重型記憶體屏障），確保 Store Buffer 立即排空，保證絕不可能兩邊同時讀到對方的初始值。&lt;/p&gt;
+&lt;h4 id=&#34;seqcst-的代價與迷思&#34;&gt;SeqCst 的代價與迷思&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;效能代價高昂&lt;/strong&gt;：在 x86-64 上，普通 Acquire/Release 是零額外成本的 &lt;code&gt;MOV&lt;/code&gt;，而 &lt;code&gt;SeqCst&lt;/code&gt; 寫入必須加上帶有匯流排鎖定鎖延遲的指令；在 ARM64 上，&lt;code&gt;SeqCst&lt;/code&gt; 需要更嚴苛的管線排空。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;SeqCst 不能合成複合交易&lt;/strong&gt;：&lt;code&gt;SeqCst&lt;/code&gt; 只能保證原子變數本身的操作順序，&lt;strong&gt;絕對不會把兩行獨立的原子操作自動打包成一個不可分割的交易（Transaction）&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;SeqCst 救不了記憶體生命週期&lt;/strong&gt;：即使你把所有指標讀取與 CAS 全部改成 &lt;code&gt;SeqCst&lt;/code&gt;，如果另一個執行緒在你讀出指標與解引用（Dereference）的短暫空隙中把該記憶體 &lt;code&gt;free&lt;/code&gt; 掉了，依然會引發嚴重的 Use-After-Free 記憶體損毀。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;rust-型別系統與-memory-model-的深度融合&#34;&gt;Rust 型別系統與 Memory Model 的深度融合&lt;/h2&gt;
+&lt;p&gt;Rust 在語言層級上實踐記憶體模型時，最令人驚豔的特點在於其&lt;strong&gt;所有權（Ownership）與型別系統如何與記憶體模型渾然天成地結合&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;send-與-sync-的編譯期防線&#34;&gt;&lt;code&gt;Send&lt;/code&gt; 與 &lt;code&gt;Sync&lt;/code&gt; 的編譯期防線&lt;/h3&gt;
+&lt;p&gt;在 C++ 中，如果你不小心把一個普通的 &lt;code&gt;int&lt;/code&gt; 跨執行緒讀寫，編譯器不會給予任何警告，程式直接陷入未定義行為（Undefined Behavior, UB）的大坑。&lt;/p&gt;
+&lt;p&gt;而在 Rust 中：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;T: Send&lt;/code&gt; 代表型別 &lt;code&gt;T&lt;/code&gt; 的所有權可以安全轉移到另一個執行緒。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;T: Sync&lt;/code&gt; 代表型別 &lt;code&gt;T&lt;/code&gt; 的不可變引用 &lt;code&gt;&amp;amp;T&lt;/code&gt; 可以安全地被多個執行緒同時存取。&lt;/li&gt;
+&lt;li&gt;標準庫規定：&lt;strong&gt;當且僅當 &lt;code&gt;T: Sync&lt;/code&gt; 時，&lt;code&gt;&amp;amp;T&lt;/code&gt; 才是 &lt;code&gt;Send&lt;/code&gt;。&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;普通的純量型別（如 &lt;code&gt;i32&lt;/code&gt;）雖然也是 &lt;code&gt;Sync&lt;/code&gt;（不可變引用 &lt;code&gt;&amp;amp;i32&lt;/code&gt; 可在多執行緒間安全共享讀取），但它無法在共享引用的情況下直接修改內容（Rust 禁止透過 &lt;code&gt;&amp;amp;i32&lt;/code&gt; 進行 Shared Mutation）。&lt;/p&gt;
+&lt;p&gt;原子型別（如 &lt;code&gt;AtomicBool&lt;/code&gt;、&lt;code&gt;AtomicPtr&amp;lt;T&amp;gt;&lt;/code&gt;）則透過內部可變性（Interior Mutability，底層奠基於 &lt;code&gt;UnsafeCell&amp;lt;T&amp;gt;&lt;/code&gt;），對編譯器做出執行緒安全保證，因此它們被標準庫實作了 &lt;code&gt;Sync&lt;/code&gt;。這意味著：
+&lt;strong&gt;你可以在多個執行緒同時持有 &lt;code&gt;&amp;amp;AtomicT&lt;/code&gt; 的情況下並行修改它，而 Rust 在編譯期就從型別層面全面杜絕了非原子變數引發的普通 Data Race！&lt;/strong&gt;&lt;/p&gt;
+&lt;h3 id=&#34;獨立記憶體屏障fence-與-compiler_fence&#34;&gt;獨立記憶體屏障：&lt;code&gt;fence&lt;/code&gt; 與 &lt;code&gt;compiler_fence&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;除了將 ordering 附加在各個原子存取操作上，Rust 與 C++ 都支援獨立的記憶體屏障函式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;use&lt;/span&gt; std::sync::atomic::{fence, compiler_fence, Ordering};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 硬體級別的記憶體屏障：約束編譯器與 CPU 管線
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;fence(Ordering::Release);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;fence(Ordering::Acquire);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 純編譯器級別的屏障：阻止編譯器指令重排，不產生任何硬體 CPU 屏障指令
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;compiler_fence(Ordering::Release);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;何時該用-fence&#34;&gt;何時該用 &lt;code&gt;fence&lt;/code&gt;？&lt;/h4&gt;
+&lt;p&gt;當一個執行緒需要大量寫入普通資料，但只有在特定條件下才需要與其他執行緒同步時，使用單一的 &lt;code&gt;fence(Ordering::Release)&lt;/code&gt; 往往比對每一個元素都做原子操作更加高效。例如環形緩衝區（Ring Buffer）在批次寫入多筆資料後，僅在結尾發出一道 Release fence，隨後更新游標。&lt;/p&gt;
+&lt;h3 id=&#34;c-與-rust-memory-ordering-語義對照&#34;&gt;C++ 與 Rust Memory Ordering 語義對照&lt;/h3&gt;
+&lt;p&gt;兩大系統級語言在記憶體模型的命名與語意上完全對齊：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;C++20 (&lt;code&gt;std::memory_order_*&lt;/code&gt;)&lt;/th&gt;
+					&lt;th&gt;Rust (&lt;code&gt;std::sync::atomic::Ordering&lt;/code&gt;)&lt;/th&gt;
+					&lt;th&gt;適用操作類別&lt;/th&gt;
+					&lt;th&gt;核心保證與約束&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_relaxed&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;Ordering::Relaxed&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;Load, Store, RMW&lt;/td&gt;
+					&lt;td&gt;僅保證原子性與單一變數 Modification Order；無跨執行緒同步&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_consume&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;em&gt;(Rust 未提供)&lt;/em&gt;&lt;/td&gt;
+					&lt;td&gt;Load&lt;/td&gt;
+					&lt;td&gt;相依性順序（Data dependency）；C++ 規格目前暫停建議使用，多被編譯器視為 Acquire&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_acquire&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;Ordering::Acquire&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;Load, RMW&lt;/td&gt;
+					&lt;td&gt;單向屏障：後續存取不能重排至此操作前；配對 Release 建立同步&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_release&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;Ordering::Release&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;Store, RMW&lt;/td&gt;
+					&lt;td&gt;單向屏障：先前存取不能重排至此操作後；配對 Acquire 建立同步&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_acq_rel&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;Ordering::AcqRel&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;RMW&lt;/td&gt;
+					&lt;td&gt;雙向屏障：兼具 Acquire 讀取與 Release 寫入語義&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;code&gt;memory_order_seq_cst&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;&lt;code&gt;Ordering::SeqCst&lt;/code&gt;&lt;/td&gt;
+					&lt;td&gt;Load, Store, RMW&lt;/td&gt;
+					&lt;td&gt;在 AcqRel 基礎上建立全域單一操作總序；代價最高&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;實戰決策樹如何挑選最適當的-ordering&#34;&gt;實戰決策樹：如何挑選最適當的 Ordering？&lt;/h2&gt;
+&lt;p&gt;面對五花八門的 ordering，開發者常常陷入兩難：全用 &lt;code&gt;SeqCst&lt;/code&gt; 怕效能低下，全用 &lt;code&gt;Relaxed&lt;/code&gt; 又怕程式崩潰。&lt;/p&gt;
+&lt;p&gt;以下梳理出並行程式設計中最實用的決策心智模型：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    Start[&amp;#34;需要對共享變數進行原子操作&amp;#34;] --&amp;gt; Q1{&amp;#34;這項操作是否需要傳遞&amp;lt;br/&amp;gt;其他周邊資料的有效性？&amp;#34;}
+
+    Q1 -- &amp;#34;否 (純獨立狀態或統計)&amp;#34; --&amp;gt; S_Relaxed[&amp;#34;使用 Relaxed&amp;lt;br/&amp;gt;(例如：全域計數器、Metrics 採樣、終止旗標宣告)&amp;#34;]
+
+    Q1 -- &amp;#34;是 (需要訊息傳遞 / Safe Publication)&amp;#34; --&amp;gt; Q2{&amp;#34;操作的性質是什麼？&amp;#34;}
+
+    Q2 -- &amp;#34;單純讀取 (Load)&amp;#34; --&amp;gt; S_Acquire[&amp;#34;使用 Acquire&amp;lt;br/&amp;gt;(接收發布者準備好的資料)&amp;#34;]
+    Q2 -- &amp;#34;單純寫入 (Store)&amp;#34; --&amp;gt; S_Release[&amp;#34;使用 Release&amp;lt;br/&amp;gt;(確保資料已寫入完成才發布旗標/指標)&amp;#34;]
+    Q2 -- &amp;#34;讀改寫複合操作 (RMW / CAS)&amp;#34; --&amp;gt; Q3{&amp;#34;該操作需要單向發布、&amp;lt;br/&amp;gt;接收還是雙向同步？&amp;#34;}
+
+    Q3 -- &amp;#34;只接收&amp;#34; --&amp;gt; S_RMW_Acq[&amp;#34;使用 Acquire (如 CAS 失敗重試分支)&amp;#34;]
+    Q3 -- &amp;#34;只發布&amp;#34; --&amp;gt; S_RMW_Rel[&amp;#34;使用 Release (如 CAS 成功發布新頂端)&amp;#34;]
+    Q3 -- &amp;#34;同時接收與發布&amp;#34; --&amp;gt; S_AcqRel[&amp;#34;使用 AcqRel (如引用計數扣減、雙向狀態機移轉)&amp;#34;]
+
+    Q1 -- &amp;#34;需要排除 Store-Load 盲區&amp;lt;br/&amp;gt;(如 Dekker 雙向旗標判定)&amp;#34; --&amp;gt; S_SeqCst[&amp;#34;使用 SeqCst&amp;lt;br/&amp;gt;(強制全域單一操作總序)&amp;#34;]
+
+    classDef dec fill:#24283b,stroke:#bb9af7,stroke-width:2px,color:#c0caf5;
+    classDef opt fill:#1f2335,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    classDef strong fill:#2a1e2d,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class Q1,Q2,Q3 dec;
+    class S_Relaxed,S_Acquire,S_Release,S_RMW_Acq,S_RMW_Rel,S_AcqRel opt;
+    class S_SeqCst strong;&lt;/div&gt;
+
+&lt;h3 id=&#34;總結與下一步通往-lock-free-的必經之路&#34;&gt;總結與下一步：通往 Lock-free 的必經之路&lt;/h3&gt;
+&lt;p&gt;理解 Memory Ordering，是現代系統級工程師從「只會加鎖保護」邁向「高效能並行架構」的最關鍵轉折點：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;不要仰賴直覺推理時間線&lt;/strong&gt;：在弱記憶體模型與現代編譯器面前，牆上時鐘的先後不代表因果先後，唯有數學上的 &lt;code&gt;happens-before&lt;/code&gt; 鏈條才能給予可信保證。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;區分狀態更新與資料發布&lt;/strong&gt;：單次 atomic 的成功換值只代表該數值本身不撕裂，要讓讀者安全看見其關聯資料，必須藉由 Release-Acquire 配對建立 &lt;code&gt;synchronizes-with&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;理解硬體代價&lt;/strong&gt;：在 x86 上 Acquire/Release 幾乎免費，但在 ARM64 等平台上每一次強硬的順序約束都對應著實體硬體屏障指令。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;然而，當我們真正邁向 &lt;strong&gt;無鎖資料結構（Lock-free Data Structures）&lt;/strong&gt; 時，單靠 Memory Ordering 還遠遠不夠。
+當我們拿掉 Mutex，利用 CAS（Compare-And-Swap）進行高並發鏈結串列或堆疊的操作時，立刻就會遭遇並行領域的經典噩夢——&lt;strong&gt;ABA 問題&lt;/strong&gt;；而當多個執行緒同時彈出節點時，我們更會面臨「這個節點到底何時才能被安全 &lt;code&gt;delete&lt;/code&gt; 或釋放？」的巨大挑戰。&lt;/p&gt;
+&lt;p&gt;在下一篇文章中，我們將以經典的 &lt;strong&gt;Treiber Stack&lt;/strong&gt; 為切入點，深入探討 CAS 的狀態轉移機制，並全方位剖析 &lt;strong&gt;Tagged Pointer、Hazard Pointer、Epoch-Based Reclamation (EBR) 與 RCU&lt;/strong&gt; 四大安全記憶體回收機制的架構權衡與實作細節。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

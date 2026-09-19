@@ -1,0 +1,1305 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Lock-free 資料結構實戰：從 Treiber Stack、ABA 問題到安全記憶體回收 - 深入解構 CAS 狀態轉移、Tagged Pointer、Hazard Pointer、EBR 與 RCU 的架構權衡與實作細節</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-08-lock-free-data-structures/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-08-lock-free-data-structures/"/>
+  <meta property="og:title" content="Lock-free 資料結構實戰：從 Treiber Stack、ABA 問題到安全記憶體回收 - 深入解構 CAS 狀態轉移、Tagged Pointer、Hazard Pointer、EBR 與 RCU 的架構權衡與實作細節"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-09-08 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="c&#43;&#43;"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="concurrency"/>
+  
+  <meta property="og:article:tag" content="performance"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">250</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">59</span></a></li>
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">112</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">25</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/09-07-memory-ordering/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            C&#43;&#43; 與 Rust 記憶體模型：從 Memory Ordering、硬體快取到 Safe Publication
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">Lock-free 資料結構實戰：從 Treiber Stack、ABA 問題到安全記憶體回收</h1>
+      
+      <div class="post-subtitle">深入解構 CAS 狀態轉移、Tagged Pointer、Hazard Pointer、EBR 與 RCU 的架構權衡與實作細節</div>
+      
+      <div class="post-meta">
+        <span class="post-date">September 8, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/c&#43;&#43;"><span class="label label-primary">c&#43;&#43;</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/concurrency"><span class="label label-primary">concurrency</span></a>
+        
+        <a href="/tags/performance"><span class="label label-primary">performance</span></a>
+        
+        
+<div>
+  
+  <hr/>
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>Modern Concurrency</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/09-08-lock-free-data-structures/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在上一篇 <a href="/posts/2026/09-07-memory-ordering/">《C++ 與 Rust 記憶體模型：從 Memory Ordering、硬體快取到 Safe Publication》</a> 中，我們建立了對記憶體順序、編譯器重排、Store Buffer 與快取一致性的完整認知。我們明白了單一原子操作的成功，並不自動等同於周邊資料已經同步可見；唯有透過 Acquire-Release 配對，才能在多核心之間拉起堅固的因果同步橋樑。</p>
+<p>掌握了記憶體模型這張入場券後，我們終於可以直面高效能並行程式設計的聖杯——<strong>無鎖資料結構（Lock-free Data Structures）</strong>。</p>
+<p>許多人剛接觸無鎖程式設計時，常有一種美麗的幻想：「只要把所有 <code>std::mutex</code> 拿掉，改用 CAS（Compare-And-Swap）迴圈，程式碼就會奇蹟般地變快且沒有鎖衝突。」</p>
+<p>然而，現實往往十分殘酷。當你拿掉互斥鎖的保護後，除了必須自行處理狀態移轉與記憶體順序外，還會立刻遭遇並行運算領域的兩大深水區：</p>
+<ol>
+<li><strong>拓撲移轉的幽靈——ABA 問題</strong>：指標位址相同，真的代表鏈結結構沒有改變過嗎？</li>
+<li><strong>記憶體生命週期的深淵——安全記憶體回收（Safe Memory Reclamation, SMR）</strong>：當一個節點被某個執行緒從資料結構中拔除時，其他並行的讀者執行緒可能正剛讀出指標準備解引用（dereference）。如果此時直接 <code>delete</code> 或釋放記憶體，就會引發致命的 Use-After-Free 記憶體損毀。</li>
+</ol>
+<p>本文將以經典的 <strong>Treiber Stack</strong> 為基準，透過現代 C++20 與 Rust 的雙語言實作，深入解構 CAS 原語、狀態重試機制，並全面剖析 <strong>Tagged Pointer、Hazard Pointer、Epoch-Based Reclamation (EBR) 與 RCU</strong> 四大安全記憶體回收架構的設計權衡。</p>
+<h2 id="從-memory-ordering-到-lock-free思維範式轉移">從 Memory Ordering 到 Lock-Free：思維範式轉移</h2>
+<p>在傳統的並行架構中，互斥鎖（Mutex）扮演著全能守護者的角色。當一個執行緒進入 <code>mutex.lock()</code> 與 <code>mutex.unlock()</code> 包夾的臨界區（Critical Section）時，Mutex 同時為我們解決了三件事：</p>
+
+  <div class="mermaid">flowchart TD
+    subgraph MutexRole[&#34;Mutex 提供的三重保護&#34;]
+        M1[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;1. 互斥性 (Mutual Exclusion)&lt;/b&gt;&lt;br/&gt;• 同一時間僅允許單一執行緒進入臨界區&lt;/div&gt;&#34;]
+        M2[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;2. 記憶體同步 (Memory Ordering)&lt;/b&gt;&lt;br/&gt;• unlock Release &#43; lock Acquire 自動建立同步&lt;/div&gt;&#34;]
+        M3[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;3. 生命週期安全 (Lifetime Safety)&lt;/b&gt;&lt;br/&gt;• 臨界區內刪除節點，絕無其他執行緒能同時讀取&lt;/div&gt;&#34;]
+        M1 --&gt; M2 --&gt; M3
+    end
+
+    subgraph LockFreeRole[&#34;Lock-Free 必須獨立解決的三大課題&#34;]
+        L1[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;1. 狀態移轉 (State Transition)&lt;/b&gt;&lt;br/&gt;• 改由硬體原子 CAS 原語樂觀競爭處理&lt;/div&gt;&#34;]
+        L2[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;2. 記憶體順序 (Memory Ordering)&lt;/b&gt;&lt;br/&gt;• 自行精確配置 Acquire / Release 語意&lt;/div&gt;&#34;]
+        L3[&#34;&lt;div style=&#39;width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;3. 生命週期安全 (Lifetime Safety)&lt;/b&gt;&lt;br/&gt;• 必須引進專門的 SMR 回收協定保護節點&lt;/div&gt;&#34;]
+        L1 --&gt; L2 --&gt; L3
+    end
+
+    MutexRole --&gt;|&#34;思維範式轉移&#34;| LockFreeRole
+
+    style MutexRole fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    style LockFreeRole fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    classDef mBox fill:#24283b,stroke:#414868,stroke-width:1.5px,color:#c0caf5;
+    classDef lBox fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class M1,M2,M3 mBox;
+    class L1,L2,L3 lBox;</div>
+
+<p>當我們決定移除 Mutex 時，上述三項保護全部煙消雲散。我們必須：</p>
+<ol>
+<li>用 <strong>CAS（Compare-And-Swap）</strong> 取代臨界區互斥，讓多個執行緒樂觀競爭狀態轉移。</li>
+<li>用 <strong>Acquire / Release / Relaxed</strong> 精確標註每次原子讀寫，確保資料初始化與發布具備因果先後。</li>
+<li>引進 <strong>安全記憶體回收（SMR）</strong> 機制，接手原先由鎖保護的物件生命週期。</li>
+</ol>
+<p>既然 Mutex 能如此滴水不漏地提供三重防護，為什麼並行系統工程師依然對「擺脫互斥鎖」如此執著？這就必須從 Mutex 在微觀硬體與宏觀作業系統排程中所背負的隱形成本談起。</p>
+<h3 id="互斥鎖的真實代價從輕量原子到核心態深淵">互斥鎖的真實代價：從輕量原子到核心態深淵</h3>
+<p>許多人直覺認為「鎖就只是一道門，排隊通過即可」。但在現代多核心架構與搶佔式作業系統下，Mutex 的運作遠比想像中複雜。現代主流作業系統的 Mutex（如 Linux 的 Futex 或 Windows 的 SRWLock）均採用「快慢雙路徑」設計：</p>
+
+  <div class="mermaid">flowchart TD
+    Req[&#34;&lt;div style=&#39;width:260px; padding:4px 8px; text-align:center;&#39;&gt;&lt;b&gt;執行緒請求加鎖&lt;/b&gt;&lt;br/&gt;&lt;code&gt;mutex.lock()&lt;/code&gt;&lt;/div&gt;&#34;]
+    FastCheck{&#34;Fast-path 比對&lt;br/&gt;使用者態原子 CAS&#34;}
+    InCS[&#34;&lt;div style=&#39;width:260px; padding:4px 8px; text-align:left;&#39;&gt;&lt;b&gt;進入臨界區 (Critical Section)&lt;/b&gt;&lt;br/&gt;• ⚡ 耗時約 10–25 ns&lt;br/&gt;• 無核心介入、無切換&lt;/div&gt;&#34;]
+    SpinCheck{&#34;自旋重試&lt;br/&gt;Spin-wait&#34;}
+    SlowCall[&#34;&lt;div style=&#39;width:260px; padding:4px 8px; text-align:left;&#39;&gt;&lt;b&gt;墜入 Slow-path 核心態&lt;/b&gt;&lt;br/&gt;• 呼叫系統呼叫 &lt;code&gt;sys_futex(WAIT)&lt;/code&gt;&lt;br/&gt;• 執行緒掛起並移入等待佇列&lt;/div&gt;&#34;]
+    CtxSwitch[&#34;&lt;div style=&#39;width:260px; padding:4px 8px; text-align:left;&#39;&gt;&lt;b&gt;上下文切換 (Context Switch)&lt;/b&gt;&lt;br/&gt;• 💥 耗時 1,000–5,000 ns&lt;br/&gt;• CPU 調度其他執行緒執行&lt;/div&gt;&#34;]
+    Wakeup[&#34;&lt;div style=&#39;width:260px; padding:4px 8px; text-align:left;&#39;&gt;&lt;b&gt;持有者釋放與喚醒&lt;/b&gt;&lt;br/&gt;• 呼叫 &lt;code&gt;sys_futex(WAKE)&lt;/code&gt;&lt;br/&gt;• ❄️ 冷快取、TLB Miss、快取行彈跳&lt;/div&gt;&#34;]
+
+    Req --&gt; FastCheck
+    FastCheck --&gt;|無競爭| InCS
+    FastCheck --&gt;|發生競爭| SpinCheck
+    SpinCheck --&gt;|自旋獲鎖成功| InCS
+    SpinCheck --&gt;|自旋超時失敗| SlowCall
+    SlowCall --&gt; CtxSwitch
+    CtxSwitch --&gt; Wakeup
+    Wakeup --&gt; InCS
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef warn fill:#24283b,stroke:#e0af68,stroke-width:1.5px,color:#e0af68;
+    classDef danger fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class Req proc;
+    class FastCheck,SpinCheck branch;
+    class InCS ok;
+    class SlowCall warn;
+    class CtxSwitch,Wakeup danger;</div>
+
+<p>這套混合架構雖然極大化了無競爭情境的效能，但只要並發度提高並引發持續競爭，Mutex 的連鎖代價便會逐一浮現：</p>
+<h4 id="上下文切換與核心態調度開銷">上下文切換與核心態調度開銷</h4>
+<p>在無競爭的快樂路徑（Happy Path）上，<code>mutex.lock()</code> 僅是一次純使用者態的原子操作，耗時通常在 10 到 25 奈秒之間。然而，一旦多個執行緒同時爭搶鎖，自旋未果的執行緒就必須發起系統呼叫（如 Linux 的 <code>SYS_futex</code>），將自己掛起並交出 CPU。</p>
+<p>一次完整的上下文切換（Context Switch）涉及暫存器狀態保存、進入核心態排程器佇列、切換虛擬記憶體頁表與上下文環境。這段延遲直接暴增至 <strong>1,000 到 5,000 奈秒</strong>（數量級約在 1 到 5 微秒，視架構與負載而定），比一次純記憶體操作慢了整整兩到三個數量級。</p>
+<h4 id="快取污染與快取行彈跳">快取污染與快取行彈跳</h4>
+<p>當一個被掛起的執行緒在數微秒後被排程器重新喚醒時，極有可能被分派到另一個閒置的 CPU 核心上執行。這會帶來嚴重的快取懲罰：</p>
+<ul>
+<li>該執行緒原本在 L1/L2 快取中快取的熱點資料早已失效（Cold Cache Misses），甚至需要重新走 TLB 查表。</li>
+<li>多個核心爭奪同一個 Mutex 內部狀態變數時，每次加鎖與解鎖的原子寫入都會觸發快取一致性協定（如 MESI/MOESI）在多核心互連架構上引發大量無效化訊息。這會造成嚴重的<strong>快取行彈跳</strong>（Cacheline Bouncing），使該快取行的互連流量飽和，甚至拖慢共享同一快取階層的其他無關工作。</li>
+</ul>
+<h4 id="護送效應與擴展性懸崖">護送效應與擴展性懸崖</h4>
+<p>當系統面臨高度並發時，鎖的等待佇列會形成惡性循環的「護送效應」（Convoy Effect）。由於每個執行緒被喚醒時都要承擔額外的核心調度延遲，即使臨界區內的運算只有短短 20 奈秒，整個系統的推進節奏也會被微秒級的喚醒排程完全綁架。</p>
+<p>此時系統不僅面臨阿姆達爾定律（Amdahl&rsquo;s Law）所定義的循序上限（臨界區限制了理論最大加速比），更會觸發嚴重的負向擴展（Negative Scaling）：增加更多的 CPU 核心非但無法提升吞吐量，反而因為更激烈的鎖競爭、快取行彈跳風暴與微秒級排程調度延遲放大，導致整體效能呈懸崖式暴跌。</p>
+<h4 id="優先權反轉">優先權反轉</h4>
+<p>在具備執行緒優先權的即時或多工作業系統中，Mutex 存在著名的結構性缺陷——<strong>優先權反轉</strong>（Priority Inversion）：</p>
+<ul>
+<li>低優先權執行緒獲取了鎖，進入臨界區。</li>
+<li>隨後，中優先權執行緒搶佔了 CPU（中優先權工作不需要該鎖，但優先級高於低優先權）。</li>
+<li>此時高優先權執行緒被喚醒，需要獲取同一個鎖，但由於低優先權執行緒被中優先權卡住而無法執行，高優先權執行緒被迫無限期等待。</li>
+</ul>
+<p>1997 年美國 NASA 的火星探測器「火星拓荒者號」（Mars Pathfinder）便曾因為資訊匯流排 Mutex 發生優先權反轉，導致高優先權的資料收集任務嚴重逾時，觸發系統看門狗（Watchdog）不斷重新開機。</p>
+<h4 id="不可組合性與死鎖風險">不可組合性與死鎖風險</h4>
+<p>鎖缺乏代數上的組合性（Locks do not compose）。兩個單獨看來無懈可擊、內部各自用 Mutex 保護的執行緒安全函式，在交叉呼叫時若未能嚴格遵循完全一致的加鎖順序，就會在多執行緒交錯下瞬間觸發<strong>死鎖</strong>（Deadlock）。</p>
+<h3 id="為什麼需要無鎖不可妥協的場景與系統保證">為什麼需要無鎖：不可妥協的場景與系統保證</h3>
+<p>正因為 Mutex 存在上述硬體與排程層面的代價，在特定工程領域中，我們並非單純為了「追求理論效能」，而是面對硬性約束時「不得不採用無鎖」。無鎖資料結構的核心價值在於提供兩大不可替代的保證：<strong>系統級進度保證</strong>與<strong>低且可預測的長尾延遲</strong>。</p>
+<h4 id="系統級進度保證杜絕命運綁定">系統級進度保證：杜絕命運綁定</h4>
+<p>基於互斥鎖的系統存在著嚴重的<strong>命運綁定</strong>（Fate Sharing）：一旦持有鎖的執行緒因為任何非預期事件（被作業系統強制暫停、遭遇分頁置換 Page Fault、觸發例外、甚至被外部訊號直接殺死），<strong>所有正在等待該鎖的其他執行緒都將全數卡死或永久阻塞</strong>。</p>
+<p>無鎖演算法消除了「鎖的所有權」概念。沒有任何一個執行緒具備獨佔資源的特權；執行緒之間只透過硬體原語競逐狀態轉移。即使某個執行緒在執行途中被作業系統隨機凍結，其他執行緒依然能各憑本事持續推進。</p>
+<h4 id="消除長尾延遲">消除長尾延遲</h4>
+<p>在金融高頻交易（HFT）、即時競價、分散式儲存引擎與資料庫 WAL（Write-Ahead Log）的關鍵路徑上，系統衡量標準不是「平均延遲（P50）有多低」，而是「99.9% 甚至 99.99% 的長尾延遲（P99 / P99.9）有多穩定」。</p>
+<p>Mutex 偶發的鎖競爭與 Context Switch 會在微秒層級造成嚴重的延遲抖動（Jitter）。Lock-Free 演算法將操作完全收斂在純使用者態與 CPU 執行單元內，徹底拔除了核心態排程介入的可能性，提供了極高確定性的延遲表現。</p>
+<h4 id="嚴格禁止睡眠的極限環境">嚴格禁止睡眠的極限環境</h4>
+<p>在許多系統底層場景中，呼叫任何可能讓執行緒陷入睡眠的 Mutex 操作，在語法或規範上是<strong>被絕對嚴格禁止的</strong>：</p>
+<ul>
+<li><strong>中斷處理常式（ISR）與訊號處理函式（Signal Handlers）</strong>：硬體中斷與 Linux 訊號發生在特殊的非同步上下文，該上下文根本沒有獨立的排程實體可供掛起，且必須保證非同步信號安全（Async-Signal-Safe）。一旦在此處嘗試加鎖並陷入睡眠，將導致系統崩潰或瞬間死鎖。</li>
+<li><strong>即時音訊處理（Real-time Audio DSP）</strong>：在 CoreAudio、JACK 或 ASIO 等音訊框架中，處理回呼函式必須在數微秒至數百微秒的嚴格時限內將音訊緩衝區填滿。若因 Mutex 競爭觸發 Context Switch，哪怕只延誤了 10 微秒，都會引發音訊緩衝區欠載（Buffer Underrun），在使用者耳機中產生刺耳的破音或爆音。</li>
+<li><strong>非同步協程執行緒池（Async Runtime Worker Threads）</strong>：在 Tokio、Go Runtime 等 M:N 協程排程體系中，少數幾個工作執行緒負責輪番執行成千上萬個非同步協程（Coroutines / Tasks）。如果某個協程的工作函式呼叫了傳統的 Blocking Mutex 並陷入核心態睡眠，將導致該 OS 執行緒上排隊的所有其他協程一併陷入飢餓與癱瘓。</li>
+</ul>
+<h3 id="進度保證等級lock-freewait-free-與-obstruction-free">進度保證等級：Lock-Free、Wait-Free 與 Obstruction-Free</h3>
+<p>在學術與系統規格中，「無鎖」並非單純指「程式碼中沒有搜尋到 mutex 關鍵字」，而是對系統並行推進能力的嚴格數學承諾：</p>
+<ul>
+<li><strong>Obstruction-Free</strong>（無障礙）：最弱的保證。只要一個執行緒在執行時<strong>其他執行緒全部暫停</strong>，該執行緒保證能在有限步驟內完成操作。若多個執行緒持續活鎖競爭，則不保證進展。</li>
+<li><strong>Lock-Free</strong>（無鎖）：保證整個系統在巨觀上持續有進度（System-wide Progress）。即使作業系統在任何時刻隨機將某些執行緒掛起（Suspend）或降低優先權，剩餘的執行緒中<strong>至少有一個</strong>一定能持續完成操作。但個別執行緒可能會遭遇飢餓（Starvation）。</li>
+<li><strong>Wait-Free</strong>（無等待）：最強的進度保證。每一個執行緒都保證能在有限的步驟內（Bounded Steps）完成操作，徹底杜絕了個別執行緒的飢餓現象。通常需要搭配昂貴的協同幫忙（Helping Scheme）機制。</li>
+</ul>
+<p>一般的並行佇列與堆疊多半落在 <strong>Lock-Free</strong> 等級。</p>
+<h2 id="核心原子原語compare-and-swap-cas-的運作機制">核心原子原語：Compare-And-Swap (CAS) 的運作機制</h2>
+<p>Lock-Free 資料結構的心臟是 <strong>CAS 操作</strong>。在 C++ 中體現為 <code>atomic::compare_exchange_weak</code> 與 <code>compare_exchange_strong</code>；在 Rust 中則為 <code>AtomicPtr::compare_exchange_weak</code> 與 <code>compare_exchange</code>。</p>
+<p>CAS 操作將「比較目前值是否符合預期」與「寫入新數值」合併為語言層級不可分割的原子讀改寫（Read-Modify-Write, RMW）操作（在底層硬體上可能對應單一指令如 x86 <code>CMPXCHG</code>、或 ARM/RISC-V 的 LL/SC 指令對）：</p>
+
+  <div class="mermaid">flowchart TD
+    CAS_Start[&#34;&lt;div style=&#39;width:290px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;CAS 原語呼叫&lt;/b&gt;&lt;br/&gt;&lt;code&gt;CAS(target, expected, desired)&lt;/code&gt;&lt;/div&gt;&#34;]
+    Check{&#34;目標數值比對&lt;br/&gt;*target == expected ?&#34;}
+    DoStore[&#34;&lt;div style=&#39;width:260px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;原子替換成功 (Success)&lt;/b&gt;&lt;br/&gt;• 寫入新值：&lt;code&gt;*target = desired&lt;/code&gt;&lt;br/&gt;• 狀態回傳：&lt;code&gt;true&lt;/code&gt;&lt;/div&gt;&#34;]
+    DoUpdate[&#34;&lt;div style=&#39;width:260px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;比對失敗 (Failure)&lt;/b&gt;&lt;br/&gt;• 更新預期：&lt;code&gt;expected = *target&lt;/code&gt;&lt;br/&gt;• 不修改 target，回傳 &lt;code&gt;false&lt;/code&gt;&lt;/div&gt;&#34;]
+
+    CAS_Start --&gt; Check
+    Check --&gt;|比對成功| DoStore
+    Check --&gt;|比對失敗| DoUpdate
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef fail fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class CAS_Start proc;
+    class Check branch;
+    class DoStore ok;
+    class DoUpdate fail;</div>
+
+<p>如果目標記憶體目前的值等於 <code>expected</code>，硬體就將其替換為 <code>desired</code> 並回傳成功；如果不等於，硬體放棄寫入，並自動將目前記憶體的最新值寫回 <code>expected</code> 變數中，回傳失敗。</p>
+<h3 id="為什麼-cas-需要兩個-memory-ordering-參數">為什麼 CAS 需要兩個 Memory Ordering 參數？</h3>
+<p>檢視 C++ 與 Rust 的 CAS 函式簽名，你會發現它們都要求傳入兩個 ordering：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// C++
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">compare_exchange_weak</span>(T<span style="color:#f92672">&amp;</span> expected, T desired,
+</span></span><span style="display:flex;"><span>                           std<span style="color:#f92672">::</span>memory_order success,
+</span></span><span style="display:flex;"><span>                           std<span style="color:#f92672">::</span>memory_order failure);</span></span></code></pre></div>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// Rust
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">compare_exchange_weak</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&amp;</span>self,
+</span></span><span style="display:flex;"><span>    current: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> T,
+</span></span><span style="display:flex;"><span>    new: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> T,
+</span></span><span style="display:flex;"><span>    success: <span style="color:#a6e22e">Ordering</span>,
+</span></span><span style="display:flex;"><span>    failure: <span style="color:#a6e22e">Ordering</span>
+</span></span><span style="display:flex;"><span>) -&gt; Result<span style="color:#f92672">&lt;*</span><span style="color:#66d9ef">mut</span> T, <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> T<span style="color:#f92672">&gt;</span>;</span></span></code></pre></div>
+
+<p>為什麼不能只用一個 ordering？</p>
+<ul>
+<li><strong>成功時</strong>（Success）：執行了實質的讀改寫（RMW），我們正在發布新的狀態給其他執行緒，因此可以使用 <code>Release</code>、<code>Acquire</code>、<code>AcqRel</code> 或 <code>SeqCst</code>。</li>
+<li><strong>失敗時</strong>（Failure）：沒有發生任何寫入操作！失敗的 CAS 本質上是一次純讀取的載入（將目標位址的最新值寫回 <code>expected</code>）。因為沒有寫入，所以在語意上失敗 ordering <strong>不能要求 <code>Release</code> 或 <code>AcqRel</code> 效果</strong>；同時在 C++ 規範中，失敗 ordering <strong>不得嚴於成功 ordering</strong>（例如成功為 <code>Relaxed</code> 時，失敗不得為 <code>Acquire</code>）；而在 Rust 中若傳入不合法的失敗 ordering 亦會在執行期引發 panic。</li>
+</ul>
+<h3 id="weak-與-strong-的本質差異"><code>weak</code> 與 <code>strong</code> 的本質差異</h3>
+<ul>
+<li><strong><code>compare_exchange_strong</code></strong>：保證只有在當前值不等於 <code>expected</code> 時才會回傳 <code>false</code>。</li>
+<li><strong><code>compare_exchange_weak</code></strong>：允許在當前值明明等於 <code>expected</code> 的情況下，依然因為硬體因素（例如 ARM/RISC-V 的 LL/SC 快取行被踢出、中斷或 context switch）而發生<strong>虛假失敗</strong>（Spurious Failure）。</li>
+</ul>
+<p><strong>最佳實踐原則</strong>：在絕大多數 Lock-free 演算法中，CAS 本身就被包裹在一個重試迴圈裡。此時<strong>通常建議優先考慮 <code>compare_exchange_weak</code></strong>。在弱記憶體架構（如 ARM64）上，<code>weak</code> 能直接映射到最精簡的單對 LL/SC（<code>ldaxr</code>/<code>stlxr</code>）指令，免去 <code>strong</code> 為了防止硬體虛假失敗所額外生成的內部重試迴圈包裝（但在 x86 等強記憶體架構上，兩者皆編譯為 <code>lock cmpxchg</code>，效能表現相同）。</p>
+<h2 id="經典實戰treiber-stack-雙語言基準實作不含-smr">經典實戰：Treiber Stack 雙語言基準實作（不含 SMR）</h2>
+<p>Treiber Stack（由 R. Kent Treiber 於 1986 年提出）是無鎖領域中最基礎、最優雅的資料結構。它本質上是一個單向鏈結串列，所有操作都僅集中在單一原子指標——<code>head</code> 上：</p>
+
+  <div class="mermaid">flowchart LR
+    subgraph StackTopo[&#34;Treiber Stack 拓撲狀態 (單向鏈結結構)&#34;]
+        Head[&#34;&lt;div style=&#39;width:120px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;head 指標&lt;/b&gt;&lt;br/&gt;原子指標 (CAS)&lt;/div&gt;&#34;]
+        NodeA[&#34;&lt;div style=&#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;Node A&lt;/b&gt;&lt;br/&gt;val: 10&lt;br/&gt;next ➔&lt;/div&gt;&#34;]
+        NodeB[&#34;&lt;div style=&#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;Node B&lt;/b&gt;&lt;br/&gt;val: 20&lt;br/&gt;next ➔&lt;/div&gt;&#34;]
+        NodeC[&#34;&lt;div style=&#39;width:105px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;Node C&lt;/b&gt;&lt;br/&gt;val: 30&lt;br/&gt;next ➔&lt;/div&gt;&#34;]
+        NullNode[&#34;&lt;div style=&#39;width:85px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;nullptr&lt;/b&gt;&lt;br/&gt;堆疊底部&lt;/div&gt;&#34;]
+
+        Head --&gt; NodeA
+        NodeA --&gt; NodeB
+        NodeB --&gt; NodeC
+        NodeC --&gt; NullNode
+    end
+
+    style StackTopo fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    classDef headBox fill:#24283b,stroke:#7dcfff,stroke-width:2px,color:#7dcfff;
+    classDef nodeBox fill:#1f2335,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef nullBox fill:#16161e,stroke:#565f89,stroke-width:1px,color:#565f89;
+
+    class Head headBox;
+    class NodeA,NodeB,NodeC nodeBox;
+    class NullNode nullBox;</div>
+
+<blockquote><p>⚠️ <strong>重要實作前提</strong>：本節程式碼為<strong>不含 SMR（安全記憶體回收）的教學基準實作</strong>，旨在精確解構 CAS 狀態轉移與 Acquire/Release 配對。它的正確性嚴格建立在三個限制邊界假設上：</p>
+<ol>
+<li>節點不得就地釋放（不得中途呼叫 <code>delete</code> 或歸還給記憶體配置器）。</li>
+<li>節點不得重複 push，且呼叫端不得在其他執行緒可能持有指標時修改節點欄位。</li>
+<li>節點生命週期維持至所有執行緒完全 join 離場後，由擁有者統一釋放（杜絕並行執行時的 Use-After-Free）。
+在未引入後續章節探討的 SMR 安全回收協定前，切勿將此裸指標實作直接移植至生產環境！</li>
+</ol>
+</blockquote><h3 id="c20-實作">C++20 實作</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;atomic&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;cassert&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;iostream&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;thread&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;vector&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> T<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TreiberStack</span> {
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Node</span> {
+</span></span><span style="display:flex;"><span>        T data;
+</span></span><span style="display:flex;"><span>        Node<span style="color:#f92672">*</span> next{<span style="color:#66d9ef">nullptr</span>};
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">explicit</span> <span style="color:#a6e22e">Node</span>(T val) <span style="color:#f92672">:</span> data(std<span style="color:#f92672">::</span>move(val)) {}
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">private</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 注意：在主流 64 位元架構上 std::atomic&lt;Node*&gt;::is_always_lock_free 為 true。
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 在特殊嵌入式或非原生字長環境下，需透過 is_lock_free() 確認硬體無鎖保證。
+</span></span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>atomic<span style="color:#f92672">&lt;</span>Node<span style="color:#f92672">*&gt;</span> head_{<span style="color:#66d9ef">nullptr</span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>    TreiberStack() <span style="color:#f92672">=</span> <span style="color:#66d9ef">default</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">~</span>TreiberStack() <span style="color:#f92672">=</span> <span style="color:#66d9ef">default</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 禁止複製與搬移以確保原子指標位址固定
+</span></span></span><span style="display:flex;"><span>    TreiberStack(<span style="color:#66d9ef">const</span> TreiberStack<span style="color:#f92672">&amp;</span>) <span style="color:#f92672">=</span> <span style="color:#66d9ef">delete</span>;
+</span></span><span style="display:flex;"><span>    TreiberStack<span style="color:#f92672">&amp;</span> <span style="color:#66d9ef">operator</span><span style="color:#f92672">=</span>(<span style="color:#66d9ef">const</span> TreiberStack<span style="color:#f92672">&amp;</span>) <span style="color:#f92672">=</span> <span style="color:#66d9ef">delete</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">push</span>(Node<span style="color:#f92672">*</span> new_node) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 步驟 1：使用 relaxed load 取得目前的 head
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 理由：我們此處只是讀取指標位址賦予 new_node-&gt;next，
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 尚未 dereference 舊節點，不需要任何跨執行緒同步。
+</span></span></span><span style="display:flex;"><span>        Node<span style="color:#f92672">*</span> old_head <span style="color:#f92672">=</span> head_.load(std<span style="color:#f92672">::</span>memory_order_relaxed);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 步驟 2：CAS 迴圈
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 成功的 CAS 使用 release：確保 new_node 的 data 與 next 初始化完成後才發布。
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 失敗的 CAS 使用 relaxed：若失敗，old_head 會被自動更新，直接進入下一輪。
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">do</span> {
+</span></span><span style="display:flex;"><span>            new_node<span style="color:#f92672">-&gt;</span>next <span style="color:#f92672">=</span> old_head;
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span>head_.compare_exchange_weak(
+</span></span><span style="display:flex;"><span>            old_head, new_node,
+</span></span><span style="display:flex;"><span>            std<span style="color:#f92672">::</span>memory_order_release,
+</span></span><span style="display:flex;"><span>            std<span style="color:#f92672">::</span>memory_order_relaxed));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    Node<span style="color:#f92672">*</span> <span style="color:#a6e22e">pop</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 步驟 1：使用 acquire load 取得目前的 head
+</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 理由：我們接下來必須安全讀取 old_head-&gt;next，因此必須與當初 push 該節點的 release store 同步！
+</span></span></span><span style="display:flex;"><span>        Node<span style="color:#f92672">*</span> old_head <span style="color:#f92672">=</span> head_.load(std<span style="color:#f92672">::</span>memory_order_acquire);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> (old_head <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nullptr</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 讀取下一個節點（此時依賴前面 load 或上一次失敗 CAS 的 acquire 同步）
+</span></span></span><span style="display:flex;"><span>            Node<span style="color:#f92672">*</span> next_node <span style="color:#f92672">=</span> old_head<span style="color:#f92672">-&gt;</span>next;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 步驟 2：CAS 嘗試將 head 移向 next_node
+</span></span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 成功：使用 acquire 保持防禦性同步。
+</span></span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 失敗：關鍵！失敗 ordering 必須也是 acquire！
+</span></span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 理由：若 CAS 失敗，old_head 會被更新為另一個執行緒剛 push 上去的新節點；
+</span></span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 下一輪迴圈會立刻執行 old_head-&gt;next，此處的 acquire 才能與該執行緒 push 的 release 建立因果同步！
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (head_.compare_exchange_weak(
+</span></span><span style="display:flex;"><span>                    old_head, next_node,
+</span></span><span style="display:flex;"><span>                    std<span style="color:#f92672">::</span>memory_order_acquire,
+</span></span><span style="display:flex;"><span>                    std<span style="color:#f92672">::</span>memory_order_acquire)) {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> old_head;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>; <span style="color:#75715e">// stack 為空
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    TreiberStack<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> stack;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typename</span> TreiberStack<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;::</span>Node n1(<span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typename</span> TreiberStack<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;::</span>Node n2(<span style="color:#ae81ff">20</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 多執行緒並行 Push
+</span></span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span><span style="color:#66d9ef">thread</span> t1([<span style="color:#f92672">&amp;</span>] { stack.push(<span style="color:#f92672">&amp;</span>n1); });
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span><span style="color:#66d9ef">thread</span> t2([<span style="color:#f92672">&amp;</span>] { stack.push(<span style="color:#f92672">&amp;</span>n2); });
+</span></span><span style="display:flex;"><span>    t1.join();
+</span></span><span style="display:flex;"><span>    t2.join();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 多執行緒並行 Pop
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typename</span> TreiberStack<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;::</span>Node<span style="color:#f92672">*</span> res1 <span style="color:#f92672">=</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typename</span> TreiberStack<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;::</span>Node<span style="color:#f92672">*</span> res2 <span style="color:#f92672">=</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span><span style="color:#66d9ef">thread</span> t3([<span style="color:#f92672">&amp;</span>] { res1 <span style="color:#f92672">=</span> stack.pop(); });
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span><span style="color:#66d9ef">thread</span> t4([<span style="color:#f92672">&amp;</span>] { res2 <span style="color:#f92672">=</span> stack.pop(); });
+</span></span><span style="display:flex;"><span>    t3.join();
+</span></span><span style="display:flex;"><span>    t4.join();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    assert(res1 <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nullptr</span> <span style="color:#f92672">&amp;&amp;</span> res2 <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>    assert(res1 <span style="color:#f92672">!=</span> res2);
+</span></span><span style="display:flex;"><span>    assert(res1<span style="color:#f92672">-&gt;</span>data <span style="color:#f92672">+</span> res2<span style="color:#f92672">-&gt;</span>data <span style="color:#f92672">==</span> <span style="color:#ae81ff">30</span>);
+</span></span><span style="display:flex;"><span>    assert(stack.pop() <span style="color:#f92672">==</span> <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;Treiber Stack operations completed successfully.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="rust-實作">Rust 實作</h3>
+<p>在 Rust 中，裸指標的解引用屬於 <code>unsafe</code> 操作。Rust 的型別系統迫使我們明確寫出哪些假設是由程式員擔保的：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::sync::atomic::{AtomicPtr, Ordering};
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::sync::Arc;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">use</span> std::thread;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Node</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> data: <span style="color:#a6e22e">T</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> next: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">new</span>(data: <span style="color:#a6e22e">T</span>) -&gt; <span style="color:#a6e22e">Self</span> {
+</span></span><span style="display:flex;"><span>        Self {
+</span></span><span style="display:flex;"><span>            data,
+</span></span><span style="display:flex;"><span>            next: <span style="color:#a6e22e">std</span>::ptr::null_mut(),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">TreiberStack</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    head: <span style="color:#a6e22e">AtomicPtr</span><span style="color:#f92672">&lt;</span>Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;&gt;</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 實作 Send 與 Sync：這是作者對型別安全不變量的承諾
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 只要 T: Send，節點所有權在 pop 時即可安全轉移跨執行緒存取；
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 由於內部 head 為 AtomicPtr，亦滿足多執行緒共用參照的安全性。
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T: Send<span style="color:#f92672">&gt;</span> Send <span style="color:#66d9ef">for</span> TreiberStack<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T: Send<span style="color:#f92672">&gt;</span> Sync <span style="color:#66d9ef">for</span> TreiberStack<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> TreiberStack<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">new</span>() -&gt; <span style="color:#a6e22e">Self</span> {
+</span></span><span style="display:flex;"><span>        Self {
+</span></span><span style="display:flex;"><span>            head: <span style="color:#a6e22e">AtomicPtr</span>::new(std::ptr::null_mut()),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">push</span>(<span style="color:#f92672">&amp;</span>self, new_node: <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">assert!</span>(<span style="color:#f92672">!</span>new_node.is_null());
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> old_head <span style="color:#f92672">=</span> self.head.load(Ordering::Relaxed);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 安全保證：呼叫者保證在此刻獨占 new_node
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">unsafe</span> {
+</span></span><span style="display:flex;"><span>                (<span style="color:#f92672">*</span>new_node).next <span style="color:#f92672">=</span> old_head;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 成功 Release 發布新節點；失敗 Relaxed 載入最新 head 重試
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> self.head.compare_exchange_weak(
+</span></span><span style="display:flex;"><span>                old_head,
+</span></span><span style="display:flex;"><span>                new_node,
+</span></span><span style="display:flex;"><span>                Ordering::Release,
+</span></span><span style="display:flex;"><span>                Ordering::Relaxed,
+</span></span><span style="display:flex;"><span>            ) {
+</span></span><span style="display:flex;"><span>                Ok(_) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">break</span>,
+</span></span><span style="display:flex;"><span>                Err(actual) <span style="color:#f92672">=&gt;</span> old_head <span style="color:#f92672">=</span> actual,
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">pop</span>(<span style="color:#f92672">&amp;</span>self) -&gt; <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> old_head <span style="color:#f92672">=</span> self.head.load(Ordering::Acquire);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> <span style="color:#f92672">!</span>old_head.is_null() {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 安全保證：基準範例保證節點在全部執行緒離場前不會被 free
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">let</span> next_node <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { (<span style="color:#f92672">*</span>old_head).next };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// 成功 Acquire 獲取；失敗 Acquire 確保下輪解引用 actual 時具備同步保護
+</span></span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">match</span> self.head.compare_exchange_weak(
+</span></span><span style="display:flex;"><span>                old_head,
+</span></span><span style="display:flex;"><span>                next_node,
+</span></span><span style="display:flex;"><span>                Ordering::Acquire,
+</span></span><span style="display:flex;"><span>                Ordering::Acquire,
+</span></span><span style="display:flex;"><span>            ) {
+</span></span><span style="display:flex;"><span>                Ok(_) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> old_head,
+</span></span><span style="display:flex;"><span>                Err(actual) <span style="color:#f92672">=&gt;</span> old_head <span style="color:#f92672">=</span> actual,
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        std::ptr::null_mut()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 輔助型別：封裝裸指標以符合 Send 要求，安全傳遞進 thread::spawn
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SendPtr</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span>(<span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T: Send<span style="color:#f92672">&gt;</span> Send <span style="color:#66d9ef">for</span> SendPtr<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> SendPtr<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">into_inner</span>(self) -&gt; <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>        self.<span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> stack <span style="color:#f92672">=</span> Arc::new(TreiberStack::new());
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> node1 <span style="color:#f92672">=</span> Box::new(Node::new(<span style="color:#ae81ff">10</span>));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> node2 <span style="color:#f92672">=</span> Box::new(Node::new(<span style="color:#ae81ff">20</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> n1_ptr <span style="color:#f92672">=</span> SendPtr(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span>node1 <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> n2_ptr <span style="color:#f92672">=</span> SendPtr(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span>node2 <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">mut</span> Node<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">i32</span><span style="color:#f92672">&gt;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> s1 <span style="color:#f92672">=</span> Arc::clone(<span style="color:#f92672">&amp;</span>stack);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> t1 <span style="color:#f92672">=</span> thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> s1.push(n1_ptr.into_inner()));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> s2 <span style="color:#f92672">=</span> Arc::clone(<span style="color:#f92672">&amp;</span>stack);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> t2 <span style="color:#f92672">=</span> thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> s2.push(n2_ptr.into_inner()));
+</span></span><span style="display:flex;"><span>    t1.join().unwrap();
+</span></span><span style="display:flex;"><span>    t2.join().unwrap();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> s3 <span style="color:#f92672">=</span> Arc::clone(<span style="color:#f92672">&amp;</span>stack);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> t3 <span style="color:#f92672">=</span> thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> SendPtr(s3.pop()));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> s4 <span style="color:#f92672">=</span> Arc::clone(<span style="color:#f92672">&amp;</span>stack);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> t4 <span style="color:#f92672">=</span> thread::spawn(<span style="color:#66d9ef">move</span> <span style="color:#f92672">||</span> SendPtr(s4.pop()));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> r1 <span style="color:#f92672">=</span> t3.join().unwrap().into_inner();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> r2 <span style="color:#f92672">=</span> t4.join().unwrap().into_inner();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert!</span>(<span style="color:#f92672">!</span>r1.is_null() <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>r2.is_null());
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_ne!</span>(r1, r2);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> sum <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { (<span style="color:#f92672">*</span>r1).data <span style="color:#f92672">+</span> (<span style="color:#f92672">*</span>r2).data };
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert_eq!</span>(sum, <span style="color:#ae81ff">30</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">assert!</span>(stack.pop().is_null());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">println!</span>(<span style="color:#e6db74">&#34;Rust TreiberStack executed safely.&#34;</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="線性化點linearization-point剖析">線性化點（Linearization Point）剖析</h3>
+<p>在並行驗證理論中，一個無鎖操作必須存在一個確切的原子瞬間，使得該操作在該時刻「邏輯生效」，這被稱為<strong>線性化點</strong>：</p>
+<ul>
+<li><strong><code>push</code> 的線性化點</strong>：CAS 成功將 <code>head</code> 指向 <code>new_node</code> 的那一瞬間。</li>
+<li><strong><code>pop</code> 的線性化點</strong>（非空）：CAS 成功將 <code>head</code> 指向 <code>next_node</code> 的那一瞬間。</li>
+<li><strong><code>pop</code> 的線性化點</strong>（為空）：當 <code>head.load(Acquire)</code> 讀到 <code>nullptr</code> 的那一瞬間。</li>
+</ul>
+<h2 id="致命幽靈aba-問題深度剖析">致命幽靈：ABA 問題深度剖析</h2>
+<p>現在，讓我們放寬前面基準實作的假設：「允許節點被重複使用或歸還配置器」。災難立刻降臨。</p>
+<p>這就是並行計算中最著名的陷阱——<strong>ABA 問題</strong>。</p>
+<h3 id="aba-問題如何發生">ABA 問題如何發生？</h3>
+<p>假設目前的 Stack 拓撲為 <code>head -&gt; [A] -&gt; [B] -&gt; [C]</code>。</p>
+<p>此時有兩個執行緒 T1 與 T2 正在執行 <code>pop()</code>：</p>
+
+  <div class="mermaid">sequenceDiagram
+    autonumber
+    participant T1 as 執行緒 1 (T1)
+    participant Stack as 共享狀態 (head)
+    participant T2 as 執行緒 2 (T2)
+
+    Note over Stack: head 指向 A&lt;br/&gt;A.next = B, B.next = C
+    T1-&gt;&gt;Stack: 讀取 head = A
+    T1-&gt;&gt;T1: 讀取 next = A.next (值為 B)
+    Note over T1: T1 被作業系統 Context Switch 掛起！&lt;br/&gt;(暫停在 CAS 執行前)
+
+    T2-&gt;&gt;Stack: 執行 pop() 成功取出 A
+    T2-&gt;&gt;Stack: 執行 pop() 成功取出 B
+    Note over Stack: 此時 head 指向 C
+    T2-&gt;&gt;T2: 將節點 A 重新利用或修改
+    T2-&gt;&gt;Stack: 執行 push(A) (A.next 設為 C)
+    Note over Stack: 目前 head 重新指向 A！&lt;br/&gt;但拓撲已變成 A -&gt; C
+
+    Note over T1: T1 被喚醒，準備執行 CAS！
+    T1-&gt;&gt;Stack: CAS(head, expected=A, desired=B)
+    Note over Stack,T1: 檢查 head 目前值為 A，與 expected 相等！&lt;br/&gt;CAS 宣告成功！將 head 設為 B！
+    Note over Stack: 災難降臨：&lt;br/&gt;head 被指向了已被釋放或移走的 B！&lt;br/&gt;節點 C 永久遺失，引發記憶體損毀！</div>
+
+<h3 id="拆解-aba-的本質">拆解 ABA 的本質</h3>
+<p>當 T1 喚醒並嘗試執行 CAS 時，它僅僅比對了 <code>head == A</code>。
+在 T1 的眼裡：「head 的記憶體位址依然是 A，代表沒有人動過這個 stack！」
+但實際上，整個 Stack 經歷了 <strong>A → B → A</strong> 的劇烈變動：</p>
+<ol>
+<li>B 早已被 T2 取走並可能已被 <code>delete</code> 釋放。</li>
+<li>節點 A 雖然位址回到頂端，但它的 <code>next</code> 已經從原先的 B 變成了 C。</li>
+<li>T1 盲目地將 <code>head</code> 覆寫為暫存的 <code>B</code>，直接導致：
+<ul>
+<li><strong>資料遺失</strong>：節點 C 脫離了鏈結串列，發生記憶體洩漏。</li>
+<li><strong>記憶體損毀</strong>（Use-After-Free）：<code>head</code> 指向了一個已經被 T2 釋放的無效位址 B，下一個呼叫 <code>pop()</code> 的執行緒解引用 <code>head-&gt;next</code> 時將立刻崩潰（Crash / Segment Fault）！</li>
+</ul>
+</li>
+</ol>
+<p>ABA 的核心教訓是：<strong>指標位址相等，絕不代表資料結構的內部拓撲與歷史狀態未曾改變</strong>！</p>
+<h2 id="四大安全記憶體回收機制safe-memory-reclamation">四大安全記憶體回收機制（Safe Memory Reclamation）</h2>
+<p>為了解決 ABA 問題以及多執行緒並行釋放節點時的 Use-After-Free，學界與工業界發展出了四種主流機制。在深入細節前，我們必須先釐清一條核心界線：<strong>Tagged Pointer 與後三種 SMR 機制的防護目標有著本質區別</strong>：</p>
+<ul>
+<li><strong>Tagged Pointer</strong>：本質是「狀態變更偵測協定」。它透過版本號偵測指標位址相同時的拓撲演變，但計數器仍有溢位循環（Wraparound）的理論可能，且它<strong>完全無法防護節點的解引用生命週期</strong>。</li>
+<li><strong>Hazard Pointer / EBR / RCU</strong>：屬於真正的「安全記憶體回收（SMR）協定」。它們的主要目標是確保「只要有任何讀者可能解引用某個節點，該節點的物理記憶體就絕不會被釋放」。在工程實踐中，這直接消除了最常見的 ABA 根源（即節點被釋放後遭記憶體配置器原地重用）；但若演算法本身存在非記憶體重用引起的語意 ABA，仍需搭配版本號處理。</li>
+</ul>
+
+  <div class="mermaid">flowchart TD
+    SMR[&#34;&lt;div style=&#39;width:520px; padding:6px 12px 10px 12px; line-height:1.4;&#39;&gt;&lt;b&gt;安全記憶體回收與防護機制 (Safe Memory Reclamation, SMR)&lt;/b&gt;&lt;br/&gt;解決無鎖資料結構中的 ABA 陷阱與 Use-After-Free 記憶體安全核心課題&lt;/div&gt;&#34;]
+
+    subgraph Solutions[&#34;四大主流回收演算法架構&#34;]
+        direction LR
+        subgraph GroupA[&#34;狀態檢測與讀者看板&#34;]
+            direction TB
+            M1[&#34;&lt;div style=&#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;1. Tagged Pointer&lt;/b&gt;&lt;br/&gt;• 單調遞增版本標記 (DWCAS / 壓縮指標)&lt;br/&gt;• 攔截 ABA，但無法防護生命週期&lt;/div&gt;&#34;]
+            M2[&#34;&lt;div style=&#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;2. Hazard Pointer (C&#43;&#43;26)&lt;/b&gt;&lt;br/&gt;• 讀者公開登記目前存取節點&lt;br/&gt;• 精確保護單一節點，回收邊界明確&lt;/div&gt;&#34;]
+            M1 --&gt; M2
+        end
+
+        subgraph GroupB[&#34;世代標記與寬限期回收&#34;]
+            direction TB
+            M3[&#34;&lt;div style=&#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;3. Epoch-Based (EBR)&lt;/b&gt;&lt;br/&gt;• 全域 Epoch 推進 &#43; 三代分桶批次回收&lt;br/&gt;• 讀者近乎零代價，Rust 生態首選&lt;/div&gt;&#34;]
+            M4[&#34;&lt;div style=&#39;width:270px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;4. Read-Copy-Update (RCU)&lt;/b&gt;&lt;br/&gt;• 寫入者複製副本，寬限期延遲釋放&lt;br/&gt;• 讀者近乎零屏障，Linux 經典&lt;/div&gt;&#34;]
+            M3 --&gt; M4
+        end
+        GroupA -.- GroupB
+    end
+
+    SMR --&gt; Solutions
+
+    style Solutions fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    style GroupA fill:#1f2335,stroke:#bb9af7,stroke-width:1px,color:#bb9af7;
+    style GroupB fill:#1f2335,stroke:#7dcfff,stroke-width:1px,color:#7dcfff;
+
+    classDef root fill:#24283b,stroke:#7dcfff,stroke-width:2px,color:#7dcfff;
+    classDef cardA fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef cardB fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+
+    class SMR root;
+    class M1,M2 cardA;
+    class M3,M4 cardB;</div>
+
+<h3 id="tagged--versioned-pointer代數標記指標">Tagged / Versioned Pointer（代數標記指標）</h3>
+<p>最直接的直覺是：既然只看指標會被騙，那我們在指標旁邊加上一個<strong>單調遞增的版本號</strong>（Tag / Counter）！</p>
+<p>每次對 <code>head</code> 進行修改時，不僅更新指標，還將版本號加 1：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>狀態演變：
+</span></span><span style="display:flex;"><span>(指標 A, 版本 1) ➜ (指標 B, 版本 2) ➜ (指標 C, 版本 3) ➜ (指標 A, 版本 4)</span></span></code></pre></div>
+
+<p>當 T1 甦醒嘗試執行 CAS 時：</p>
+<ul>
+<li>T1 預期的狀態是 <code>(A, 1)</code>。</li>
+<li>目前 <code>head</code> 的實際狀態是 <code>(A, 4)</code>。</li>
+<li><strong>CAS 判定兩者不相等，失敗</strong>！ABA 被成功攔截。</li>
+</ul>
+<h4 id="實作方式與限制">實作方式與限制</h4>
+<ol>
+<li><strong>雙倍寬度 CAS（DWCAS）</strong>：在 64-bit 系統上，指標佔 64-bit，計數器佔 64-bit，總共需要 128-bit 的原子 CAS（x86-64 的 <code>CMPXCHG16B</code> 或 AArch64 的 <code>CASP</code>）。需注意在部分平臺上 128-bit 原子操作可能非硬體原生無鎖（需透過 <code>is_lock_free()</code> 驗證），且在高頻競爭下版本計數器仍存在循環繞回（Wraparound）風險。</li>
+<li><strong>指標壓縮（Pointer Packing）</strong>：在 64-bit 虛擬位址空間中，指標僅使用規範位址（Canonical Address）的低位元。在四級分頁（48-bit 虛擬位址）下，使用者空間位址的高 16 位元可被借用作為版本標記；若在五級分頁（57-bit 虛擬位址）架構下，則僅剩最高 7 位元可用。<strong>重大相容性限制</strong>：嵌入標記後的指標並非合法位址，解引用前必須先透過 bitmask 遮罩清除標記；且在 AArch64 架構上，硬體功能如頂部字節忽略（TBI）、記憶體標記擴展（MTE）與指標認證（PAC）皆會使用指標高位元，任意壓縮指標會破壞跨平台可攜性。</li>
+<li><strong>重大盲點</strong>：Tagged Pointer 能偵測狀態改變，但<strong>完全無法保護記憶體生命週期</strong>！如果在 T1 讀取 <code>old_head-&gt;next</code> 的瞬間，節點 A 的記憶體已經被 T2 歸還給作業系統（<code>munmap</code>），T1 的讀取操作依然會直接觸發硬體分頁錯誤（Page Fault）崩潰！</li>
+</ol>
+<h3 id="hazard-pointer風險指標">Hazard Pointer（風險指標）</h3>
+<p>由 Maged Michael 於 2004 年提出（論文發表於 2002 年），已正式納入 <strong>C++26 標準庫</strong>（<code>std::hazard_pointer</code>）。</p>
+<p>Hazard Pointer 的設計哲學是：讀者在存取某個節點前，先在全域公開的看板（Hazard Pointer Array）上宣告：「我正在閱讀指標 P，誰都不准釋放它！」</p>
+
+  <div class="mermaid">flowchart TD
+    HP_1[&#34;&lt;div style=&#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;1. 讀取指標&lt;/b&gt;&lt;br/&gt;讀取 &lt;code&gt;head&lt;/code&gt; 取得當前節點指標 &lt;code&gt;P&lt;/code&gt;&lt;/div&gt;&#34;]
+    HP_2[&#34;&lt;div style=&#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;2. 登記看板 (Publish)&lt;/b&gt;&lt;br/&gt;將 &lt;code&gt;P&lt;/code&gt; 寫入當前執行緒的 Hazard Slot&lt;/div&gt;&#34;]
+    HP_3{&#34;二次驗證 (Recheck)&lt;br/&gt;head == P ?&#34;}
+    HP_Retry[&#34;&lt;div style=&#39;width:220px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;重試迴圈&lt;/b&gt;&lt;br/&gt;• 清除 Hazard Slot 標記&lt;br/&gt;• 重新讀取 &lt;code&gt;head&lt;/code&gt; 重試&lt;/div&gt;&#34;]
+    HP_4[&#34;&lt;div style=&#39;width:280px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;&#39;&gt;&lt;b&gt;4. 安全存取節點 (Safe Access)&lt;/b&gt;&lt;br/&gt;• 其他執行緒保證不會釋放 &lt;code&gt;P&lt;/code&gt;&lt;br/&gt;• 安全解引用 &lt;code&gt;P-&gt;next&lt;/code&gt; 進行運算&lt;/div&gt;&#34;]
+    HP_5[&#34;&lt;div style=&#39;width:280px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;5. 解除保護 (Release)&lt;/b&gt;&lt;br/&gt;操作完成，清除 Hazard Slot 登記&lt;/div&gt;&#34;]
+
+    HP_1 --&gt; HP_2
+    HP_2 --&gt; HP_3
+    HP_3 --&gt;|被搶先修改| HP_Retry
+    HP_Retry -.-&gt;|重新讀取| HP_1
+    HP_3 --&gt;|驗證通過| HP_4
+    HP_4 --&gt; HP_5
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef retry fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+
+    class HP_1,HP_2,HP_5 proc;
+    class HP_3 branch;
+    class HP_Retry retry;
+    class HP_4 ok;</div>
+
+<h4 id="回收流程retire">回收流程（Retire）</h4>
+<p>當某個執行緒成功將節點 P 從 Stack 中 pop 出來時，它<strong>不能立刻釋放 P</strong>。而是將 P 放入該執行緒私有的「待回收清單（Retired List）」。
+當 Retired List 累積到一定閾值時，執行緒發動垃圾回收：</p>
+<ol>
+<li>掃描系統中所有執行緒目前登記的 Hazard Pointer 看板。</li>
+<li>如果節點 P 出現在任何一個看板上，說明仍有讀者正在讀取它，<strong>保留 P</strong>。</li>
+<li>如果沒有任何看板引用 P，說明所有讀者都已經知曉 P 已被移除，<strong>安全釋放 P</strong>（<code>delete</code> 或 <code>free</code>）。</li>
+</ol>
+<ul>
+<li><strong>優點</strong>：記憶體回收上限有嚴格保證，不會因個別執行緒暫停而導致記憶體無限制膨脹；對單一節點保護精確。</li>
+<li><strong>缺點</strong>：讀者存取節點時需寫入並重新驗證當前執行緒的 Hazard Slot，且回收端（Reclaimer）掃描所有執行緒看板時需負擔全域記憶體屏障開銷；此外走訪長鏈結串列時需要動態維護多個 Hazard Slot。</li>
+</ul>
+<h3 id="epoch-based-reclamation-ebr">Epoch-Based Reclamation (EBR)</h3>
+<p>Epoch-Based Reclamation 是目前高效能無鎖資料結構（特別是 Rust 生態系，如標竿庫 <code>crossbeam-epoch</code>）最廣泛採用的方案。</p>
+<p>EBR 不去逐一追蹤每一個節點，而是將整個系統的時間切分成 <strong>世代</strong>（Epoch，例如 0, 1, 2）：</p>
+
+  <div class="mermaid">flowchart TD
+    subgraph GlobalEpoch[&#34;全域狀態 (Global System State)&#34;]
+        GE[&#34;&lt;div style=&#39;width:450px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;全域 Epoch 計數器 (Global Epoch: E)&lt;/b&gt;&lt;br/&gt;• 全域單調推進 (0 ➔ 1 ➔ 2 ➔ 0 循環)&lt;br/&gt;• 當所有活躍執行緒皆離開舊世代時，全域推進到下一代&lt;/div&gt;&#34;]
+    end
+
+    subgraph ThreadWork[&#34;讀者執行緒存取生命週期 (Reader Lifecycle)&#34;]
+        direction LR
+        Pin[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;進入臨界區：pin()&lt;/b&gt;&lt;br/&gt;• 登記本地為世代 E&lt;br/&gt;• 宣告自身活躍中&lt;/div&gt;&#34;]
+        Read[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;走訪無鎖資料結構&lt;/b&gt;&lt;br/&gt;• 安全解引用節點&lt;br/&gt;• 零額外硬體屏障&lt;/div&gt;&#34;]
+        Unpin[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;離開臨界區：unpin()&lt;/b&gt;&lt;br/&gt;• 清除活躍登記&lt;br/&gt;• 允許世代推進&lt;/div&gt;&#34;]
+        Pin --&gt;|&#34;存取&#34;| Read
+        Read --&gt;|&#34;完成&#34;| Unpin
+    end
+
+    subgraph RetireQueue[&#34;待回收佇列：三代分桶防護 (Three-Epoch Buckets)&#34;]
+        direction LR
+        B2[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;當前世代 (Epoch E)&lt;/b&gt;&lt;br/&gt;• 收集被 pop 移除節點&lt;br/&gt;• 尚有當代讀者存取中&lt;/div&gt;&#34;]
+        B1[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;上一世代 (Epoch E-1)&lt;/b&gt;&lt;br/&gt;• 等待舊世代讀者離場&lt;br/&gt;• 暫緩釋放&lt;/div&gt;&#34;]
+        B0[&#34;&lt;div style=&#39;width:180px; padding:4px 6px 8px 6px; line-height:1.3;&#39;&gt;&lt;b&gt;安全世代 (Epoch E-2)&lt;/b&gt;&lt;br/&gt;• 絕無讀者持有指標&lt;br/&gt;• &lt;b&gt;★ 安全批次釋放&lt;/b&gt;&lt;/div&gt;&#34;]
+        B2 --&gt;|&#34;推進&#34;| B1
+        B1 --&gt;|&#34;推進&#34;| B0
+    end
+
+    GlobalEpoch --&gt;|&#34;標記世代&#34;| ThreadWork
+    ThreadWork --&gt;|&#34;節點退役入桶&#34;| RetireQueue
+
+    style GlobalEpoch fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    style ThreadWork fill:#16161e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style RetireQueue fill:#16161e,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+
+    classDef glob fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+    classDef work fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef ret fill:#24283b,stroke:#9ece6a,stroke-width:1.5px,color:#c0caf5;
+
+    class GE glob;
+    class Pin,Read,Unpin work;
+    class B0,B1,B2 ret;</div>
+
+<h4 id="ebr-的黃金準則">EBR 的黃金準則</h4>
+<ol>
+<li>任何執行緒在存取無鎖結構前，必須先呼叫 <code>guard = epoch::pin()</code>。這會將當前執行緒標記為活躍，並綁定在當前全域 Epoch。</li>
+<li>只要執行緒處於 <code>pin()</code> 狀態，它所看見的所有節點都<strong>保證不會被釋放</strong>。</li>
+<li>被移除的節點會被標記退役（Retire）並丟入當前 Epoch 的垃圾箱。</li>
+<li><strong>推進世代</strong>：當系統發現所有曾活躍於前一世代的執行緒皆已離場（不再 pin 在較舊世代）時，全域 Epoch 即可安全推進至下一代。</li>
+<li><strong>安全回收</strong>：處於 <code>(E - 2)</code> 世代的垃圾，保證沒有任何存活的讀者能看見，<strong>可以安全批次釋放</strong>！</li>
+</ol>
+<ul>
+<li><strong>優點</strong>：在 <code>pin()</code> 期間，讀取任何節點<strong>完全不需要任何原子寫入或硬體屏障</strong>，效能幾乎等同於讀取一般指標，非常適合走訪大規模樹狀結構或跳躍表（SkipList）。</li>
+<li><strong>缺點（致命傷）</strong>：若有任何一個執行緒呼叫了 <code>pin()</code> 後發生長久停頓（例如執行耗時計算、被作業系統搶佔或發生 I/O 阻塞），全域 Epoch 將<strong>無法推進</strong>。這會導致垃圾回收被無限期延宕，系統中累積的退役節點記憶體無界膨脹，最終引發 OOM（Out of Memory）！值得澄清的是，這只會卡住記憶體回收流程，其他執行緒在資料結構本身的 push/pop 運作依然能持續推進。</li>
+</ul>
+<h3 id="read-copy-update-rcu">Read-Copy-Update (RCU)</h3>
+<p>RCU 是 Linux 核心中支撐百萬級網路轉發與檔案系統路由的核心機制，亦有使用者空間實作（Userspace RCU, liburcu）。此外，C++26 草案亦已正式納入 <code>&lt;rcu&gt;</code> 標頭檔支援。</p>
+<p>RCU 特別針對 <strong>讀極多、寫極少</strong>（Read-Mostly）的資料結構設計：</p>
+<ul>
+<li><strong>Reader</strong>：透過 <code>rcu_read_lock()</code> 進入臨界區，<strong>不執行任何鎖定、不修改任何共享計數器</strong>，直接讀取指標。讀取開銷近乎為零。</li>
+<li><strong>Writer</strong>：不能就地修改資料。必須先複製一份舊資料副本，在副本上完成修改，接著透過原子指標替換（Release store）將入口切換到新版本。</li>
+<li><strong>寬限期（Grace Period）與非阻塞回呼</strong>：切換入口後，舊版本資料不能立刻釋放。Writer 可呼叫 <code>synchronize_rcu()</code> 阻塞等待，直到切換前就已進入臨界區的所有舊讀者<strong>全部執行完畢離場</strong>；或呼叫非阻塞的 <code>call_rcu()</code> 註冊回呼函式，待寬限期結束後由背景機制非同步安全銷毀舊版本資料。</li>
+</ul>
+<h3 id="四大記憶體回收機制架構對比">四大記憶體回收機制架構對比</h3>
+<table>
+	<thead>
+			<tr>
+					<th>機制</th>
+					<th>保護粒度</th>
+					<th>讀取端開銷</th>
+					<th>記憶體上限保證</th>
+					<th>對執行緒長久停頓（Stall）敏感度</th>
+					<th>典型應用場景</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><strong>Tagged Pointer</strong></td>
+					<td>單一指標</td>
+					<td>零額外讀取負擔（需 DWCAS）</td>
+					<td>無（無法解決釋放引發的崩潰）</td>
+					<td>不敏感</td>
+					<td>僅防範拓撲 ABA，需搭配其他回收方案</td>
+			</tr>
+			<tr>
+					<td><strong>Hazard Pointer</strong></td>
+					<td>個別節點</td>
+					<td>中等（每次解引用需寫入全域狀態並下屏障）</td>
+					<td><strong>嚴格保證</strong>（垃圾量有明確上限）</td>
+					<td><strong>極佳</strong>（單一執行緒暫停僅卡住少數節點）</td>
+					<td>節點數量少、執行緒可能隨機掛起或有即時性要求之系統</td>
+			</tr>
+			<tr>
+					<td><strong>Epoch-Based (EBR)</strong></td>
+					<td>整段操作臨界區</td>
+					<td><strong>極低</strong>（僅進入/離開時標記，走訪零負擔）</td>
+					<td>弱（取決於最慢的執行緒）</td>
+					<td><strong>極高</strong>（單一執行緒停頓會拖垮全域回收）</td>
+					<td>高效能記憶體快取、跨執行緒並行 Map/SkipList（如 <code>crossbeam</code>）</td>
+			</tr>
+			<tr>
+					<td><strong>RCU</strong></td>
+					<td>整個資料版本</td>
+					<td><strong>近乎為零</strong>（普通指標存取）</td>
+					<td>弱（寬限期內需維持雙版本）</td>
+					<td>高（需等待寬限期排空）</td>
+					<td>路由表、設定檔更新、讀極多寫極少之系統服務</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="全部改成-seqcst也救不了生命週期">全部改成 SeqCst，也救不了生命週期</h2>
+<p>並行開發者常犯的一個危險認知是：「既然 memory ordering 這麼複雜，我乾脆把全專案的原子操作全部改成 <code>std::memory_order_seq_cst</code> 或 <code>Ordering::SeqCst</code>，這樣不就萬無一失了嗎？」</p>
+<p>讓我們用一個最殘酷的時序交錯來擊碎這個幻想：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>假設 head 指標全域採用 SeqCst，不使用任何 SMR 回收防護：
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>執行緒 1 (Reader)                     執行緒 2 (Reclaimer)
+</span></span><span style="display:flex;"><span>------------------------------------------------------------
+</span></span><span style="display:flex;"><span>Node* p = head.load(SeqCst);
+</span></span><span style="display:flex;"><span>// 此時 p 存放節點 A 的記憶體位址
+</span></span><span style="display:flex;"><span>                                      head.compare_exchange_strong(p, p-&gt;next, SeqCst);
+</span></span><span style="display:flex;"><span>                                      // 成功將 A 從鏈結中移除！
+</span></span><span style="display:flex;"><span>                                      delete p; // 釋放節點 A 的記憶體！
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>int val = p-&gt;data; // USE-AFTER-FREE 災難！
+</span></span><span style="display:flex;"><span>// 記憶體已被釋放，甚至已被作業系統收回，直接觸發 Segment Fault！</span></span></code></pre></div>
+
+<p>在這個時序中：</p>
+<ul>
+<li>執行緒 1 的 load 是完全合法的 <code>SeqCst</code>。</li>
+<li>執行緒 2 的 CAS 與 <code>delete</code> 也是完全合法的 <code>SeqCst</code>。</li>
+<li>整個過程中<strong>沒有任何違反記憶體順序的情形發生</strong>！</li>
+</ul>
+<p>然而，<strong>程式依然崩潰了</strong>。</p>
+<p>這是因為：<strong>Memory Ordering 管的是變數寫入與觀察的可見性因果；而 SMR 管的是底層記憶體區塊實體是否依然存活合法</strong>！
+最強的記憶體順序也無法穿越空間，阻止作業系統將已經 <code>free</code> 掉的記憶體分頁標記為無效。</p>
+<h3 id="lock-free-程式碼審查三大檢驗清單">Lock-Free 程式碼審查三大檢驗清單</h3>
+<p>在審查任何無鎖演算法或資料結構時，請務必按照以下三大獨立維度逐一檢驗：</p>
+<ol>
+<li><strong>狀態轉移正確性</strong>（State Transition &amp; CAS）：
+<ul>
+<li>CAS 的條件是否足以代表系統真實狀態？</li>
+<li>是否存在指標重複配置造成的 ABA 偽成功？（是否需要 Tagged Pointer 或版本號？）</li>
+<li>失敗重試路徑是否會發生死迴圈或活鎖？</li>
+</ul>
+</li>
+<li><strong>可見性同步保證</strong>（Memory Ordering）：
+<ul>
+<li>新節點在寫入原子變數對外發布前，內部資料是否使用 <code>Release</code> 確立因果？</li>
+<li>讀者在解引用指標前，是否使用 <code>Acquire</code> 與發布者建立 <code>synchronizes-with</code>？</li>
+<li>CAS 的失敗 ordering 是否正確排除了 <code>Release</code>，並在需要重試解引用時維持了 <code>Acquire</code>？</li>
+</ul>
+</li>
+<li><strong>記憶體生命週期安全</strong>（Safe Memory Reclamation）：
+<ul>
+<li>當指標被載入到執行緒暫存器後，到真正存取完畢期間，該記憶體區塊是否受到 HP 或 EBR 的保護？</li>
+<li>節點退役（Retire）後，是否有嚴格的寬限期或計數比對機制，確認所有並行讀者全數離場才執行物理釋放？</li>
+</ul>
+</li>
+</ol>
+<h2 id="ai-在無鎖程式設計中的角色輔助撰寫與形式驗證">AI 在無鎖程式設計中的角色：輔助撰寫與形式驗證</h2>
+<p>隨著大型語言模型（LLM）與 AI 輔助程式設計工具（如 Claude Code）的普及，許多開發者開始嘗試讓 AI 撰寫或最佳化無鎖資料結構。在一般業務邏輯中，AI 能大幅提升產能；但在並行程式設計——尤其是弱記憶體模型與硬體原子原語的世界裡，AI 究竟是強大夥伴，還是潛伏的定時炸彈？</p>
+<p>我們應該如何正確運用 AI 來輔助無鎖程式設計與程式碼驗證？</p>
+<h3 id="為什麼不能盲目信任-ai-寫出的-lock-free-程式碼">為什麼不能盲目信任 AI 寫出的 Lock-Free 程式碼？</h3>
+<p>無鎖程式設計本質上是<strong>極端交錯狀態下的離散數學</strong>。而現今的 LLM 是基於機率分佈預測下一個 token 的模型，擅長提取常見模式，但在面對非直覺的底層硬體特性時，極易產生隱蔽盲區：</p>
+<ul>
+<li><strong>幻覺與過度簡化</strong>（The Naive Loop Illusion）：當你要求 AI「用 C++ 寫一個無鎖 Stack」時，它幾乎千篇一律會給出教科書式的裸指標 CAS 迴圈。這段程式碼在單執行緒或低並發測試時完全正常，但 AI 往往對 ABA 問題隻字不提，更完全忽略了節點被 <code>delete</code> 後並行讀者引發的 Use-After-Free 崩潰。</li>
+<li><strong>記憶體順序的隨機性</strong>：在要求 AI 最佳化效能時，AI 經常在沒有精確因果依據的情況下，將 <code>SeqCst</code> 降級為 <code>Relaxed</code>，遺漏關鍵的 <code>Acquire</code> 讀取屏障或 <code>Release</code> 發布屏障；或者在 CAS 失敗分支上錯誤地配置了未定義的記憶體順序。</li>
+<li><strong>生命週期管理的缺失</strong>：實作一個健全的 Hazard Pointer 或 EBR 機制需要極度嚴謹的批次狀態機（包含執行緒註冊、看板掃描、世代三代推進等）。AI 往往只能生成空有函式骨架的虛構實作，在真實高並發壓力下瞬間被記憶體洩漏或懸置指標擊垮。</li>
+</ul>
+<p>未經嚴格驗證的 AI 無鎖程式碼，最危險之處在於它<strong>看起來無比正確</strong>——編譯毫無警告，單元測試跑過一萬次也全數通過，卻在生產環境的 ARM64 伺服器連續運行數天後偶然觸發非法記憶體存取。</p>
+<h3 id="ai-的真實價值作為對抗性審查員adversarial-reviewer">AI 的真實價值：作為對抗性審查員（Adversarial Reviewer）</h3>
+<p>既然不能讓 AI 閉眼裸寫核心無鎖邏輯，AI 的真正威力該如何發揮？答案是<strong>翻轉角色</strong>：不要讓 AI 當「架構師」，而是讓它擔任「對抗性質疑者」（Red Teaming Reviewer）。</p>
+<p>人類工程師在審查自己撰寫的並行程式碼時，極容易陷入思維定勢（Confirmation Bias），預設執行緒會照著自己構想的理想順序前進。而 AI 沒有這種心理負擔，只要給予正確的約束，它能高效扮演挑錯的黑客角色。</p>
+<h4 id="提示詞設計策略逼問邊界交錯">提示詞設計策略：逼問邊界交錯</h4>
+<p>在請 AI 審查人類撰寫的無鎖程式碼時，避免使用「這段程式碼有沒有問題？」這種寬泛提問，而應當給予明確的底層架構約束：</p>
+<blockquote><p><strong>針對弱記憶體模型的審查 Prompt 範例</strong>：<br>
+「請扮演資深並行系統核心工程師。審查以下 C++20 無鎖佇列的 <code>pop()</code> 實作。請特別假設運行於 ARM64 架構（具備 Store Buffer 與弱記憶體順序）：</p>
+<ol>
+<li>請檢查 <code>head.load</code> 與後續存取內部欄位之間，是否存在任何指令重排（Reordering）可能讀取到未初始化的資料？</li>
+<li>請構造一個精確的雙執行緒交錯時序（Interleaving trace），證明在特定的 CAS 失敗重試路徑上，是否可能發生 ABA 或存取已被釋放的記憶體？</li>
+<li>列出所有你認為可以進一步降級或必須升級的 <code>std::memory_order</code>，並嚴格給出因果依據。」</li>
+</ol>
+</blockquote><p>在這種對抗性約束下，AI 能極其迅速地指出人類肉眼容易漏看的分支細節，例如「CAS 失敗時 <code>expected</code> 更新與下一次重試讀取之間的屏障漏洞」。</p>
+<h3 id="終極閉環ai-結合符號模型檢查formal-verification">終極閉環：AI 結合符號模型檢查（Formal Verification）</h3>
+<p>無論是人類專家還是 AI 審查，本質上都依賴經驗推演，無法窮舉龐大的並行交錯空間。要在工程上獲得真正的數學級確定性，必須將 AI 融入<strong>形式化驗證工具鏈</strong>（Formal Verification Toolchain）：</p>
+
+  <div class="mermaid">flowchart TD
+    subgraph HumanPhase[&#34;人類工程師核心主導&#34;]
+        H1[&#34;&lt;div style=&#39;width:460px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;架構設計與狀態機定義&lt;/b&gt;&lt;br/&gt;• 定義無鎖拓撲、CAS 不變量與 SMR 回收策略&lt;/div&gt;&#34;]
+    end
+
+    subgraph AIPhase[&#34;AI 協同分析與測試生成 (LLM Augmented)&#34;]
+        direction LR
+        A1[&#34;&lt;div style=&#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&#39;&gt;&lt;b&gt;對抗性代碼審查&lt;/b&gt;&lt;br/&gt;• 弱記憶體重排推演&lt;br/&gt;• 構造極限 ABA 交錯&lt;/div&gt;&#34;]
+        A2[&#34;&lt;div style=&#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&#39;&gt;&lt;b&gt;驗證套件生成&lt;/b&gt;&lt;br/&gt;• 自動產出 Loom 測試&lt;br/&gt;• 轉譯 TLA&#43; / GenMC 規格&lt;/div&gt;&#34;]
+        A1 -.- A2
+    end
+
+    subgraph VerifyPhase[&#34;確定性形式驗證 (Formal Verification)&#34;]
+        direction LR
+        V1[&#34;&lt;div style=&#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&#39;&gt;&lt;b&gt;Loom / GenMC 窮舉&lt;/b&gt;&lt;br/&gt;• 探索所有並行排程狀態&lt;br/&gt;• 捕捉百萬分之一時序 Bug&lt;/div&gt;&#34;]
+        V2[&#34;&lt;div style=&#39;width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;&#39;&gt;&lt;b&gt;TSan 動態競爭偵測&lt;/b&gt;&lt;br/&gt;• 記憶體存取插樁分析&lt;br/&gt;• 攔截底層 Data Race&lt;/div&gt;&#34;]
+        V1 -.- V2
+    end
+
+    HumanPhase --&gt; AIPhase
+    AIPhase --&gt; VerifyPhase
+    VerifyPhase --&gt; Result{&#34;形式驗證結果？&#34;}
+
+    Result --&gt;|通過驗證| Deploy[&#34;&lt;div style=&#39;width:250px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;★ 具備數學保證的生產級實作&lt;/b&gt;&lt;br/&gt;通過全狀態空間探索與壓力測試&lt;/div&gt;&#34;]
+    Result --&gt;|發現反例| Fix[&#34;&lt;div style=&#39;width:250px; padding:4px 8px 8px 8px; line-height:1.4;&#39;&gt;&lt;b&gt;反例日誌分析 (Trace Analysis)&lt;/b&gt;&lt;br/&gt;AI 解讀報錯時序，輔助定位修補&lt;/div&gt;&#34;]
+
+    style HumanPhase fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    style AIPhase fill:#16161e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style VerifyPhase fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+
+    classDef human fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#c0caf5;
+    classDef ai fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef verify fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef fail fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class H1 human;
+    class A1,A2 ai;
+    class V1,V2 verify;
+    class Result branch;
+    class Deploy ok;
+    class Fix fail;</div>
+
+<h4 id="讓-ai-生成-loom-與-genmc-形式測試-harness">讓 AI 生成 Loom 與 GenMC 形式測試 Harness</h4>
+<p>撰寫形式化測試套件（如 Rust 的 <code>loom</code> 或 C++ 的 <code>GenMC</code>）相當繁瑣，需將所有原生型別替換為模型檢查器的特定原語。這恰好是 AI 的絕佳施展場域：</p>
+<ul>
+<li><strong>Prompting 任務</strong>：「將以下這段生產級 Treiber Stack 的 Rust 實作，改寫為 <code>loom</code> 模型測試案例。使用 <code>loom::sync::atomic</code> 與 <code>loom::thread</code>，設定 2 個執行緒同時進行並行 push 與 pop，驗證是否滿足 LIFO 屬性與記憶體無外洩。」</li>
+<li>AI 能在數秒內生成規範的驗證環境，讓模型檢查器窮舉成千上萬種合法執行緒排程。</li>
+</ul>
+<h4 id="讓-ai-解讀反例追蹤日誌counterexample-trace">讓 AI 解讀反例追蹤日誌（Counterexample Trace）</h4>
+<p>當模型檢查器發現錯誤時，輸出的反例日誌往往龐大無比，列出數十個排程步驟與記憶體存取歷史。人類工程師需要花費數小時追蹤究竟是哪一個執行緒的哪一行指令觸發了狀態不一致。</p>
+<p>此時將反例日誌餵給 AI：</p>
+<blockquote><p>「這是在執行 GenMC 模型檢查時回報的失敗日誌。請追蹤 Execution Graph，指出在第幾個 step 時發生了哪兩個記憶體存取的因果斷裂？是哪一行程式碼的 memory ordering 不足以建立 synchronizes-with？」</p>
+</blockquote><p>AI 具備強大的符號模式匹配能力，能精準從數百行交錯記錄中萃取出關鍵的因果漏洞，並給予精準的修復建議。</p>
+<p>透過「人類定架構 ➔ AI 擬推演並編寫測試模型 ➔ 符號檢查器嚴密證明 ➔ AI 解讀反例日誌」的閉環體系，我們才能真正將 AI 的敏捷性與形式驗證的數學嚴謹性結合，打造出堅不可摧的生產級無鎖系統。</p>
+<h2 id="結語何時該用-lock-free">結語：何時該用 Lock-Free？</h2>
+<p>無鎖資料結構擁有極致的吞吐潛力與避免優先權反轉（Priority Inversion）的優雅特質，但它的實作代價無比高昂。每一行看似平凡的指標操作背後，都牽動著 CPU 管線排空、快取一致性廣播、ABA 防護與記憶體延後回收的複雜協同。</p>
+<p>在工程實踐中，我們應當抱持審慎客觀的態度：</p>
+<ul>
+<li><strong>95% 的業務場景</strong>：優先使用現代作業系統高度最佳化的標準鎖（如基於 Futex 的 <code>std::mutex</code> 或 Rust 的 <code>parking_lot::Mutex</code>）。現代互斥鎖在無競爭情況下僅是一次輕量的原子 CAS，開銷僅數十奈秒，且心智負擔極低。</li>
+<li><strong>高頻交易、核心驅動與底層基礎設施</strong>：在極度要求低延遲、不可容忍鎖定阻塞（如即時音訊處理、高並發網路事件循環 Reactor）的關鍵路徑上，投入精力設計並驗證 Lock-Free 結構。</li>
+<li><strong>站在巨人的肩膀上</strong>：若需要使用無鎖結構，盡量選用經過工業級形式化驗證（如 TLA+）與龐大測試套件（如 ThreadSanitizer、Loom）錘鍊的成熟庫（如 Rust 的 <code>crossbeam</code>，C++ 的 Folly 或 Intel TBB），切忌在未經深思熟慮前自行在生產環境手寫無鎖記憶體回收器。</li>
+</ul>
+<p>透過這兩篇文章的梳理，我們從底層硬體快取與記憶體模型的微觀世界，一路跨越至無鎖拓撲與安全記憶體回收的宏觀架構。並行程式設計雖然充滿挑戰，但只要掌握了因果順序與生命週期的雙重視角，看似詭譎多變的多執行緒世界，終將呈現出清晰嚴謹的工程之美。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>
