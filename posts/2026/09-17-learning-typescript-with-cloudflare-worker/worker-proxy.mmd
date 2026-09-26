@@ -1,0 +1,20 @@
+flowchart TD
+    App(["手機 App<br/>發送公開請求 (無金鑰)"])
+
+    subgraph Edge ["Cloudflare Edge"]
+        direction TB
+        Worker[["TypeScript Worker<br/>驗證參數與型別契約"]]
+        Cache[("caches.default<br/>成功回應快取 30 分鐘")]
+        Secret["Secret Binding<br/>安全保留 NPS_API_KEY"]
+
+        Worker -->|查詢 / 寫入| Cache
+        Cache -->|命中回傳| Worker
+        Worker --> Secret
+    end
+
+    NPS(["NPS Developer API<br/>官方上游服務"])
+
+    App -->|"GET /alerts?parkCode=yose"| Worker
+    Worker -->|"cache miss (附加 API Key)"| NPS
+    NPS --> Worker
+    Worker --> App

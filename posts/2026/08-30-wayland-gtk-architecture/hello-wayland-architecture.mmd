@@ -1,0 +1,33 @@
+flowchart TD
+    subgraph App["Hello Wayland (C++23)"]
+        WAPP["WaylandApp<br/>(PIMPL · 事件迴圈)"]
+        VK["VulkanRenderer<br/>(RAII · std::expected)"]
+    end
+
+    subgraph Wayland["Wayland Protocol"]
+        REG["wl_registry"]
+        WM["xdg_wm_base"]
+        XSURF["xdg_surface / xdg_toplevel"]
+        WSURF["wl_surface"]
+    end
+
+    subgraph VulkanDriver["Vulkan WSI (GPU Driver)"]
+        VK_SURF["VkSurfaceKHR<br/>(VK_KHR_wayland_surface)"]
+        SWAP["VkSwapchainKHR<br/>(VK_KHR_swapchain)"]
+    end
+
+    WAPP -->|綁定| REG
+    REG -->|獲取| WM
+    WM -->|建立| XSURF
+    XSURF -->|管理| WSURF
+    WSURF -.->|傳入 display 與 surface| VK_SURF
+    VK_SURF -->|建立| SWAP
+    VK -->|渲染並呈現| SWAP
+
+    classDef cppNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef wlNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+    classDef vkNode fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+
+    class WAPP,VK cppNode;
+    class REG,WM,XSURF,WSURF wlNode;
+    class VK_SURF,SWAP vkNode;

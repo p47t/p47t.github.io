@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    actor Client as 📱 Downstream Client (SDK)
+    participant GW as ⚡ AI Gateway (C++23)
+    participant Upstream as 🦙 Upstream LLM (Ollama/vLLM)
+
+    Client->>GW: POST /v1/chat/completions (stream: true)
+    Note over GW: picohttpparser 解析 JSON<br/>std::expected 路由比對 -> 選擇 Upstream
+    GW->>Upstream: POST /v1/chat/completions (stream: true)
+    
+    Upstream-->>GW: HTTP/1.1 200 OK (Transfer-Encoding: chunked)
+    GW-->>Client: HTTP/1.1 200 OK (Transfer-Encoding: chunked)
+    
+    loop Real-Time Token & Reasoning Streaming
+        Upstream-->>GW: data: {"choices":[{"delta":{"reasoning":"Thinking..."}}]}
+        GW-->>Client: data: {"choices":[{"delta":{"reasoning":"Thinking..."}}]}
+        Upstream-->>GW: data: {"choices":[{"delta":{"content":"Hi"}}]}
+        GW-->>Client: data: {"choices":[{"delta":{"content":"Hi"}}]}
+    end
+    
+    Upstream-->>GW: data: [DONE]\r\n0\r\n\r\n
+    GW-->>Client: data: [DONE]\r\n0\r\n\r\n

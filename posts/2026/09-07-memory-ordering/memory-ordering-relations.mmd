@@ -1,0 +1,23 @@
+flowchart TD
+    subgraph ThreadA["執行緒 A"]
+        A1["一般變數寫入 data = 42"]
+        A2["Release Store ready = true"]
+        A1 -- "sequenced-before" --> A2
+    end
+
+    subgraph ThreadB["執行緒 B"]
+        B1["Acquire Load ready == true"]
+        B2["一般變數讀取 assert(data == 42)"]
+        B1 -- "sequenced-before" --> B2
+    end
+
+    A2 -- "synchronizes-with<br/>(reads-from 成功配對)" --> B1
+    A1 -. "happens-before (推導成立)" .-> B2
+
+    classDef proc fill:#1f2335,stroke:#414868,stroke-width:1.5px,color:#c0caf5;
+    classDef sync fill:#24283b,stroke:#bb9af7,stroke-width:2px,color:#bb9af7;
+    classDef safe fill:#24283b,stroke:#9ece6a,stroke-width:2px,color:#9ece6a;
+
+    class A1,B2 proc;
+    class A2 sync;
+    class B1 safe;

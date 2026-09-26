@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant U as 使用者
+    participant AL as Agent Loop
+    participant P as Provider
+    participant LLM as LLM API
+    participant T as Tool
+
+    U->>AL: 送出訊息
+    AL->>P: tools_to_provider_format(specs)
+    P->>LLM: chat request + tool definitions
+    LLM-->>P: 回應（含 tool calls）
+    P-->>AL: ChatResponse { tool_calls: [...] }
+    loop 最多 10 次
+        AL->>AL: find_tool(name)
+        AL->>AL: ApprovalManager（Supervised 模式）
+        AL->>T: execute(args)
+        T->>T: SecurityPolicy 檢查
+        T-->>AL: ToolResult
+        AL->>P: 把結果轉成 ConversationMessage
+        P->>LLM: 繼續對話（含工具執行結果）
+        LLM-->>P: 新回應
+        alt 不再呼叫工具
+            P-->>AL: 純文字回應
+            AL-->>U: 最終答覆
+        end
+    end

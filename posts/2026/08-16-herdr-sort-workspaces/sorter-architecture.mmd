@@ -1,0 +1,71 @@
+flowchart TD
+    subgraph UI ["1. 使用者介面與觸發 (UI & CLI)"]
+        direction LR
+        Pal["herdr command palette<br/>(快捷鍵 / 外掛選單)"] -->|啟動| CLI["CLI 命令列 (CLI11)<br/>sort / list / hook / bench"]
+        TUI["FTXUI 互動終端介面<br/>(即時預覽 / [1-8] 快捷鍵)"]
+        BenchTool["bench-natural-sort<br/>(專屬效能評測二進位檔)"]
+    end
+
+    subgraph Core ["2. 核心排序與評測模組 (C++23 Sorter &amp; Bench Engine)"]
+        direction LR
+        Sorter["⚙️ Sorter 策略排程器<br/>(std::ranges::stable_sort / partition)"]
+        NatSort["🔤 Natural Sort 比較器<br/>(自然字母數字分塊比對)"]
+        Model["📦 資料模型映射<br/>(nlohmann_json 序列化)"]
+        BenchCore["⚡ 效能基準評測引擎<br/>(do_not_optimize / 9 種資料分佈)"]
+        
+        Sorter --- NatSort
+        Sorter --- Model
+        BenchCore --- NatSort
+        BenchCore --- Sorter
+    end
+
+    subgraph PlannerSub ["3. 置換規劃模組 (Reorder Planner)"]
+        Planner["📐 最小移動規劃器<br/>(前綴不變量置換狀態機演算法)"]
+    end
+
+    subgraph Transport ["4. 通訊傳輸層 (herdrClient)"]
+        direction LR
+        Sock["⚡ Unix domain socket<br/>(JSON-RPC / 5 秒逾時保護)"]
+        CliFallback["🐚 herdr CLI 子程序<br/>(popen 管道容錯回退)"]
+        Sock -.->|連線失敗時回退| CliFallback
+    end
+
+    subgraph Daemon ["5. herdr 執行時環境 (daemon)"]
+        HerdrCore["🖥️ herdr core daemon<br/>(workspace.list / workspace.move / notification.show)"]
+    end
+
+    CLI ==>|傳入排序或壓測請求| Sorter
+    TUI ==>|即時預覽與套用| Sorter
+    BenchTool ==>|執行全場景基準評測| BenchCore
+    Sorter ==>|輸出目標排序清單| Planner
+    Planner ==>|生成最小移動指令序列| Sock
+    Sock ==>|socket 通訊| HerdrCore
+    CliFallback ==>|CLI 指令管道| HerdrCore
+
+    classDef uiNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef coreNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef planNode fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    classDef transNode fill:#431407,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef daemonNode fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#f8fafc;
+
+    class Pal,CLI,TUI,BenchTool uiNode;
+    class Sorter,NatSort,Model,BenchCore coreNode;
+    class Planner planNode;
+    class Sock,CliFallback transNode;
+    class HerdrCore daemonNode;
+
+    style UI fill:#022c22,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+    style Core fill:#082f49,stroke:#0284c7,stroke-width:2px,color:#7dd3fc
+    style PlannerSub fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#a5b4fc
+    style Transport fill:#271007,stroke:#ea580c,stroke-width:2px,color:#fdba74
+    style Daemon fill:#0f172a,stroke:#64748b,stroke-width:2px,color:#cbd5e1
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;
+    linkStyle 0 stroke:#6ee7b7,stroke-width:2px,fill:none;
+    linkStyle 1,2,3,4 stroke:#38bdf8,stroke-width:1.5px,stroke-dasharray:3 3,fill:none;
+    linkStyle 5 stroke:#fb923c,stroke-width:2px,stroke-dasharray:4 4,fill:none;
+    linkStyle 6,7,8 stroke:#34d399,stroke-width:2.5px,fill:none;
+    linkStyle 9 stroke:#38bdf8,stroke-width:2.5px,fill:none;
+    linkStyle 10 stroke:#818cf8,stroke-width:2.5px,fill:none;
+    linkStyle 11 stroke:#f97316,stroke-width:2.5px,fill:none;
+    linkStyle 12 stroke:#fb923c,stroke-width:2px,fill:none;

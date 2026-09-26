@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant Client as Web Client
+    participant Axum as Axum / Tokio Task
+    participant Service as EngineService (Mutex)
+    participant Blocking as Tokio Blocking Thread
+    participant Llama as llama.cpp Engine (C FFI)
+
+    Client->>Axum: POST /v1/chat/completions (stream=true)
+    Axum->>Service: chat_streaming(messages)
+    Note over Service: 建立 tokio::sync::mpsc 管道 (tx, rx)
+    Service->>Blocking: tokio::task::spawn_blocking
+    Axum-->>Client: 立即回傳 HTTP 200 (SSE stream)
+    
+    loop 推理循環 (在 Blocking Thread 中)
+        Blocking->>Service: 獲取 Mutex 鎖
+        Blocking->>Llama: 推理下一個 Token
+        Llama-->>Blocking: 回傳 token piece ("Rust")
+        Blocking->>Service: 釋放 Mutex 鎖
+        Blocking->>Axum: tx.blocking_send("Rust")
+        Axum-->>Client: SSE event (data: {"choices": [...]})
+    end
+    
+    Note over Blocking: 推理結束 / 遇到 EOG
+    Blocking->>Axum: drop(tx) 關閉管道
+    Axum-->>Client: data: [DONE]

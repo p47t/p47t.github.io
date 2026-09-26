@@ -1,0 +1,31 @@
+flowchart TD
+    subgraph CPUCore0["CPU 核心 0 (Writer)"]
+        ALU0["執行管線 (ALU)"]
+        SB0["Store Buffer (暫存未寫入快取之資料)"]
+        ALU0 -- "寫入" --> SB0
+    end
+
+    subgraph CPUCore1["CPU 核心 1 (Reader)"]
+        ALU1["執行管線 (ALU)"]
+        LQ1["Load Queue / Invalidate Queue"]
+        LQ1 -- "推測讀取" --> ALU1
+    end
+
+    subgraph MemorySubsystem["快取子系統 (Cache Subsystem)"]
+        L1_0["L1 / L2 快取 (Core 0)"]
+        L1_1["L1 / L2 快取 (Core 1)"]
+        Interconnect["快取一致性匯流排 (MESI/MOESI Protocol)"]
+        L1_0 <--> Interconnect
+        L1_1 <--> Interconnect
+    end
+
+    SB0 -- "非同步排空 (Drain)" --> L1_0
+    Interconnect -- "使無效 (Invalidate)" --> LQ1
+
+    classDef core fill:#1f2335,stroke:#414868,stroke-width:1px,color:#c0caf5;
+    classDef buffer fill:#24283b,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    classDef bus fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class ALU0,ALU1 core;
+    class SB0,LQ1 buffer;
+    class L1_0,L1_1,Interconnect bus;

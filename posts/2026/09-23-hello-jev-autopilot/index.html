@@ -1,0 +1,796 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計 - 從語意雷達快照、TypeSafe 結構化決策到 120 Hz 物理模擬與在地防衛反射</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-23-hello-jev-autopilot/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-23-hello-jev-autopilot/"/>
+  <meta property="og:title" content="讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計 - 從語意雷達快照、TypeSafe 結構化決策到 120 Hz 物理模擬與在地防衛反射"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-09-23 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="typescript"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="game-dev"/>
+  
+  <meta property="og:article:tag" content="architecture"/>
+  
+  <meta property="og:article:tag" content="tools"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">254</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">59</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/09-19-api-design-20-years-later/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            時隔 20 年，有比 Joshua Bloch 的演講更好的 API 設計指南嗎？
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/09-23-jev-autopilot-tactics-tuning/">
+            讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計</h1>
+      
+      <div class="post-subtitle">從語意雷達快照、TypeSafe 結構化決策到 120 Hz 物理模擬與在地防衛反射</div>
+      
+      <div class="post-meta">
+        <span class="post-date">September 23, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/typescript"><span class="label label-primary">typescript</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/game-dev"><span class="label label-primary">game-dev</span></a>
+        
+        <a href="/tags/architecture"><span class="label label-primary">architecture</span></a>
+        
+        <a href="/tags/tools"><span class="label label-primary">tools</span></a>
+        
+        
+<div class="post-series">
+  
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>Jev AI</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Sep 23, 2026 - <a href="/posts/2026/09-23-jev-autopilot-tactics-tuning/">讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校</a></li>
+  
+    <li>Sep 23, 2026 - <a href="/posts/2026/09-23-hello-jev-autopilot/">讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/09-23-hello-jev-autopilot/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>1979 年由 Atari 推出的經典街機遊戲《Asteroids》（隕石狂飆），是許多人對大型電玩的最早記憶之一：一艘三角形的小太空船漂浮在無重力深空中，利用牛頓慣性推進與 360 度旋轉穿梭於隕石群之間。擊中巨石會分裂成中型碎塊，碎塊再裂成小型疾馳的礫石，而螢幕邊緣更具備環狀包覆（toroidal wraparound）——從左側飛出就會從右側現身。</p>
+<p>小時候玩這款遊戲，總覺得最致命的往往不是手眼協調，而是局勢判斷：你究竟應該主動迎擊迎面而來的威脅、朝安全空曠處重新卡位，還是全力急轉閃避即將撞上的碎屑？</p>
+<p>最近為了深入練習現代 TypeScript，順便摸索 TypeSafe AI 推出的 System One 結構化決策模型 <strong>Jev</strong>，我動手寫了一個練習專案：<a href="https://github.com/p47t/hello-jev">hello-jev</a>。我用 TypeScript 與 Canvas 從頭打造了這款經典遊戲，並串接 Jev 實作了一具即時的「AI 飛行副駕駛（autopilot flight computer）」。不同於輸出自由文字的生成式 LLM，Jev 專門處理型別化的離散決策與機率分佈，非常適合擔任需要嚴謹邏輯的戰術大腦。</p>
+<p>你可以隨時手動駕駛，按下 <code>J</code> 鍵交給 Jev 接手；而在副駕駛接管期間，右側的飛行儀表板會即時展示 Jev 當前的戰術決策、機率分佈（probabilities）、置信度（confidence）與伺服器 SDK 延遲。只要你一碰方向鍵或空白鍵開火，系統會在鍵盤事件中立即切換模式，並在下一個物理步無縫套用手動輸入。</p>
+<p>先來看看 Jev 與在地控制器協同作戰的實機錄影。在這段約 84 秒的完整戰況中，自動駕駛成功清空了第一星區（Sector 01，得分達 2,600 並順利挺進 Sector 02），三艘飛船全數完好無損，右側飛行電腦更即時呈現了完整的戰術決策、機率分佈與呼叫紀錄：</p>
+
+
+
+
+
+
+<div class="video-container" style="text-align: center; margin: 24px auto;">
+  <video controls autoplay loop muted playsinline preload="auto" class="img-responsive" style="max-width: 100%; border-radius: 8px; margin: 0 auto; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+    
+      <source src="/posts/2026/09-23-hello-jev-autopilot/demo.mp4" type="video/mp4">
+    
+    
+      <source src="/posts/2026/09-23-hello-jev-autopilot/demo.webm" type="video/webm">
+    
+    
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+<p>但仔細想想，讓雲端 AI 模型來開太空船，這件事在工程上真的行得通嗎？</p>
+<h2 id="即時遊戲與-ai-模型的衝突">即時遊戲與 AI 模型的衝突</h2>
+<p>如果我們用最直覺的思維來設計 AI 飛行員，直覺的想法可能是：</p>
+<blockquote><p>「每一幀都截圖或把太空船座標餵給模型，問它現在該按『向左轉』、『推進』還是『開火』？」</p>
+</blockquote><p>這種做法只要一跑起來，就會立刻撞牆：</p>
+<ol>
+<li><strong>幀率預算的極限</strong> (Frame Budget)：遊戲實體物理模擬通常採用固定步長循環（fixed-step simulation）。在 <code>hello-jev</code> 中，物理模擬以 120 Hz 執行（每步約 8.3 毫秒，由 <code>requestAnimationFrame</code> 驅動累加器），這與瀏覽器的畫面渲染幀率解耦，若遇掉幀會在單一畫面幀中連續補償多個物理步。即使是最快的雲端推論 API，單次呼叫加上網路往返通常也需要數十至數百毫秒。用高延遲的網路 API 驅動毫秒級的連續物理迴圈，飛船早就撞毀幾十次了。</li>
+<li><strong>浮點幾何與向量運算的盲區</strong>：大語言模型擅長語意關聯與戰術權衡，但讓它在心智中做即時的二維三角函數計算（例如預判 640 px/s 子彈速度與兩團漂移物體的交會前置角），往往不穩定且消耗大量運算資源。</li>
+<li><strong>無重力環狀空間的複雜度</strong>：遊戲邊界具有循環環形（wraparound）特性。當飛船在 <code>x = 10</code>，隕石在 <code>x = 990</code>，幾何歐氏距離看似 980，但實際跨邊界距離只有 20。若把原始座標直接丟給模型，它很難迅速掌握環狀拓撲結構。</li>
+</ol>
+<p>那麼，我在打造 <code>hello-jev</code> 時，是如何化解這個矛盾的？</p>
+<p>答案就是現代自主機器人與自駕車領域行之有年的架構思維： <strong>雙層控制架構</strong> (Hierarchical Control Architecture)——將「宏觀戰術評估」與「微觀物理執行」徹底解耦。</p>
+<h2 id="雙層架構思考者與行動者的分工">雙層架構：思考者與行動者的分工</h2>
+<p>在 <code>hello-jev</code> 的設計中，我把飛行副駕駛精確切分為兩層不同頻率的系統：</p>
+<ul>
+<li><strong>宏觀戰術層</strong> (Deliberative Tactic Layer / Jev)：
+運行頻率低（在正常連續運作下，名義上約每 1.2 秒發送一次請求，且保證隨時最多只有一個在途請求）。它不負責「現在轉動 0.05 徑度」這種微操，而是回答宏觀問題：「面對目前的空域威脅，我該採取哪種戰術姿態（攔截、閃避或重新佔位）？如果攔截，優先鎖定哪顆隕石？」</li>
+<li><strong>微觀物理執行層</strong> (Reactive Controller / 120 Hz 在地控制器)：
+以確定性演算法在瀏覽器本機端以 120 Hz 固定步長執行。它接收 Jev 最新下達的戰術指令，並直接讀取當前飛船與隕石的即時幾何座標，計算出每個微步精準的轉向控制量（turn）、推進脈衝（thrust）與前置量射擊（lead aiming）。</li>
+<li><strong>即時防衛反射機制</strong> (Emergency Reflex Check)：
+在地控制器內建持續性的防衛反射檢測。在每個物理微步中，控制器會外推未來 0 至 0.8 秒內的近距威脅，只要有任何隕石進入安全包絡線（距離小於半徑加上 44 像素），無論當前是否在等待 Jev 回應，都會強制切換為逃逸姿態，有效降低等待模型回應期間的碰撞風險。</li>
+</ul>
+<p>整個系統的資料流向如下圖所示：</p>
+
+
+  
+    <img src="/posts/2026/09-23-hello-jev-autopilot/architecture.svg" alt="architecture.svg" class="img-responsive post-image">
+  
+
+<p>這套架構讓 Jev 專注發揮其巨觀場景判斷的高級能力，而把高頻率、需要精準數值解算的物理驅動，留給瀏覽器端輕量高效率的 TypeScript。</p>
+<h2 id="雷達快照將連續空間幾何語意化">雷達快照：將連續空間幾何語意化</h2>
+<p>要讓 Jev 做出精明判斷，第一步是：如何把複雜的 2D 物理狀態餵給模型？</p>
+<p>在 <code>src/game.ts</code> 的 <code>snapshot()</code> 中，我並沒有把整張畫布的座標直接丟給模型，而是寫了一段簡潔的幾何前處理，將空間狀態萃取為最多 10 顆鄰近隕石的「雷達快照（<code>FlightSnapshot</code>）」：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#a6e22e">snapshot</span>(<span style="color:#a6e22e">sequence</span>: <span style="color:#66d9ef">number</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">FlightSnapshot</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">round</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">n</span>: <span style="color:#66d9ef">number</span>) <span style="color:#f92672">=&gt;</span> Math.<span style="color:#a6e22e">round</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">10</span>) <span style="color:#f92672">/</span> <span style="color:#ae81ff">10</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">asteroids</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 計算考慮環狀邊界（wraparound）後的真實相對位移向量
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">d</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">delta</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>), <span style="color:#a6e22e">dist</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 計算相對速度向量
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">v</span> <span style="color:#f92672">=</span> { <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">r.vx</span> <span style="color:#f92672">-</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">r.vy</span> <span style="color:#f92672">-</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span> };
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 假設相對速度恆定，透過內積計算最接近時間點 t（限制在 0 到 5 秒之間）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">dot</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">y</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">t</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">max</span>(<span style="color:#ae81ff">0</span>, Math.<span style="color:#a6e22e">min</span>(<span style="color:#ae81ff">5</span>, <span style="color:#f92672">-</span><span style="color:#a6e22e">dot</span> <span style="color:#f92672">/</span> (<span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">||</span> <span style="color:#ae81ff">1</span>)));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">id</span>: <span style="color:#66d9ef">r.id</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">distance</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">dist</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 相對於船頭的方位角（-180 到 180 度，0 度表示正前方）
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">bearing</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">angleDifference</span>(Math.<span style="color:#a6e22e">atan2</span>(<span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span>, <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span>), <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> <span style="color:#f92672">/</span> Math.<span style="color:#a6e22e">PI</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">radius</span>: <span style="color:#66d9ef">r.radius</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 徑向接近速度（正值表示正在接近，負值表示遠離）
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">closingSpeed</span>: <span style="color:#66d9ef">round</span>(<span style="color:#f92672">-</span><span style="color:#a6e22e">dot</span> <span style="color:#f92672">/</span> (<span style="color:#a6e22e">dist</span> <span style="color:#f92672">||</span> <span style="color:#ae81ff">1</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 線性外推下，最接近時的兩者預估表面間距（負值代表若雙方維持等速直線運動將發生碰撞）
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">closestApproach</span>: <span style="color:#66d9ef">round</span>(Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>, <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>) <span style="color:#f92672">-</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">radius</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">SHIP_RADIUS</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">secondsToClosest</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">t</span>),
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>  }).<span style="color:#a6e22e">sort</span>((<span style="color:#a6e22e">a</span>, <span style="color:#a6e22e">b</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">a</span>.<span style="color:#a6e22e">distance</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">distance</span>).<span style="color:#a6e22e">slice</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sequence</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">wave</span>: <span style="color:#66d9ef">this.wave</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">lives</span>: <span style="color:#66d9ef">this.lives</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">ship</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">round</span>(Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">wrap</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> <span style="color:#f92672">/</span> Math.<span style="color:#a6e22e">PI</span>, <span style="color:#ae81ff">360</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">invulnerable</span>: <span style="color:#66d9ef">this.ship.shield</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">asteroids</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這段前處理的設計考量包含：</p>
+<ol>
+<li><strong>消除環形維度的歧義</strong>：透過 <code>delta(from, to)</code> 計算最短環形位移（1000×700 視口），輸出乾淨的相對距離向量。</li>
+<li><strong>直接給出衍生指標</strong> (Derived Metrics)：模型不需要拿速度與位置去解二階方程。快照在假設相對速度恆定（constant relative velocity）的前提下，提供 5 秒時間視界內的線性外推預估：<code>secondsToClosest</code> 是預估的最接近時間點（而非必定相撞的倒數計時），<code>closestApproach</code> 則是基於碰撞球體半徑估算的最小表面淨距。</li>
+<li><strong>相對航向角</strong> (Relative Bearing)：將絕對座標轉換成「相對於飛船當前朝向」的角度（<code>0°</code> 為正前方，負值為左，正值為右），讓模型能以最符合飛行員本能的視角進行決策。</li>
+<li><strong>中心距離排序取樣</strong>：選取距離飛船中心最近的 10 顆隕石餵給模型，控制酬載大小並聚焦局部威脅。</li>
+</ol>
+<h2 id="向-jev-發問typesafe-結構化查詢與機率決策">向 Jev 發問：TypeSafe 結構化查詢與機率決策</h2>
+<p>有了語意清晰的雷達快照，我在後端伺服器 <code>server/pilot.ts</code> 中是如何向 Jev 索取決策的？</p>
+<p>這裡使用的是 TypeSafe AI SDK 的 <code>@typesafe-ai/sdk</code>。不同於傳統大模型總是輸出一段難以約束格式的文字，TypeSafe 提供了一種專注於型別化結構決策的介面：<code>client.systemOne()</code> 與 <code>choice()</code>。</p>
+<h3 id="一次往返問完兩個獨立問題">一次往返問完兩個獨立問題</h3>
+<p>在 <code>server/pilot.ts</code> 的 <code>questionsFor()</code> 中，我設計在單一 SDK 呼叫中同時提出兩個相互獨立的結構化問題：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">questionsFor</span>(<span style="color:#a6e22e">snapshot</span>: <span style="color:#66d9ef">FlightSnapshot</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 動態建立當前可選的目標隕石清單
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">targets</span>: <span style="color:#66d9ef">Record</span>&lt;<span style="color:#f92672">string</span>, <span style="color:#a6e22e">string</span>&gt; <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">none</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;No useful asteroid target; focus on survival or wait for the next wave.&#39;</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">r</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">snapshot</span>.<span style="color:#a6e22e">asteroids</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">targets</span>[<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">id</span>] <span style="color:#f92672">=</span> <span style="color:#e6db74">`Asteroid </span><span style="color:#e6db74">${</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">id</span><span style="color:#e6db74">}</span><span style="color:#e6db74">; details are in asteroids. Choose using danger, firing alignment, distance, and ease of interception.`</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 問題 1：決定當前戰術姿態
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">maneuver</span>: <span style="color:#66d9ef">choice</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#e6db74">&#39;Choose the best tactical maneuver for the next roughly 1.2 seconds in Asteroids. Survive and destroy rocks. State uses pixels, pixels/second, degrees, and seconds. Bearing 0 is straight ahead; negative is left. Negative closestApproach means a predicted collision if velocities stay constant. secondsToClosest=0 can mean a rock is moving away: inspect closingSpeed (positive means approaching). A local reflex avoids imminent collisions. Favor intercept when there is no approaching collision threat; reposition when crowded or moving too fast to aim; evade when a near collision is predicted. Shield gives temporary protection, not permanent safety.&#39;</span>,
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">intercept</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Aim at a selected asteroid, lead the shot, and fire. Approach distant targets at moderate speed.&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">evade</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Prioritize thrust toward open space to escape a collision threat. Fire opportunistically.&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">reposition</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Move to a clearer part of the field to regain room to aim. Fire opportunistically.&#39;</span>,
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 問題 2：若選擇攔截，獨立評估最佳目標
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">target</span>: <span style="color:#66d9ef">choice</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#e6db74">&#39;Independently choose the most useful asteroid to aim at if intercept is selected. Prefer a nearby, aligned target or a closing threat that can be destroyed. Use none if no useful target exists. This answer cannot see the maneuver answer.&#39;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">targets</span>
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="為什麼是-system-1">為什麼是 System 1？</h3>
+<p>在認知科學中，丹尼爾·康納曼（Daniel Kahneman）將人類思維劃分為直覺快速的「系統一（System 1）」與審慎慢速的「系統二（System 2）」。</p>
+<p>在即時街機遊戲裡，你不會想等待模型進行一長串思維鏈（Chain-of-Thought）推理，寫出「首先我觀察到隕石 A 正在接近，因此我推論&hellip;」這樣的冗長文字。每一毫秒的文字生成都在浪費寶貴的反應時間。</p>
+<p><code>client.systemOne()</code> 正是針對快速直覺分類與離散決策設計：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">client</span>.<span style="color:#a6e22e">systemOne</span>({
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">state</span><span style="color:#f92672">:</span> { ...<span style="color:#a6e22e">snapshot</span>, <span style="color:#a6e22e">asteroids</span>: <span style="color:#66d9ef">snapshot.asteroids.map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> ({ ...<span style="color:#a6e22e">r</span> })) },
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">questions</span>: <span style="color:#66d9ef">questionsFor</span>(<span style="color:#a6e22e">snapshot</span>),
+</span></span><span style="display:flex;"><span>}, { <span style="color:#a6e22e">signal</span> });</span></span></code></pre></div>
+
+<h3 id="原生機率分佈與置信度">原生機率分佈與置信度</h3>
+<p>更關鍵的是，TypeSafe 的 <code>choice</code> 傳回的不僅僅是最終選定的標籤（如 <code>&quot;intercept&quot;</code>），還包含了<strong>完整的機率分佈</strong>與代表分佈集中程度的<strong>置信度</strong> (confidence)：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">m</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">answers</span>.<span style="color:#a6e22e">maneuver</span>;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// m.choice: &#39;intercept&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// m.confidence: 0.78  // 衡量選項機率分佈的集中度
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// m.probabilities: { intercept: 0.82, evade: 0.11, reposition: 0.07 }
+</span></span></span></code></pre></div>
+
+<p>需要特別釐清的是：<code>confidence</code> 反映的是整個機率分佈的明確程度，它既不是獲勝選項的單一機率，也不代表動作的成功率或存活率。在 <code>hello-jev</code> 的前端儀表板中，我們將這組機率直接渲染為動態長條圖（probability bars）與置信百分比，供駕駛員即時監控模型的決策偏好。而在程式碼控制層，飛船直接採納勝出的 <code>choice</code>，並未設置信心度門檻來阻擋行動。</p>
+<p>當前方空域開闊且有一顆正前方接近的隕石時，實測中 <code>intercept</code> 的機率常顯著提升；而當周遭被多顆碎石包圍時，<code>evade</code> 與 <code>reposition</code> 的機率就會大幅上揚，真實展現出 AI 在戰術權衡時的量化評估。</p>
+<h2 id="微觀物理執行在地控制器的解算細節">微觀物理執行：在地控制器的解算細節</h2>
+<p>Jev 下達了宏觀指示，例如 <code>maneuver = 'intercept'</code> 且 <code>target = 'r04'</code>。接下來的 1.2 秒內，瀏覽器端必須以 120 Hz 的物理頻率，把這個意圖轉換成飛船的具體動作。</p>
+<p>這些邏輯全實作在 <code>src/game.ts</code> 的 <code>steer()</code> 函式中。</p>
+<h3 id="前置量預判射擊lead-shooting">前置量預判射擊（Lead Shooting）</h3>
+<p>如果戰術是 <code>intercept</code>，飛船絕不能朝著目標當前的位置開火——因為子彈飛行需要時間，直接對準現有座標必定射偏。</p>
+<p>在遊戲物理中，砲彈發射時會繼承飛船當前速度（初始相對船頭速度為 <code>BULLET_SPEED = 640</code> px/s，世界座標速度為飛船速度加上子彈初速）。在地控制器會計算相對速度向量，進行一階前置量預估：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">d</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">target</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 一階飛行時間估算
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">travel</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>) <span style="color:#f92672">/</span> <span style="color:#a6e22e">BULLET_SPEED</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 預判目標在 travel 秒後的位移向量，計算理想瞄準角度
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">atan2</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">+</span> (<span style="color:#a6e22e">target</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">travel</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> (<span style="color:#a6e22e">target</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">travel</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 只有當距離較遠 (&gt;260px)、飛船速度不過快 (&lt;170px/s) 且船頭大致對齊時才開推進
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">260</span> <span style="color:#f92672">&amp;&amp;</span> Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">170</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&amp;&amp;</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0.45</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 計算目前朝向與目標朝向的夾角誤差，平滑轉動船頭
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">error</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">turn</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">max</span>(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, Math.<span style="color:#a6e22e">min</span>(<span style="color:#ae81ff">1</span>, <span style="color:#a6e22e">error</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">3.5</span>));</span></span></code></pre></div>
+
+<p>這裡控制器並非求解複雜的移動目標截擊二元方程，而是利用相對速度做一次一階外推，即能在微步循環中極為經濟地打出精確的前置量攔截。</p>
+<h3 id="24-方位候選落點評估candidate-heading-sampling">24 方位候選落點評估（Candidate-heading Sampling）</h3>
+<p>如果觸發了緊急避險反射，或是 Jev 選擇了 <code>evade</code> 或 <code>reposition</code>，飛船該往哪裡逃？</p>
+<p>這裡在地控制器並沒有進行昂貴的連續路徑射線追蹤，而是採用了高效的幾何候選取樣： <strong>24 方位候選落點評估</strong>。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#a6e22e">best</span> <span style="color:#f92672">=</span> <span style="color:#f92672">-</span><span style="color:#66d9ef">Infinity</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 將 360 度空間均分為 24 個候選航向（每 15 度一個測試方位）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">let</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">24</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">a</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">*</span> Math.<span style="color:#a6e22e">PI</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">12</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 啟發式測試落點：當前速度漂移 0.45 秒加上 180 像素的固定方向位移
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">point</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">ship.x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.45</span> <span style="color:#f92672">+</span> Math.<span style="color:#a6e22e">cos</span>(<span style="color:#a6e22e">a</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">ship.y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.45</span> <span style="color:#f92672">+</span> Math.<span style="color:#a6e22e">sin</span>(<span style="color:#a6e22e">a</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 將所有隕石線性外推至 0.7 秒後的位置，計算該落點與所有隕石的最短安全淨距（clearance）
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">clearance</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">min</span>(...<span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">point</span>, { <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">r.x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.7</span>, <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">r.y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.7</span> })) <span style="color:#f92672">-</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">radius</span>
+</span></span><span style="display:flex;"><span>  ));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 評估函數：落點安全淨距越大越好，但大幅轉向會扣分（保持航向穩定性）
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">value</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">clearance</span> <span style="color:#f92672">-</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">a</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">*</span> <span style="color:#ae81ff">28</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">value</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">best</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">best</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">value</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">a</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 只有當船頭轉向已對齊最佳逃逸方位（誤差小於 0.75 徑度 / 約 43 度）時才啟動推進
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0.75</span>;</span></span></code></pre></div>
+
+<p>這項演算法的核心概念在於評估「預期目的地之安全空間」與「轉向成本」，而不是證明整條飛行動態路徑絕對無礙。每秒鐘執行 120 次這段計算，飛船就能在雜亂無章的隕石風暴中靈活找到開闊空域。</p>
+<h3 id="控制器分工與邊界處理">控制器分工與邊界處理</h3>
+<p>深入檢視控制器實作，會發現兩項有趣的工程細節：</p>
+<ol>
+<li><strong>戰術分支整併</strong>：在當前的本機控制器中，<code>evade</code> 與 <code>reposition</code> 共用相同的候選取樣逃逸分支。雖然兩者在 Jev 的模型語意與介面展示上代表不同的戰術意圖（緊急逃亡 vs. 拉開距離重新佔位），但在微觀幾何執行上，尋找最開闊落點的邏輯是一致的。</li>
+<li><strong>目標回退與全面性伺機開火</strong>：若 Jev 選擇的目標隕石被提前擊毀，或者模型回傳 <code>none</code>（映射為 <code>null</code>），在地控制器會自動回退鎖定最近的隕石，因此 <code>none</code> 並不會禁止飛船開火。更進一步地，開火檢測會遍歷場上所有隕石：</li>
+</ol>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">fire</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">some</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">d</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>), <span style="color:#a6e22e">t</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>) <span style="color:#f92672">/</span> <span style="color:#a6e22e">BULLET_SPEED</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">bearing</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">atan2</span>(<span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">+</span> (<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>, <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> (<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 在 580px 射程內，且船頭朝向落入目標角半徑加安全裕度範圍內
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">580</span> <span style="color:#f92672">&amp;&amp;</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">bearing</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> Math.<span style="color:#a6e22e">atan2</span>(<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">radius</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">7</span>, <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>));
+</span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+
+<p>只要船頭在旋轉過程中恰好掃過任何一顆隕石的預估前置角，且通過引擎 0.15 秒的射擊冷卻（cooldown），系統就會伺機補槍，絕不放過任何順手消滅威脅的機會。</p>
+<h2 id="工程防禦性設計應對網路延遲與非確定性">工程防禦性設計：應對網路延遲與非確定性</h2>
+<p>把網路 API 嵌入遊戲主循環，最考驗工程師的從來不是理想狀態，而是出問題時如何優雅降級（graceful degradation）。</p>
+<p>在 <code>src/pilot.ts</code> 的 <code>FlightComputer</code> 中，我設計了幾項關鍵的防禦性機制：</p>
+<h3 id="世代計數器與過期丟棄generation-invalidation">世代計數器與過期丟棄（Generation Invalidation）</h3>
+<p>想像一個情境：飛船在第 1 星區發出了一個決策請求，但在回應傳回前，飛船不幸撞毀重生，或玩家手動按下了暫停。此時如果舊的決策姍姍來遲並被採納，飛船就會執行上一個生命週期的過時指令。</p>
+<p>為了解決這個問題，我為 <code>FlightComputer</code> 設計了世代機制：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">FlightComputer</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">private</span> <span style="color:#a6e22e">generation</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">private</span> <span style="color:#a6e22e">controller</span>: <span style="color:#66d9ef">AbortController</span> <span style="color:#f92672">|</span> <span style="color:#66d9ef">null</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">reset</span>()<span style="color:#f92672">:</span> <span style="color:#66d9ef">void</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 每次狀態重大變更（重生、換關、暫停、手動接管），立即遞增世代並嘗試中止在途請求
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">generation</span><span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">controller</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">abort</span>();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">controller</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">decision</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">thinking</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">async</span> <span style="color:#a6e22e">tick</span>(<span style="color:#a6e22e">snapshot</span>: <span style="color:#66d9ef">FlightSnapshot</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">void</span>&gt; {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">generation</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">generation</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ... 發送 fetch 請求 ...
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">data</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">json</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 如果在等待期間世代已經改變，無條件直接丟棄該回應！
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">generation</span> <span style="color:#f92672">!==</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">generation</span>) <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>任何狀態重設都會發送 <code>AbortController.abort()</code> 嘗試中斷網路連線；即便遠端推論無法立即中止，回傳當下只要比對 <code>generation !== this.generation</code>，舊回應就會被立刻拋棄，確保控制權不被幽靈決策干擾。</p>
+<h3 id="決策存活時間decision-ttl">決策存活時間（Decision TTL）</h3>
+<p>網路偶爾會出現抖動。如果 Jev 的回應因網路卡頓延遲了 2 秒才抵達，當時的戰場情勢早已截然不同。</p>
+<p>在程式碼中我定義了 <code>DECISION_TTL = 4500</code>（4.5 秒）。值得注意的是，決策的時間戳記並非記錄回傳當下，而是記錄<strong>發起請求時的起算時間</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">decision</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">decision</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">receivedAt</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">started</span>; <span style="color:#75715e">// 以請求發起時間 started 作為有效基準點
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">nextAt</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">max</span>(<span style="color:#a6e22e">started</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1200</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">+</span> <span style="color:#ae81ff">100</span>);</span></span></code></pre></div>
+
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#a6e22e">fresh</span>()<span style="color:#f92672">:</span> <span style="color:#a6e22e">FlightDecision</span> <span style="color:#f92672">|</span> <span style="color:#66d9ef">null</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">decision</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">now</span>() <span style="color:#f92672">-</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">receivedAt</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">DECISION_TTL</span> <span style="color:#f92672">?</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">decision</span> : <span style="color:#66d9ef">null</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這意味著如果一次請求花了 2 秒才返回，它在客戶端的剩餘有效壽命就只剩下約 2.5 秒。如果超過 4.5 秒仍未收到更新，<code>fresh()</code> 便判定決策過期並回傳 <code>null</code>。</p>
+<p>當決策過期或尚未抵達時，在地控制器會進入明確標記的 <code>LOCAL SAFETY</code> 狀態：維持基本的避難漂移航向，並<strong>關閉開火系統</strong>，等待 Jev 的下一筆有效決策到來。此外，前端還設有 4 秒的瀏覽器端中斷計時器，而後端 SDK 亦配置了 3.5 秒的逾時限制（<code>timeout: 3500, retry: { maxRetries: 0 }</code>），層層把關避免請求無休止掛起。</p>
+<h3 id="請求節流與固定退避">請求節流與固定退避</h3>
+<p>伺服器端與前端互相配合限流：</p>
+<ul>
+<li><strong>名義循環節流</strong>：正常無干擾運作時，前端下一次請求排定在 <code>Math.max(started + 1200, this.now() + 100)</code>，維持約 1.2 秒的節奏。</li>
+<li><strong>伺服器入場限制</strong>：後端以程序區域變數 <code>busy</code> 與 <code>performance.now() - lastRequest &lt; 800</code> 作為最小入場間隔防護，避免多重呼叫撞車。</li>
+<li><strong>固定時間退避</strong>：一旦 API 遭遇錯誤（如配額超限或網路異常），前端會關閉 SDK 的自動重試，直接啟動固定 5 秒的冷卻排程（<code>this.nextAt = this.now() + 5000</code>），並在儀表板即時警示，防止雪崩效應。</li>
+</ul>
+<h3 id="人類駕駛優先原則human-takeover">人類駕駛優先原則（Human Takeover）</h3>
+<p>在任何自主駕駛系統中，最重要的一條守則是： <strong>人類隨時擁有最高優先權</strong>。</p>
+<p>在 <code>src/main.ts</code> 中，無論飛船正由 Jev 執行多麼自信的攔截動作，只要玩家按下左轉、右轉、前進或開火的任何一個按鍵，系統會在按鍵事件中立即切換模式（<code>setMode(false)</code>）並重設所有飛行電腦狀態。手動控制在下一個 120 Hz 物理步即時生效，不帶任何拖泥帶水。</p>
+<h2 id="結語與架構啟示">結語與架構啟示</h2>
+<p>這次為了練習 TypeScript 與探索 Jev AI 而動手打造 <code>hello-jev</code>，整個實作過程讓我對即時人機協同系統有了很多深刻的體會。</p>
+<p>在當前 AI Agent 的開發浪潮中，許多人常陷入一種迷思：試圖把所有事情（甚至是底層物理運算或連續控制）全部交給大模型解決。一旦模型表現不好，就試圖塞入更長的提示詞或換用更昂貴的旗艦模型。</p>
+<p>但打造 <code>hello-jev</code> 的經驗讓我體會到另一條更健康、更接地氣的工程路徑：</p>
+<ol>
+<li><strong>讓模型做它最擅長的事</strong>：大模型的核心價值在於語意理解、動態目標權衡與戰術姿態決策。不要讓它做二維矩陣乘法或微積分，那些交給 CPU 的幾行代數運算既便宜又精準。</li>
+<li><strong>語意特徵工程依然關鍵</strong>：提供給模型的上下文不應是未加工的原始傾印（raw dump），而是經過幾何轉換、語意豐富的衍生特徵（如相對方位、最近距離預估與接近速度）。輸入越貼近領域認知，模型給出的決策就越精確。</li>
+<li><strong>分層與防衛性設計是系統韌性的基石</strong>：結合高頻確定性控制器、反射避險機制、世代失效檢查與嚴格 TTL，才能打造出即便面對網路延遲與偶發故障，依然不會失控的安全混合智慧系統。</li>
+</ol>
+<p>透過這個小專案，我一方面更熟悉了現代 TypeScript 的強型別推導與非同步生命週期管理，另一方面也親身體驗了 TypeSafe AI 的結構化查詢在即時決策上的潛力。</p>
+<p>這套「雙層分工＋確定性防衛」的架構模式，其適用範圍遠遠不止於 Asteroids 這種街機遊戲。在即時金融風控、邊緣物聯網（IoT）控制，或是各類需要人機協同操作的 AI 系統中，這種思考方式都極具參考價值。</p>
+<p>下次在思考如何將 AI 引入即時或高互動系統時，不妨想想這艘在隕石群中靈巧穿梭的小太空船——讓 Jev 負責看清星圖，讓在地程式碼穩穩握住操縱桿。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

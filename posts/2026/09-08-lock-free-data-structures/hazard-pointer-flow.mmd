@@ -1,0 +1,14 @@
+flowchart TD
+    HP_1["<div style='width:280px; padding:4px 8px 8px 8px; line-height:1.4;'><b>1. 讀取指標</b><br/>讀取 <code>head</code> 取得當前節點指標 <code>P</code></div>"]
+    HP_2["<div style='width:280px; padding:4px 8px 8px 8px; line-height:1.4;'><b>2. 登記看板 (Publish)</b><br/>將 <code>P</code> 寫入當前執行緒的 Hazard Slot</div>"]
+    HP_3{"二次驗證 (Recheck)<br/>head == P ?"}
+    HP_Retry["<div style='width:220px; padding:4px 8px 8px 8px; line-height:1.4;'><b>重試迴圈</b><br/>• 清除 Hazard Slot 標記<br/>• 重新讀取 <code>head</code> 重試</div>"]
+    HP_4["<div style='width:280px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>4. 安全存取節點 (Safe Access)</b><br/>• 其他執行緒保證不會釋放 <code>P</code><br/>• 安全解引用 <code>P->next</code> 進行運算</div>"]
+    HP_5["<div style='width:280px; padding:4px 8px 8px 8px; line-height:1.4;'><b>5. 解除保護 (Release)</b><br/>操作完成，清除 Hazard Slot 登記</div>"]
+
+    HP_1 --> HP_2
+    HP_2 --> HP_3
+    HP_3 -->|被搶先修改| HP_Retry
+    HP_Retry -.->|重新讀取| HP_1
+    HP_3 -->|驗證通過| HP_4
+    HP_4 --> HP_5
