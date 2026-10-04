@@ -1,0 +1,45 @@
+flowchart TD
+    subgraph S1["遊戲感知與戰術特徵工程 (Sensory Feature Extraction)"]
+        direction TB
+        RawState["即時物理狀態 (Ship & Asteroids)<br/>飛船速度向量・環形最短位移・隕石相對速度"]
+        Tactics["戰術衍生指標 (FlightSnapshot.tactics)<br/>imminentThreats・firingOpportunities・bestAimError・leadBearing"]
+        RawState --> Tactics
+    end
+
+    subgraph S2["Jev 戰術決策分流 (System One Deliberation)"]
+        direction TB
+        JevPrompt["TypeSafe AI SDK (Jev · choice)<br/>根據威脅、漂移速度與射擊角進行三方戰術分流"]
+        
+        BranchEvade["EVADE (緊急規避)<br/>imminentThreats > 0 或迎面威脅"]
+        BranchRepo["REPOSITION (戰術佔位)<br/>無急迫威脅，但航速 > 180 或瞄準誤差 > 45°"]
+        BranchIntercept["INTERCEPT (主動截擊)<br/>航速受控 (< 180) 且具備良好開火角度"]
+
+        JevPrompt --> BranchEvade
+        JevPrompt --> BranchRepo
+        JevPrompt --> BranchIntercept
+    end
+
+    subgraph S3["在地控制器分立執行 (Local Controller Actuation)"]
+        direction TB
+        ExecEvade["24 方位候選落點取樣<br/>避開 0.7s 後隕石群，尋找最大淨距逃逸點"]
+        
+        subgraph RepoDetail["Reposition 雙階段姿態解算"]
+            direction TB
+            RepoBraking["階段 1：逆向推進煞車 (速 > 120)<br/>朝向速度向量反方向 atan2(-vy, -vx) 點火減速"]
+            RepoAiming["階段 2：慣性漂移與精準對準 (速 < 120)<br/>停止加速，船頭轉向目標 leadAngle 鎖定射角"]
+            RepoBraking --> RepoAiming
+        end
+
+        ExecIntercept["前置量主動進逼<br/>對準 leadAngle，距離遠 (>260) 且未超速時加速進逼"]
+        
+        OppFire["全域伺機擊發 (Opportunistic Firing)<br/>船頭掃過任何隕石預估角半徑且通過 0.15s 冷卻即扣動扳機"]
+    end
+
+    Tactics -->|非同步傳送 FlightSnapshot| JevPrompt
+    BranchEvade --> ExecEvade
+    BranchRepo --> RepoDetail
+    BranchIntercept --> ExecIntercept
+    
+    ExecEvade --> OppFire
+    RepoDetail --> OppFire
+    ExecIntercept --> OppFire

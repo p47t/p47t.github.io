@@ -1,0 +1,42 @@
+flowchart TD
+    subgraph Engine ["⚡ C++23 高輸送量評測引擎 (include/herdr/benchmark.hpp)"]
+        direction TB
+        DataGen["🎲 9 種真實資料分佈<br/>(Shuffled, Branches, SemVer...)"]
+        Warmup["🔥 暖身運行<br/>(Warmup Runs)"]
+        Opt["🛡️ do_not_optimize<br/>(防止編譯器死碼消除)"]
+        Timer["⏱️ steady_clock 奈秒級統計量測 (Mean / Median / P95 / P99)"]
+
+        DataGen --> Timer
+        Warmup --> Timer
+        Opt --> Timer
+    end
+
+    subgraph Scope ["🎯 評測範疇 (3 大層級)"]
+        direction LR
+        Micro["1️⃣ Micro (Pairwise)<br/>13 組極限字串兩兩比對"]
+        Sort["2️⃣ Dataset Sort<br/>N=10 ~ 20,000 陣列排序"]
+        E2E["3️⃣ Sorter E2E<br/>策略排序 + 最小移動置換"]
+        Micro --> Sort --> E2E
+    end
+
+    subgraph Output ["📊 多元輸出與 CI 整合"]
+        direction LR
+        CLI_Out["🖥️ ANSI 終端表格<br/>(bench CLI 子命令)"]
+        GHA["📈 GitHub Actions<br/>($GITHUB_STEP_SUMMARY)"]
+        Art["📁 Artifacts 保存<br/>(JSON &amp; CSV 報告)"]
+    end
+
+    Engine ==>|驅動基準評測| Scope
+    Scope ==>|匯出評測報告| Output
+
+    classDef engNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef scpNode fill:#312e81,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    classDef outNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+
+    class Warmup,Timer,Opt,DataGen engNode;
+    class Micro,Sort,E2E scpNode;
+    class CLI_Out,GHA,Art outNode;
+
+    style Engine fill:#082f49,stroke:#0284c7,stroke-width:2px,color:#7dd3fc
+    style Scope fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#a5b4fc
+    style Output fill:#022c22,stroke:#10b981,stroke-width:2px,color:#6ee7b7

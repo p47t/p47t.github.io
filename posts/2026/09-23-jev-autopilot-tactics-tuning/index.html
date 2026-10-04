@@ -1,0 +1,731 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校 - 透過狀態特徵工程、提示詞決策邊界與在地反向推進，打破 AI 飛行盲區</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-23-jev-autopilot-tactics-tuning/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-23-jev-autopilot-tactics-tuning/"/>
+  <meta property="og:title" content="讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校 - 透過狀態特徵工程、提示詞決策邊界與在地反向推進，打破 AI 飛行盲區"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-09-23 01:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="typescript"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="game-dev"/>
+  
+  <meta property="og:article:tag" content="architecture"/>
+  
+  <meta property="og:article:tag" content="tools"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">254</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">59</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/09-23-hello-jev-autopilot/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校</h1>
+      
+      <div class="post-subtitle">透過狀態特徵工程、提示詞決策邊界與在地反向推進，打破 AI 飛行盲區</div>
+      
+      <div class="post-meta">
+        <span class="post-date">September 23, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/typescript"><span class="label label-primary">typescript</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/game-dev"><span class="label label-primary">game-dev</span></a>
+        
+        <a href="/tags/architecture"><span class="label label-primary">architecture</span></a>
+        
+        <a href="/tags/tools"><span class="label label-primary">tools</span></a>
+        
+        
+<div class="post-series">
+  
+  <p>
+    <a href="" id="series"></a>
+    這篇文章屬於 <b>Jev AI</b> 系列:
+  </p>
+
+  
+  
+  <ul class="series">
+  
+    <li>Sep 23, 2026 - <a href="/posts/2026/09-23-jev-autopilot-tactics-tuning/">讓 Jev 學會煞車：從被冷落的 Reposition 到 17 秒通關的戰術調校</a></li>
+  
+    <li>Sep 23, 2026 - <a href="/posts/2026/09-23-hello-jev-autopilot/">讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計</a></li>
+  
+  </ul>
+</div>
+
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/09-23-jev-autopilot-tactics-tuning/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在上一篇專題中，我記錄了如何為經典街機《Asteroids》打造雙層飛行副駕駛：由 TypeSafe AI 的 System One 結構化決策模型 <strong>Jev</strong> 負責宏觀戰術判斷，在地 TypeScript 控制器則以 120 Hz 固定步長負責物理致動。那套架構成功讓飛船無傷清空了第一星區（Sector 01）。</p>
+<p>然而在持續把玩與檢視飛行儀表板日誌時，我察覺到一個相當尷尬的現象：</p>
+<p>在系統提供給 Jev 的三種戰術姿態（<code>intercept</code>、<code>evade</code>、<code>reposition</code>）中，<code>reposition</code>（重新佔位）在實戰中幾乎從未被選取過。</p>
+<p>統計連續數場飛行紀錄後，數據呈現極端的兩極化分佈：一旦空域出現撞擊危險，Jev 幾乎 100% 選擇 <code>evade</code>；而當周遭暫時安全時，Jev 則壓倒性地選擇 <code>intercept</code>。被寄予厚望的 <code>reposition</code> 選取率甚至不足 2%，幾乎形同虛設。</p>
+<p>更嚴重的後遺症在於：缺乏主動佔位與控速機制的飛船，在無重力太空中總是帶著極高的慣性橫衝直撞（漂移速度經常飆破 250 px/s）。即便 Jev 想鎖定下一顆目標，飛船也往往因為速度過快而難以轉向瞄準，只能任由慣性帶著船體在星圖中漫長滑行。上一版通關第一星區足足花費了 84 秒。</p>
+<p>這促使我著手進行了一場深入的戰術重構：如何讓 Jev 理解何時該減速重新佔位，並讓在地控制器真正落實相應的物理動力學？</p>
+<p>先來看調校完成後的最新成果。</p>
+<h2 id="成果驗證17-秒極速通關與均衡戰術">成果驗證：17 秒極速通關與均衡戰術</h2>
+<p>在經過特徵工程、提示詞決策邊界與在地煞車實作後，Jev 在實戰中的飛行身段有了質的飛躍。</p>
+<p>以下是同一款遊戲、同一位 Jev 飛行員在調校後錄製的實戰紀錄：</p>
+
+
+
+
+
+
+<div class="video-container" style="text-align: center; margin: 24px auto;">
+  <video controls autoplay loop muted playsinline preload="auto" class="img-responsive" style="max-width: 100%; border-radius: 8px; margin: 0 auto; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.3);">
+    
+      <source src="/posts/2026/09-23-jev-autopilot-tactics-tuning/demo.mp4" type="video/mp4">
+    
+    
+      <source src="/posts/2026/09-23-jev-autopilot-tactics-tuning/demo.webm" type="video/webm">
+    
+    
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+<p>在這段約 17 秒的實戰錄影中，視訊精確記錄至第一星區全數清空（SECTOR CLEAR，得分 2,600），幾個關鍵指標發生了劇烈的變化：</p>
+<ul>
+<li><strong>通關時間大幅縮減</strong>：清空第一星區（得分達到 2,600）的耗時從原本的 84 秒急遽縮短至 <strong>17 秒</strong>，效率提升了近 5 倍。</li>
+<li><strong>戰術分佈達成動態平衡</strong>：在通關的 17 秒內，Jev 總計執行了 20 次戰術決策。其中 <code>reposition</code> 7 次、<code>intercept</code> 6 次、<code>evade</code> 7 次，徹底打破了過去非打即逃的二元困境。</li>
+<li><strong>飛行姿態洗鍊沉穩</strong>：飛船不再失控地以高速在全場漂移甩尾，而是呈現出清晰的作戰節奏——高速逼近 ➔ 逆向噴射煞車 ➔ 穩定轉身鎖定 ➔ 伺機精準點放 ➔ 規避破片。</li>
+</ul>
+<p>這項轉變是如何實現的？背後正是「狀態特徵工程」、「提示詞操作邊界」與「物理致動分立」三者的環環相扣。</p>
+<h2 id="診斷為什麼模型過去從不選-reposition">診斷：為什麼模型過去從不選 Reposition？</h2>
+<p>回頭檢視最初的設計，我發現了兩個致命的工程盲點：</p>
+<h3 id="盲點一提示詞語意重疊與狀態貧乏">盲點一：提示詞語意重疊與狀態貧乏</h3>
+<p>在最初的提示詞中，我對 <code>reposition</code> 的描述僅有寥寥數語：</p>
+<blockquote><p><code>reposition: 'Move to a clearer part of the field to regain room to aim. Fire opportunistically.'</code></p>
+</blockquote><p>對模型而言，「移動到開闊處以重新獲取瞄準空間」這句話在語意上存在巨大的模糊性：</p>
+<ul>
+<li>如果空域有迫近的隕石，模型自然認為逃往開闊處就是 <code>evade</code> 的責任。</li>
+<li>如果空域沒有迫近的隕石，模型看到遠處有敵人，自然直覺地認為應該上前進攻（<code>intercept</code>）。</li>
+</ul>
+<p>此外，原本送給模型的雷達快照只包含單純的相對距離、方位角與接近速度。模型「看不到」全域威脅的總體評估，更「不知道」自己當前到底有沒有對準任何一顆隕石的射擊角度。在缺乏領域特徵支撐的情況下，模型只能在進攻與逃亡之間粗糙搖擺。</p>
+<h3 id="盲點二在地控制器缺乏專屬執行邏輯">盲點二：在地控制器缺乏專屬執行邏輯</h3>
+<p>更致命的是，當初在瀏覽器端 <code>src/game.ts</code> 的 <code>steer()</code> 函式中，我為了圖省事，寫下了這樣的邏輯：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 舊版實作：evade 與 reposition 共用相同的 24 方位逃逸分支
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">reflex</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">maneuver</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;evade&#39;</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">maneuver</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;reposition&#39;</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 24 方位候選落點取樣 ...
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這意味著即便 Jev 在某些情境下選了 <code>reposition</code>，在地控制器做的事情也跟 <code>evade</code> 完全相同：同樣是在全速逃竄，根本無法達到「調整航向、降低過剩慣性、建立穩定射擊射角」的戰術目的。</p>
+<h2 id="解法一感知特徵工程tactics-feature-extraction">解法一：感知特徵工程（Tactics Feature Extraction）</h2>
+<p>要讓模型做出精密的戰術抉擇，首先必須提供具有明確戰術語意的指標，而不是丟一堆未經加工的 raw 座標讓模型猜測。</p>
+<p>在 <code>src/game.ts</code> 的 <code>snapshot()</code> 中，我為快照擴充了專屬的 <code>tactics</code> 物件與每顆隕石的 <code>leadBearing</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#a6e22e">snapshot</span>(<span style="color:#a6e22e">sequence</span>: <span style="color:#66d9ef">number</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">FlightSnapshot</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">round</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">n</span>: <span style="color:#66d9ef">number</span>) <span style="color:#f92672">=&gt;</span> Math.<span style="color:#a6e22e">round</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">10</span>) <span style="color:#f92672">/</span> <span style="color:#ae81ff">10</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">asteroids</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">d</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">delta</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>), <span style="color:#a6e22e">dist</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">d</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">id</span>: <span style="color:#66d9ef">r.id</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">distance</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">dist</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">bearing</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">angleDifference</span>(Math.<span style="color:#a6e22e">atan2</span>(<span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span>, <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span>), <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> <span style="color:#f92672">/</span> Math.<span style="color:#a6e22e">PI</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 關鍵新增：包含移動目標動態前置量的真實瞄準夾角
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">leadBearing</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">leadAngle</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>), <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> <span style="color:#f92672">/</span> Math.<span style="color:#a6e22e">PI</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">radius</span>: <span style="color:#66d9ef">r.radius</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">closingSpeed</span>: <span style="color:#66d9ef">round</span>(<span style="color:#f92672">-</span><span style="color:#a6e22e">dot</span> <span style="color:#f92672">/</span> (<span style="color:#a6e22e">dist</span> <span style="color:#f92672">||</span> <span style="color:#ae81ff">1</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">closestApproach</span>: <span style="color:#66d9ef">round</span>(Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">x</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>, <span style="color:#a6e22e">d</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">y</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">t</span>) <span style="color:#f92672">-</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">radius</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">SHIP_RADIUS</span>),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">secondsToClosest</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">t</span>),
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>  }).<span style="color:#a6e22e">sort</span>((<span style="color:#a6e22e">a</span>, <span style="color:#a6e22e">b</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">a</span>.<span style="color:#a6e22e">distance</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">distance</span>).<span style="color:#a6e22e">slice</span>(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">inRange</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">asteroids</span>.<span style="color:#a6e22e">filter</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">distance</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">580</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sequence</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">wave</span>: <span style="color:#66d9ef">this.wave</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">lives</span>: <span style="color:#66d9ef">this.lives</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">ship</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">round</span>(Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">round</span>(<span style="color:#a6e22e">wrap</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> <span style="color:#f92672">/</span> Math.<span style="color:#a6e22e">PI</span>, <span style="color:#ae81ff">360</span>)),
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">invulnerable</span>: <span style="color:#66d9ef">this.ship.shield</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 戰術衍生特徵
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">tactics</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 1. 全場即將在 0.8 秒內闖入安全包絡線的急迫威脅總數
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">imminentThreats</span>: <span style="color:#66d9ef">this.rocks.filter</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">imminentThreat</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>)).<span style="color:#a6e22e">length</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 2. 當前船頭已對齊前置角且在射程內的有效射擊機會數
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">firingOpportunities</span>: <span style="color:#66d9ef">this.rocks.filter</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">canFireAt</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>)).<span style="color:#a6e22e">length</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 3. 射程內所有候選隕石中，最小的絕對瞄準偏差角（度）
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">bestAimError</span>: <span style="color:#66d9ef">inRange.length</span> <span style="color:#f92672">?</span> Math.<span style="color:#a6e22e">min</span>(...<span style="color:#a6e22e">inRange</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">leadBearing</span>))) <span style="color:#f92672">:</span> <span style="color:#66d9ef">null</span>,
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">asteroids</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這項特徵工程的價值在於：</p>
+<ol>
+<li><strong><code>tactics.imminentThreats</code></strong>：讓模型一目了然全場是否有迫在眉睫的碰撞威脅，將「生存防禦」從模稜兩可的推測轉化為確鑿的整數計數。</li>
+<li><strong><code>tactics.bestAimError</code></strong>：如果當前速度很高且射程內的最佳目標都在船尾（例如 <code>bestAimError = 180°</code>），模型就能明確判定「目前沒有任何良好的射擊窗口，盲目開火只會浪費機會」。</li>
+<li><strong><code>leadBearing</code></strong>：消除了目標運動造成的視覺角度盲區，直接給出砲管到底需要修正多少度才能擊中目標。</li>
+</ol>
+<h2 id="解法二提示詞決策邊界prompt-boundaries-tuning">解法二：提示詞決策邊界（Prompt Boundaries Tuning）</h2>
+<p>特徵到位後，第二步是在 <code>server/pilot.ts</code> 中重塑決策樹邏輯，為三個選項劃清非重疊的操作邊界。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">questionsFor</span>(<span style="color:#a6e22e">snapshot</span>: <span style="color:#66d9ef">FlightSnapshot</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">maneuver</span>: <span style="color:#66d9ef">choice</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#e6db74">&#39;Choose the most useful maneuver for the next roughly 1.2 seconds in Asteroids. Survive and destroy rocks. Units are pixels, pixels/second, degrees, seconds. Bearing 0 is ahead; negative is left. leadBearing includes moving-target lead. `tactics.imminentThreats` counts asteroids entering a safety envelope within 0.8 seconds across the whole field. `tactics.firingOpportunities` counts currently aligned in-range shots across the whole field. `tactics.bestAimError` is the smallest absolute leadBearing among in-range radar candidates, or null if none are in range. First consider immediate danger: evade takes priority over preparing an attack. With no immediate danger, consider whether to prepare or attack: speed above about 180 or no aligned shots with bestAimError above about 45 degrees favors reposition. At controlled speed with a useful firing angle, intercept; distant targets alone favor approaching with intercept, not reposition. Negative closestApproach predicts overlap at constant velocity over up to 5 seconds, not necessarily immediate danger. secondsToClosest=0 may describe a receding rock; positive closingSpeed means approaching. A local reflex handles emergencies in every maneuver. Shield is temporary.&#39;</span>,
+</span></span><span style="display:flex;"><span>      {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">intercept</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Attack from a usable firing angle at controlled speed, or close the distance to out-of-range targets. Lead shots and approach when appropriate.&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">evade</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;Escape an imminent collision indicated by tactics.imminentThreats or a clear approaching near-term threat. Accelerate toward a clear endpoint. High ship speed alone is NOT a reason to evade when threats are absent and asteroids are receding or well separated; use reposition to brake in that situation.&#39;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">reposition</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;No imminent threat, but the ship is drifting too fast (roughly above 180 px/s) OR needs a large turn to get a shot. Even if a shot is currently aligned, excessive safe drift is a reason to reposition. Counter-thrust to reduce speed, then coast and aim without accelerating toward the target. Fire opportunistically. This is preparation and braking, not emergency escape.&#39;</span>,
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">target</span>: <span style="color:#66d9ef">choice</span>(
+</span></span><span style="display:flex;"><span>      <span style="color:#e6db74">&#39;Independently choose the most useful asteroid to aim at if intercept or reposition is selected. Prefer a nearby target with a small absolute leadBearing or a closing threat that can be destroyed. Reposition can first brake before aiming. Use none if no useful target exists. This answer cannot see the maneuver answer.&#39;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">targets</span>
+</span></span><span style="display:flex;"><span>    ),
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這次提示詞調校的核心關鍵在於：</p>
+<ul>
+<li><strong>明確的優先級階層</strong>：<code>imminentThreats &gt; 0</code> 時，<code>evade</code> 享有絕對優先權；</li>
+<li><strong>定量的操作門檻</strong>：當威脅為 0 時，若航速大於 180 px/s 或射擊偏差角大於 45°，模型被引導優先選擇 <code>reposition</code>；</li>
+<li><strong>排他性邊界釐清</strong>：在 <code>evade</code> 的定義中特別強調「無威脅時的高航速不是逃跑的理由，應使用 reposition 進行煞車」；在 <code>reposition</code> 的定義中特別標明「這是準備與煞車，不是逃生」。</li>
+</ul>
+<h2 id="解法三在地控制器分立主動逆向推進煞車">解法三：在地控制器分立——主動逆向推進煞車</h2>
+<p>即使模型精確下達了 <code>reposition</code> 指令，如果底層控制器沒有實作對應的物理行為，指令依然是一紙空文。</p>
+<p>在《Asteroids》的牛頓慣性物理中，太空船沒有大氣阻力。如果你想在太空中停下來或變換航向，單純轉動船頭不會改變任何速度向量！唯一的煞車方式是：將船頭旋轉至目前速度向量的完全反方向，啟動引擎進行 <strong>反向噴射推進</strong> (Counter-Thrust Braking)。</p>
+<p>在 <code>src/game.ts</code> 的 <code>steer()</code> 中，我將 <code>reposition</code> 從 <code>evade</code> 徹底剝離，實作了精緻的雙階段姿態控制：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">steer</span>(<span style="color:#a6e22e">game</span>: <span style="color:#66d9ef">Game</span>, <span style="color:#a6e22e">maneuver</span>: <span style="color:#66d9ef">Maneuver</span>, <span style="color:#a6e22e">targetId</span>: <span style="color:#66d9ef">string</span> <span style="color:#f92672">|</span> <span style="color:#66d9ef">null</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">PilotOutput</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">ship</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">ship</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">target</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">find</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">id</span> <span style="color:#f92672">===</span> <span style="color:#a6e22e">targetId</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">target</span>) <span style="color:#a6e22e">target</span> <span style="color:#f92672">=</span> [...<span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>].<span style="color:#a6e22e">sort</span>((<span style="color:#a6e22e">a</span>, <span style="color:#a6e22e">b</span>) <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">a</span>)) <span style="color:#f92672">-</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">b</span>)))[<span style="color:#ae81ff">0</span>];
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">target</span>) <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">controls</span>: <span style="color:#66d9ef">IDLE</span>, <span style="color:#a6e22e">reflex</span>: <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">target</span>: <span style="color:#66d9ef">null</span> };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">reflex</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">some</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">imminentThreat</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>));
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">desired</span>: <span style="color:#66d9ef">number</span>, <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">reflex</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">maneuver</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;evade&#39;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 1. 規避分支：24 方位候選落點取樣，尋找空間淨距最大方向加速脫離
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">best</span> <span style="color:#f92672">=</span> <span style="color:#f92672">-</span><span style="color:#66d9ef">Infinity</span>; <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">let</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">24</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">a</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">*</span> Math.<span style="color:#a6e22e">PI</span> <span style="color:#f92672">/</span> <span style="color:#ae81ff">12</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">point</span> <span style="color:#f92672">=</span> { <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">ship.x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.45</span> <span style="color:#f92672">+</span> Math.<span style="color:#a6e22e">cos</span>(<span style="color:#a6e22e">a</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span>, <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">ship.y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.45</span> <span style="color:#f92672">+</span> Math.<span style="color:#a6e22e">sin</span>(<span style="color:#a6e22e">a</span>) <span style="color:#f92672">*</span> <span style="color:#ae81ff">180</span> };
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">clearance</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">min</span>(...<span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">map</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">point</span>, { <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">r.x</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vx</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.7</span>, <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">r.y</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">vy</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.7</span> })) <span style="color:#f92672">-</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">radius</span>));
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">value</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">clearance</span> <span style="color:#f92672">-</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">a</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">*</span> <span style="color:#ae81ff">28</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">value</span> <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">best</span>) { <span style="color:#a6e22e">best</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">value</span>; <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">a</span>; }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0.75</span>;
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">maneuver</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#39;reposition&#39;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 2. 重新佔位分支：逆向噴射減速，隨後慣性滑行鎖定目標射角
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">120</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 階段 1：航速超過 120 px/s，瞄準速度向量的反方向 (-vx, -vy)
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">atan2</span>(<span style="color:#f92672">-</span><span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>, <span style="color:#f92672">-</span><span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 嚴格等待船頭完全轉到反方向（誤差小於 0.35 徑度 / 約 20 度）才點火反推！
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0.35</span>;
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// 階段 2：航速已受控 (&lt; 120 px/s)，關閉推進器，船頭轉向目標移動前置角
+</span></span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">leadAngle</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">target</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 3. 截擊分支：對準目標前置角，距離遠且未超速時加速進逼
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">desired</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">leadAngle</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">target</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">thrust</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">length</span>(<span style="color:#a6e22e">delta</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">target</span>)) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">260</span> <span style="color:#f92672">&amp;&amp;</span> Math.<span style="color:#a6e22e">hypot</span>(<span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vx</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">vy</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">170</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&amp;&amp;</span> Math.<span style="color:#a6e22e">abs</span>(<span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>)) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0.45</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">error</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">angleDifference</span>(<span style="color:#a6e22e">desired</span>, <span style="color:#a6e22e">ship</span>.<span style="color:#a6e22e">angle</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 全域伺機開火：船頭對齊任何一顆隕石的預估前置角且通過 0.15s 冷卻即擊發
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">fire</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">game</span>.<span style="color:#a6e22e">rocks</span>.<span style="color:#a6e22e">some</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">canFireAt</span>(<span style="color:#a6e22e">ship</span>, <span style="color:#a6e22e">r</span>));
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> { <span style="color:#a6e22e">controls</span><span style="color:#f92672">:</span> { <span style="color:#a6e22e">turn</span>: <span style="color:#66d9ef">Math.max</span>(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, Math.<span style="color:#a6e22e">min</span>(<span style="color:#ae81ff">1</span>, <span style="color:#a6e22e">error</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">3.5</span>)), <span style="color:#a6e22e">thrust</span>, <span style="color:#a6e22e">fire</span> }, <span style="color:#a6e22e">reflex</span>, <span style="color:#a6e22e">target</span>: <span style="color:#66d9ef">target.id</span> };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>整套架構的決策分流與執行流程如下圖所示：</p>
+
+
+  
+    <img src="/posts/2026/09-23-jev-autopilot-tactics-tuning/tactics-tuning.svg" alt="tactics-tuning.svg" class="img-responsive post-image">
+  
+
+<p>這個雙階段設計帶來了三大優勢：</p>
+<ol>
+<li><strong>防止無效自旋加速</strong>：在航速尚未降下來前，若未對準反向就貿然噴射，只會讓飛船沿著錯誤的切線越轉越快。透過 <code>angleDifference &lt; 0.35</code> 門檻，飛船一定會先轉到位，再穩健煞車。</li>
+<li><strong>慣性滑行瞄準</strong>：當速度低於 120 px/s 時，飛船嚴格熄火滑行，將全部角速度用於鎖定目標前置角，不再向前推擠衝撞目標。</li>
+<li><strong>伺機擊發不中斷</strong>：即使飛船正在逆向煞車，只要旋轉中的船頭掠過任何隕石的前置航角，全域伺機開火（opportunistic firing）依然會順手補上一槍，不浪費任何消滅敵人的機會。</li>
+</ol>
+<h2 id="離線驗證定型化場景評估evaluation-fixtures">離線驗證：定型化場景評估（Evaluation Fixtures）</h2>
+<p>在正式讓模型接管飛行前，如何驗證 Jev 真的掌握了這套戰術邊界，而不是在單一場次中碰巧走運？</p>
+<p>在 <code>scripts/evaluate-pilot.ts</code> 中，我設計了 4 組涵蓋極端戰術邊界的測試情境（fixtures）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cases</span> <span style="color:#f92672">=</span> [
+</span></span><span style="display:flex;"><span>  { <span style="color:#a6e22e">name</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;受控速度下的開闊正面目標&#39;</span>, <span style="color:#a6e22e">expected</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;intercept&#39;</span>, <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">0</span>, <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">0</span>, <span style="color:#a6e22e">distance</span>: <span style="color:#66d9ef">300</span>, <span style="color:#a6e22e">rockVx</span>: <span style="color:#66d9ef">0</span> },
+</span></span><span style="display:flex;"><span>  { <span style="color:#a6e22e">name</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;背向目標高速漂移（需煞車）&#39;</span>, <span style="color:#a6e22e">expected</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;reposition&#39;</span>, <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">260</span>, <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">Math.PI</span>, <span style="color:#a6e22e">distance</span><span style="color:#f92672">:</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">300</span>, <span style="color:#a6e22e">rockVx</span>: <span style="color:#66d9ef">0</span> },
+</span></span><span style="display:flex;"><span>  { <span style="color:#a6e22e">name</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;空域安全但目標全在身後（偏差角 180°）&#39;</span>, <span style="color:#a6e22e">expected</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;reposition&#39;</span>, <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">0</span>, <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">Math.PI</span>, <span style="color:#a6e22e">distance</span>: <span style="color:#66d9ef">300</span>, <span style="color:#a6e22e">rockVx</span>: <span style="color:#66d9ef">0</span> },
+</span></span><span style="display:flex;"><span>  { <span style="color:#a6e22e">name</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;即將迎面撞上的急迫隕石&#39;</span>, <span style="color:#a6e22e">expected</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;evade&#39;</span>, <span style="color:#a6e22e">speed</span>: <span style="color:#66d9ef">0</span>, <span style="color:#a6e22e">heading</span>: <span style="color:#66d9ef">0</span>, <span style="color:#a6e22e">distance</span>: <span style="color:#66d9ef">60</span>, <span style="color:#a6e22e">rockVx</span><span style="color:#f92672">:</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">100</span> },
+</span></span><span style="display:flex;"><span>];</span></span></code></pre></div>
+
+<p>執行實際呼叫 TypeSafe API 的評估腳本：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>npm run test:jev</span></span></code></pre></div>
+
+<p>終端機印出了令人振奮的結果：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{<span style="color:#f92672">&#34;scenario&#34;</span>:<span style="color:#e6db74">&#34;受控速度下的開闊正面目標&#34;</span>,<span style="color:#f92672">&#34;expected&#34;</span>:<span style="color:#e6db74">&#34;intercept&#34;</span>,<span style="color:#f92672">&#34;matched&#34;</span>:<span style="color:#66d9ef">true</span>,<span style="color:#f92672">&#34;probabilities&#34;</span>:{<span style="color:#f92672">&#34;intercept&#34;</span>:<span style="color:#ae81ff">0.89</span>,<span style="color:#f92672">&#34;evade&#34;</span>:<span style="color:#ae81ff">0.06</span>,<span style="color:#f92672">&#34;reposition&#34;</span>:<span style="color:#ae81ff">0.05</span>},<span style="color:#f92672">&#34;latencyMs&#34;</span>:<span style="color:#ae81ff">326</span>}
+</span></span><span style="display:flex;"><span>{<span style="color:#f92672">&#34;scenario&#34;</span>:<span style="color:#e6db74">&#34;背向目標高速漂移（需煞車）&#34;</span>,<span style="color:#f92672">&#34;expected&#34;</span>:<span style="color:#e6db74">&#34;reposition&#34;</span>,<span style="color:#f92672">&#34;matched&#34;</span>:<span style="color:#66d9ef">true</span>,<span style="color:#f92672">&#34;probabilities&#34;</span>:{<span style="color:#f92672">&#34;reposition&#34;</span>:<span style="color:#ae81ff">0.52</span>,<span style="color:#f92672">&#34;evade&#34;</span>:<span style="color:#ae81ff">0.34</span>,<span style="color:#f92672">&#34;intercept&#34;</span>:<span style="color:#ae81ff">0.14</span>},<span style="color:#f92672">&#34;latencyMs&#34;</span>:<span style="color:#ae81ff">172</span>}
+</span></span><span style="display:flex;"><span>{<span style="color:#f92672">&#34;scenario&#34;</span>:<span style="color:#e6db74">&#34;空域安全但目標全在身後（偏差角 180°）&#34;</span>,<span style="color:#f92672">&#34;expected&#34;</span>:<span style="color:#e6db74">&#34;reposition&#34;</span>,<span style="color:#f92672">&#34;matched&#34;</span>:<span style="color:#66d9ef">true</span>,<span style="color:#f92672">&#34;probabilities&#34;</span>:{<span style="color:#f92672">&#34;reposition&#34;</span>:<span style="color:#ae81ff">0.68</span>,<span style="color:#f92672">&#34;intercept&#34;</span>:<span style="color:#ae81ff">0.16</span>,<span style="color:#f92672">&#34;evade&#34;</span>:<span style="color:#ae81ff">0.16</span>},<span style="color:#f92672">&#34;latencyMs&#34;</span>:<span style="color:#ae81ff">129</span>}
+</span></span><span style="display:flex;"><span>{<span style="color:#f92672">&#34;scenario&#34;</span>:<span style="color:#e6db74">&#34;即將迎面撞上的急迫隕石&#34;</span>,<span style="color:#f92672">&#34;expected&#34;</span>:<span style="color:#e6db74">&#34;evade&#34;</span>,<span style="color:#f92672">&#34;matched&#34;</span>:<span style="color:#66d9ef">true</span>,<span style="color:#f92672">&#34;probabilities&#34;</span>:{<span style="color:#f92672">&#34;evade&#34;</span>:<span style="color:#ae81ff">0.97</span>,<span style="color:#f92672">&#34;intercept&#34;</span>:<span style="color:#ae81ff">0.03</span>,<span style="color:#f92672">&#34;reposition&#34;</span>:<span style="color:#ae81ff">0.00</span>},<span style="color:#f92672">&#34;latencyMs&#34;</span>:<span style="color:#ae81ff">143</span>}</span></span></code></pre></div>
+
+<p>在 4/4 全部命中的情境測試中，我們清晰看到了 Jev 戰術意識的確立：</p>
+<ul>
+<li>面對身後的敵人（<code>bestAimError = 180°</code>），<code>reposition</code> 獲得了 68% 的高票勝出；</li>
+<li>面對超速漂移（260 px/s），即便目標在射程內，<code>reposition</code> 也以 52% 壓倒了盲目進攻；</li>
+<li>面對迎面撞擊，<code>evade</code> 以 97% 的壓倒性置信度主導避難；</li>
+<li>一旦空域安全且航速穩定，<code>intercept</code> 便以 89% 的機率主動迎擊。</li>
+</ul>
+<h2 id="結語與工程省思">結語與工程省思</h2>
+<p>從 84 秒到 17 秒，這場看似簡單的戰術調校給了我非常深刻的體會。</p>
+<p>在當前 AI Agent 的開發過程中，很多團隊在遇到模型表現不佳時，直覺反應往往是：</p>
+<ul>
+<li>「是不是模型不夠大？換旗艦模型試試？」</li>
+<li>「提示詞是不是不夠長？再寫五百字叮囑它要注意各種狀況。」</li>
+</ul>
+<p>但這次 <code>hello-jev</code> 的實作證明了完全不同的工程事實：</p>
+<ol>
+<li><strong>AI 的盲區往往源於人類定義的模糊</strong>：當你給模型一個名為 <code>reposition</code> 的選項，卻沒有在提示詞中為它劃定清晰的定量觸發條件（何時該選、何時不該選），模型自然會選擇更有把握的極端選項（進攻或逃跑）。</li>
+<li><strong>領域特徵工程永遠無可取代</strong>：不要指望模型在幾百毫秒內從原始座標矩陣中自行頓悟出「我現在漂移太快了」或「所有敵人都背對著我」。把領域常識預先提煉為緊湊的數值（如 <code>bestAimError</code> 與 <code>imminentThreats</code>），能為模型節省大量的推理負擔。</li>
+<li><strong>思考與致動必須對稱</strong> (Symmetry of Brain &amp; Actuator)：如果在認知層提供了三種姿態，在執行層卻只實作了兩種物理分支，整個系統的智慧就會產生斷層。在無重力物理中，「減速重新佔位」需要專門的反向噴射與慣性滑行狀態機；只有底層致動器具備足夠的物理能力，上層模型的決策才能真正開花結果。</li>
+</ol>
+<p>當星圖中的這艘小飛船學會沉著地逆向點火煞車時，它才真正脫離了盲目逃竄的程式碼反射，展現出宛如人類王牌飛行員般的沉穩戰術。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

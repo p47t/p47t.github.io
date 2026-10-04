@@ -1,0 +1,25 @@
+flowchart TD
+    subgraph GlobalEpoch["全域狀態 (Global System State)"]
+        GE["<div style='width:450px; padding:4px 8px 8px 8px; line-height:1.4;'><b>全域 Epoch 計數器 (Global Epoch: E)</b><br/>• 全域單調推進 (0 ➔ 1 ➔ 2 ➔ 0 循環)<br/>• 當所有活躍執行緒皆離開舊世代時，全域推進到下一代</div>"]
+    end
+
+    subgraph ThreadWork["讀者執行緒存取生命週期 (Reader Lifecycle)"]
+        direction LR
+        Pin["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>進入臨界區：pin()</b><br/>• 登記本地為世代 E<br/>• 宣告自身活躍中</div>"]
+        Read["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>走訪無鎖資料結構</b><br/>• 安全解引用節點<br/>• 零額外硬體屏障</div>"]
+        Unpin["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>離開臨界區：unpin()</b><br/>• 清除活躍登記<br/>• 允許世代推進</div>"]
+        Pin -->|"存取"| Read
+        Read -->|"完成"| Unpin
+    end
+
+    subgraph RetireQueue["待回收佇列：三代分桶防護 (Three-Epoch Buckets)"]
+        direction LR
+        B2["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>當前世代 (Epoch E)</b><br/>• 收集被 pop 移除節點<br/>• 尚有當代讀者存取中</div>"]
+        B1["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>上一世代 (Epoch E-1)</b><br/>• 等待舊世代讀者離場<br/>• 暫緩釋放</div>"]
+        B0["<div style='width:180px; padding:4px 6px 8px 6px; line-height:1.3;'><b>安全世代 (Epoch E-2)</b><br/>• 絕無讀者持有指標<br/>• <b>★ 安全批次釋放</b></div>"]
+        B2 -->|"推進"| B1
+        B1 -->|"推進"| B0
+    end
+
+    GlobalEpoch -->|"標記世代"| ThreadWork
+    ThreadWork -->|"節點退役入桶"| RetireQueue

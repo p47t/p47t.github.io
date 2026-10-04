@@ -1,0 +1,24 @@
+flowchart TD
+    subgraph G_Packet["Wayland 二進位封包格式 (Wire Format)"]
+        direction TB
+
+        subgraph G_Header["8-Byte 固定訊息標頭 (Message Header)"]
+            direction TB
+            H_OBJ["<b>Object ID</b><br/>32-bit (4 Bytes) · 目標物件識別碼"]
+            H_SIZE["<b>Message Size</b><br/>16-bit (2 Bytes)<br/>封包總長度"]
+            H_OPCODE["<b>Opcode</b><br/>16-bit (2 Bytes)<br/>方法 / 事件編號"]
+        end
+
+        subgraph G_Payload["動態參數負載 (Payload Data)"]
+            P_ARGS["<b>Arguments (32-bit 對齊參數清單)</b><br/>int32 · uint32 · fixed (24.8)<br/>string · new_id · array"]
+        end
+
+        H_OBJ --> H_SIZE & H_OPCODE
+        H_SIZE & H_OPCODE --> P_ARGS
+    end
+
+    classDef headerNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef payloadNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+
+    class H_OBJ,H_SIZE,H_OPCODE headerNode;
+    class P_ARGS payloadNode;

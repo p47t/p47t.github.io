@@ -1,0 +1,567 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>時隔 20 年，有比 Joshua Bloch 的演講更好的 API 設計指南嗎？ - 從 2006 年的 in-process 介面哲學，到分散式系統、deep modules 與 AI agent 時代的典範轉移</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-19-api-design-20-years-later/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-19-api-design-20-years-later/"/>
+  <meta property="og:title" content="時隔 20 年，有比 Joshua Bloch 的演講更好的 API 設計指南嗎？ - 從 2006 年的 in-process 介面哲學，到分散式系統、deep modules 與 AI agent 時代的典範轉移"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-09-19 17:38:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="api"/>
+  
+  <meta property="og:article:tag" content="architecture"/>
+  
+  <meta property="og:article:tag" content="ai"/>
+  
+  <meta property="og:article:tag" content="tooling"/>
+  
+  <meta property="og:article:tag" content="design"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">254</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">59</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/09-17-learning-typescript-with-cloudflare-worker/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            從 Cloudflare Worker 學 TypeScript
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/09-23-hello-jev-autopilot/">
+            讓 Jev 幫你開太空船：Asteroids 飛行副駕駛的雙層架構設計
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">時隔 20 年，有比 Joshua Bloch 的演講更好的 API 設計指南嗎？</h1>
+      
+      <div class="post-subtitle">從 2006 年的 in-process 介面哲學，到分散式系統、deep modules 與 AI agent 時代的典範轉移</div>
+      
+      <div class="post-meta">
+        <span class="post-date">September 19, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/api"><span class="label label-primary">api</span></a>
+        
+        <a href="/tags/architecture"><span class="label label-primary">architecture</span></a>
+        
+        <a href="/tags/ai"><span class="label label-primary">ai</span></a>
+        
+        <a href="/tags/tooling"><span class="label label-primary">tooling</span></a>
+        
+        <a href="/tags/design"><span class="label label-primary">design</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        <p>二十年前（2006 年 9 月），我在部落格寫了一篇簡短的筆記 <a href="/2006/09/25/342">Josh Bloch on API Design</a>，推薦了 Joshua Bloch 著名的演講與投影片《<a href="https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/32713.pdf">How to Design a Good API and Why it Matters</a>》（亦可參考他在 Google 的 <a href="https://www.youtube.com/watch?v=aAb7hSCtvGw">Tech Talk 演講影片</a>）。當時我在文末寫下了這段心得：</p>
+<blockquote><p>「其實軟體開發者的大部分工作就是和一大堆的 API 打交道，我是最討厭使用那種設計不良的 API，因為往往要用更多的 client code 來完成功能或者避過設計的缺陷。怎麼去設計『良好的 API』正是所有軟體開發者要必備的技巧，Joshua 所提出的這些設計準則，都是相當值得參考學習的。」</p>
+</blockquote><p>一轉眼二十年過去了。最近在社群上看到一個很有深度的大哉問：時隔將近二十年，在 API 設計這個領域，到底有沒有任何資源真正超越了 Joshua Bloch 的這場經典演講？</p>
+<p>這個提問促使我重新把那份經典的投影片翻出來重溫，也對照了過去二十年間整個軟體工程界在 API 設計上的演化。</p>
+<p>簡潔的結論是：就基礎介面哲學而言，沒有任何單一資源能夠完全取代 Joshua Bloch；但現代軟體工程已經發展出更加全面且深入的資源，足以應對現代 API 在維運、分散式架構與網路環境中的現實挑戰。</p>
+<h2 id="歷久彌新的核心哲學為什麼-bloch-的原則依然適用">歷久彌新的核心哲學：為什麼 Bloch 的原則依然適用？</h2>
+<p>為什麼二十年過去了，大家依然將 Joshua Bloch 的演講（以及他在《<a href="https://www.oreilly.com/library/view/effective-java-3rd/9780134686097/">Effective Java</a>》中的原則）奉為圭臬？</p>
+<p>因為 Bloch 當年談論的重點，並非特定語言語法或特定框架的技術細節，而是觸及了認知心理學與軟體工程的本質矛盾——人類大腦的工作記憶（working memory）十分有限，而軟體系統的複雜度卻永遠在膨脹。</p>
+<p>Bloch 提出的幾個核心信條，放到今天依然字字珠璣：</p>
+<h3 id="容易學習難以誤用">容易學習，難以誤用</h3>
+<p>好的 API 應該做到「Easy to learn」、「Easy to use, even without documentation」與「Hard to misuse」。它的行為要符合開發者的直覺（Principle of Least Astonishment），讓做對的事情變得很自然，讓犯錯在編譯期或呼叫當下就被阻擋。如果一個 API 需要呼叫者小心翼翼地遵循隱含的順序假設，那它就是一枚未爆彈。</p>
+<h3 id="儘早回報錯誤">儘早回報錯誤</h3>
+<p>Fail fast 原則指出，錯誤一旦發生，就應該立即在最靠近源頭的地方暴露出來，而不是吞下錯誤、回傳魔術數字，或是帶著損壞的狀態繼續執行，最終在數百行之外引發莫名其妙的崩潰。</p>
+<h3 id="最小化公開介面與資訊隱藏">最小化公開介面與資訊隱藏</h3>
+<p><em>When in doubt, leave it out.</em>（猶豫不決時，就不要放進公開介面）。API 一旦公開，每一個方法、每一個欄位都是對外做出的長期承諾。增加功能永遠容易，移除或修改壞設計卻會破壞相容性。資訊隱藏不只是封裝實作細節，更是為未來的重構保留自由度。</p>
+<h3 id="命名即核心概念">命名即核心概念</h3>
+<p>名稱是建立心理模型（mental model）的基石。好的命名不需要翻閱文件就能心領神會；命名要前後一致、避免隱晦縮寫，並且能夠精準表達職責邊界。</p>
+<h3 id="文件也是-api-的一部分">文件也是 API 的一部分</h3>
+<p>任何必須透過閱讀底層實作程式碼才能搞懂如何使用的 API，都是不合格的設計。規格與文件的缺失，本質上就是 API 的缺陷。</p>
+<p>這些原則之所以歷久彌新，是因為過去二十年來，硬體效能與架構工具大幅演進，但人類工程師的大腦結構與認知侷限並沒有改變。只要 API 的使用者還是人，Bloch 的哲學就永遠不會過時。</p>
+<h2 id="二十年間的典範轉移api-的戰場如何擴大">二十年間的典範轉移：API 的戰場如何擴大？</h2>
+<p>既然原則未變，那為什麼我們今天不能「只讀」Joshua Bloch？</p>
+<p>原因在於：Bloch 的演講誕生於 2000 年代中期，主要圍繞在 Java 與 process 內部的類別庫介面（in-process class &amp; library interfaces，最典型的代表就是他親手操刀的 Java Collections Framework）。</p>
+<p>在那樣的語境下，呼叫發生在同一塊記憶體位址空間內、同步完成、沒有網路延遲，也不會有網路分割（network partition）。因此，Bloch 的內容自然缺乏了現代工程不可或缺的面向：網路邊界、雲端規模的向後相容、冪等性（idempotency）、分散式工作流以及跨平台 schema 規範。</p>
+<p>在過去二十年間，軟體架構經歷了劇烈的典範轉移，API 的設計維度延伸到了以下面向：</p>
+
+
+  
+    <img src="/posts/2026/09-19-api-design-20-years-later/api-evolution.svg" alt="api-evolution.svg" class="img-responsive post-image">
+  
+
+<h3 id="從-in-process-到-out-of-process">從 in-process 到 out-of-process</h3>
+<p>當 API 跨出記憶體邊界，走入分散式系統與雲端網路時，原本單純的函式呼叫就必須面對分散式運算的殘酷現實：</p>
+<ul>
+<li>非同步與長任務（long-running operations）：當一個操作需要數十秒甚至數分鐘才能完成，API 往往不再適合同步阻塞連線，而更常採用非同步輪詢（polling）或事件通知模型。</li>
+<li>分頁策略（pagination）：海量資料無法一次載入記憶體，傳統以 <code>offset</code> 為基礎的分頁容易遇到資料漂移與效能瓶頸，現代 API 越來越常採用 <code>cursor</code> 作為分頁策略。</li>
+<li>網路不可靠性與冪等性（idempotency）：在分散式系統中，超時不代表失敗。為了讓客戶端能安全重試，API 通常會透過冪等鍵（idempotency key）等機制，在伺服器正確實作時，避免或降低重複建立資源的風險。</li>
+</ul>
+<h3 id="契約優先與開發者體驗">契約優先與開發者體驗</h3>
+<p>二十年前的開發方式往往是寫好程式碼後，再藉由 Javadoc 產生說明。現代分散式與跨語言架構下，contract-first（契約優先）成為常見的架構選擇之一：先透過 <a href="https://www.openapis.org/">OpenAPI</a> 或 <a href="https://protobuf.dev/">Protobuf</a> 定義明確的 schema 契約，作為團隊跨語言通訊、mock 測試與自動化 SDK 產生（如 <a href="https://buildwithfern.com/">Fern</a>）的核心契約（single source of truth），並追求更短的 time to first call。</p>
+<h3 id="ai-agent-時代的-api-設計">AI agent 時代的 API 設計</h3>
+<p>在當前這個時代，API 的消費者已經不再侷限於人類工程師，越來越多是由大型語言模型驅動的 AI agent（自主代理人）。</p>
+<p>當 API 成為 LLM 的 tool calling（函式呼叫）對象，或是透過 <a href="https://modelcontextprotocol.io/">MCP</a>（Model Context Protocol）接入代理人系統時，Bloch 的「難以誤用」原則被賦予了全新的意義：</p>
+<ul>
+<li>Schema 的精確與去歧義：人類工程師遇到含糊的參數說明可能還會去查原始碼或詢問同事，但 AI agent 更容易產生誤解或幻覺。</li>
+<li>語意自明的工具描述：函式的描述（description）會直接成為模型可見上下文的一部分。工具的適用情境、先決條件與邊界約束都應盡可能清晰明確。</li>
+<li>錯誤回傳的可操作性（actionable errors）：當 agent 呼叫失敗時，回傳的錯誤訊息若只是模糊的「Bad Request」，模型難以自行修正；若能具體指出哪一個欄位格式不合、有效範圍為何，agent 就更有機會根據錯誤提示進行自我修復（self-correction）。</li>
+</ul>
+<h2 id="現代的延伸與超越兩大分支與代表資源">現代的延伸與超越：兩大分支與代表資源</h2>
+<p>如果你想要在 Bloch 的哲學基礎上建立更符合當代工程實踐的技能樹，現代的最佳資源取決於你的設計場景是網路服務（REST / gRPC）還是程式碼層級的程式庫（libraries / SDKs）：</p>
+<h3 id="網路與伺服器端-api-設計">網路與伺服器端 API 設計</h3>
+<p>針對網路通訊、微服務與分散式架構，我會優先推薦以下三本書：</p>
+<ul>
+<li>JJ Geewax 的《<a href="https://www.manning.com/books/api-design-patterns">API Design Patterns</a>》（Manning 出版）：這本書是 Bloch 的經典建議在 Web 與 RPC 時代極具啟發性的延伸閱讀。它提供了一套與特定協議無關的架構模式，專門解決 Bloch 當年從未涉足的現實挑戰：分頁機制、冪等性 token、背景長任務（long-running operations）、批次請求以及安全的局部更新（partial updates）。</li>
+<li>Arnaud Lauret 的《<a href="https://www.manning.com/books/the-design-of-web-apis-second-edition">The Design of Web APIs, Second Edition</a>》（Manning 出版）：作者以「<a href="https://apihandyman.io/">API Handyman</a>」為名寫作。這本書專注於 HTTP/REST 與 web 服務的人體工學（ergonomics）與易用性，成功將 Bloch 風格的人本設計原則轉譯到 URI 層級結構、payload 契約、錯誤格式以及可探索性（discoverability）上。</li>
+<li>James Higginbotham 的《<a href="https://www.informit.com/store/principles-of-web-api-design-delivering-value-with-9780137355709">Principles of Web API Design: Delivering Value with APIs and Microservices</a>》（Addison-Wesley 出版）：這本書非常適合架構師研讀。它採用 job stories 與領域驅動設計（DDD）的方法，引導開發者以企業業務能力邊界來劃分 API，而不是單純將底層資料庫的 schema 直接暴露成介面。</li>
+</ul>
+<h3 id="程式庫與模組端-api-設計">程式庫與模組端 API 設計</h3>
+<p>如果你希望在程式碼與模組設計層面，將 Bloch 的哲學提升到更高的理論維度，這兩本書是極具代表性的參考：</p>
+<ul>
+<li>John Ousterhout 的《<a href="https://web.stanford.edu/~ouster/cgi-bin/aposd.php">A Philosophy of Software Design</a>》（2021 年第二版）：如果說有哪本書能把 Bloch 的哲學推向更高的抽象層次，那就是這本當代經典。Ousterhout 提出了著名的 deep modules（深模組）概念——一個優秀的模組應該擁有極其簡單直覺的介面，背後卻隱藏了巨大的實作複雜度；相反地，那些只添加無謂樣板程式碼的 shallow modules（淺模組）則是他極力批判的反模式。這本書對「如何設計介面以隱藏複雜度」給出了無比嚴謹的論證。</li>
+<li>Jaroslav Tulach 的《<a href="https://link.springer.com/book/10.1007/978-1-4302-0974-4">Practical API Design: Confessions of a Java Framework Architect</a>》：作者是 NetBeans 平台的創始人與架構師。這本書是一部詳盡深入的教科書，專門探討二進位層級的向後相容性（binary compatibility）、棄用生命週期（deprecation lifecycles），以及如何在跨越多年與多個大版本的演進中，盡可能不破壞呼叫端的既有程式碼。</li>
+</ul>
+<h3 id="業界指標規範">業界指標規範</h3>
+<p>多家科技公司也將自身的 API 設計經驗整理為公開指南，成為 Bloch 核心哲學在真實生產環境中的延伸參考：</p>
+<ul>
+<li><a href="https://cloud.google.com/apis/design">Google Cloud API Design Guide</a>：彙整了 Google 內部常用的設計慣例，針對資源導向架構（resource-oriented architecture）中的標準方法命名（<code>List</code>、<code>Get</code>、<code>Create</code>、<code>Update</code>、<code>Delete</code>）、欄位行為與版本控制提供了詳細的實踐參考。</li>
+<li><a href="https://github.com/microsoft/api-guidelines">Microsoft REST API Guidelines</a>：在 GitHub 上歷經實戰檢驗的規範，詳細規定了錯誤結構、URL 模式、查詢字串、標頭設計以及冪等操作的最佳實踐。</li>
+<li><a href="https://opensource.zalando.com/restful-api-guidelines/">Zalando RESTful API Guidelines</a>：深獲開源社群推崇的規範，特別聚焦於 JSON payload、OpenAPI / JSON Schema、超媒體（hypermedia）以及微服務間的通訊準則。</li>
+</ul>
+<h2 id="當程式碼全由-ai-agent-撰寫api-設計還重要嗎">當程式碼全由 AI agent 撰寫，API 設計還重要嗎？</h2>
+<p>Joshua Bloch 當年的講題是《How to Design a Good API and Why it Matters》。但在軟體開發日益走向自主自動化的今天，一個不可迴避、也經常被工程師熱烈討論的問題浮現了：如果未來的程式碼絕大部分、甚至完全是由 AI agent 撰寫，人類不再逐行推敲語法，那麼「API 設計」到底還重不重要？</p>
+<p>乍看之下，既然大型語言模型具備極強的程式碼理解能力，似乎再糟糕的介面它都能讀懂並產生相應的呼叫。但從實際的工程實踐來看，情況恰好相反：當程式碼主要由 AI agent 撰寫時，良好的 API 設計不僅依然重要，甚至比過去由人類手寫程式碼時更加關鍵。</p>
+<p>這背後有三個深層原因：</p>
+<h3 id="上下文視窗的極限與深模組的必要性">上下文視窗的極限與深模組的必要性</h3>
+<p>雖然部分現代模型已支援數十萬甚至百萬 token 的上下文視窗（context window），但模型的注意力分配並非均勻且無限。</p>
+<p>如果一個系統的 API 設計不良、職責邊界模糊，或是充滿了缺乏封裝的淺模組（shallow modules），AI agent 在處理任何單一任務時，就容易把寶貴的上下文容量耗費在周邊實作細節與樣板程式碼上。這不僅可能增加推論成本與延遲，也更容易稀釋模型對核心業務邏輯的專注度。</p>
+<p>相反地，Bloch 所強調的「資訊隱藏」與 Ousterhout 倡導的「deep modules」——用極其精煉的介面遮蔽龐大的實作複雜度——恰好是降低 agent 認知負擔的利器。良好的 API 讓模型可以在極小的局部上下文中，進行高精確度的推理與程式碼產生。</p>
+<h3 id="難以誤用成為-ai-agent-的安全護欄">「難以誤用」成為 AI agent 的安全護欄</h3>
+<p>人類工程師在遇到設計不良、充滿陷阱的 API 時，通常會感到困惑、皺起眉頭，然後停下來去查閱原始碼或與同事討論；但 AI agent 不一定會主動質疑介面設計，反而可能快速產生看似合理卻繞過缺陷的程式碼，甚至產生幻覺，將錯誤掩蓋在更深層的呼叫鏈中。</p>
+<p>在自主迴圈（agentic loop）中，一個不直覺、容易被誤用的 API 會導致 agent 陷入反覆嘗試、修復失敗的死循環。Bloch 當年提倡的「Hard to misuse」與「Fail fast」，在人類時代是為了提升開發體驗與減少除錯時間；而在 AI 時代，它們實質上升級成了安全設計的重要一環，有助於防範自主代理人產生災難性錯誤。</p>
+<h3 id="實作可以隨時丟棄但契約永遠長存">實作可以隨時丟棄，但契約永遠長存</h3>
+<p>在 AI 輔助與自主編程的時代，撰寫「程式碼實作」的邊際成本正在急劇下降。一段不夠優雅的演算法、一個效能欠佳的函式，AI agent 可以在某些情境下快速重寫多個版本。</p>
+<p>然而，API 契約（contract）卻無法隨意推倒重來。API 是跨模組、跨服務、甚至跨多個自主 agent 協同作業時關鍵的共識邊界之一。實作是消耗品，隨生隨滅；但介面是架構的骨架，一旦確立，就錨定了系統的溝通成本與演進彈性。</p>
+<p>當人類開發者逐漸從「逐行撰寫程式碼的工人」轉變為「系統架構的設計者與審查者」，我們用來引導、約束並與 AI agent 溝通的最核心語言，正是 API。</p>
+<h2 id="總結如何選擇適合你的現代指南">總結：如何選擇適合你的現代指南？</h2>
+<p>回到最初的問題：時隔二十年，有比 Joshua Bloch 更好的 API 設計指南嗎？</p>
+<p>答案很清晰：沒有任何單一資源能奪走 Joshua Bloch 作為入門哲學的桂冠；但現代工程師必須根據自己的工作場景，選讀相應的現代資源：</p>
+<ul>
+<li>如果你專注於程式碼架構與模組設計：請研讀 John Ousterhout 的《<a href="https://web.stanford.edu/~ouster/cgi-bin/aposd.php">A Philosophy of Software Design</a>》，掌握 deep modules 的精髓。</li>
+<li>如果你正在打造雲端、Web、微服務或 RPC 系統：請研讀 JJ Geewax 的《<a href="https://www.manning.com/books/api-design-patterns">API Design Patterns</a>》，並將 <a href="https://cloud.google.com/apis/design">Google Cloud API Design Guide</a> 作為日常開發的隨身參考標準。</li>
+</ul>
+<p>二十年前，我們在單一程式記憶體裡追求「容易做對，難以做錯」；二十年後的今天，我們面對的是跨越網路、微服務與 AI agent 的全新的疆界。載體在變，但那個最根本的追求始終未變。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

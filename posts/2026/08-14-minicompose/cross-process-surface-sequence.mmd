@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant Host as MainActivity (:left_gpu)
+    participant SF as SurfaceFlinger (System Compositor)
+    participant Remote as RightCpuService (:right_cpu)
+
+    Note over Host: 1. 建立 SurfaceView 並取得 hostToken
+    Host->>Remote: bindService() + Binder.transact(TRANSACTION_CREATE_SURFACE, hostToken, w, h)
+    
+    Note over Remote: 2. 初始化 SurfaceControlViewHost(display, hostToken)
+    Note over Remote: 3. 將 MiniComposeView 設為 Root View
+    Note over Remote: 4. 取出 SurfacePackage (封裝 Remote SurfaceControl)
+    Remote-->>Host: Binder Parcel 回傳 (PID, SurfacePackage)
+
+    Note over Host: 5. surfaceView.setChildSurfacePackage(surfacePackage)
+    Host->>SF: 註冊跨進程圖層混合
+    Remote->>SF: :right_cpu RenderThread 直接送幀
+    Host->>SF: :left_gpu RenderThread 直接送幀
+    SF-->>Host: SurfaceFlinger 同步合成至單一螢幕！
+
+    rect rgb(240, 249, 255)
+    Note over Host, Remote: 6. 跨進程雙向互動與遙測同步 (Binder IPC)
+    Host->>Remote: transact(TRANSACTION_SET_COMPLEXITY / DELAY / LOAD)
+    Host->>Remote: transact(TRANSACTION_GET_STATS) -> 回傳 (FPS, LayoutUs, DrawUs)
+    end

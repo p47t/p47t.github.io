@@ -1,0 +1,783 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>從 Cloudflare Worker 學 TypeScript - 用 National Parks Passport scratchbook 的 edge proxy、unit test 與 E2E test，認識 TypeScript 如何檢查程式</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-17-learning-typescript-with-cloudflare-worker/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/09-17-learning-typescript-with-cloudflare-worker/"/>
+  <meta property="og:title" content="從 Cloudflare Worker 學 TypeScript - 用 National Parks Passport scratchbook 的 edge proxy、unit test 與 E2E test，認識 TypeScript 如何檢查程式"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-09-17 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="typescript"/>
+  
+  <meta property="og:article:tag" content="cloudflare"/>
+  
+  <meta property="og:article:tag" content="serverless"/>
+  
+  <meta property="og:article:tag" content="api"/>
+  
+  <meta property="og:article:tag" content="web"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">254</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">10</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">13</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">23</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">5</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">59</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/09-08-lock-free-data-structures/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Lock-free 資料結構實戰
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/09-19-api-design-20-years-later/">
+            時隔 20 年，有比 Joshua Bloch 的演講更好的 API 設計指南嗎？
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">從 Cloudflare Worker 學 TypeScript</h1>
+      
+      <div class="post-subtitle">用 National Parks Passport scratchbook 的 edge proxy、unit test 與 E2E test，認識 TypeScript 如何檢查程式</div>
+      
+      <div class="post-meta">
+        <span class="post-date">September 17, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/typescript"><span class="label label-primary">typescript</span></a>
+        
+        <a href="/tags/cloudflare"><span class="label label-primary">cloudflare</span></a>
+        
+        <a href="/tags/serverless"><span class="label label-primary">serverless</span></a>
+        
+        <a href="/tags/api"><span class="label label-primary">api</span></a>
+        
+        <a href="/tags/web"><span class="label label-primary">web</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        <p>最近在做 US National Parks Passport scratchbook 時，我們需要從手機 app 讀取美國國家公園管理局（NPS）的 alerts 和 visitor centers。NPS Developer API 有 API key，也有每小時的使用量限制；把 key 放進 mobile client，等於交給每一位安裝 app 的人。</p>
+<p>因此我們在 Cloudflare Worker 放了一層很小的 proxy：client 只呼叫自己的 Worker，Worker 從 secret binding 取得 <code>NPS_API_KEY</code>，再向官方 API 請求。它也嘗試把成功回應快取 30 分鐘，讓同一個 data center 的後續 request 有機會直接回傳，減少重複打上游。</p>
+<p>最初版本是 JavaScript，功能沒有問題；但把它搬到 TypeScript 後，才發現這種小小的 serverless 程式正是學 TypeScript 的好材料。它的型別不是為了讓程式碼看起來正式，而是在流量真的抵達 edge 前，把環境設定、Web API 和錯誤路徑說清楚。</p>
+
+
+  
+    <img src="/posts/2026/09-17-learning-typescript-with-cloudflare-worker/worker-proxy.svg" alt="worker-proxy.svg" class="img-responsive post-image">
+  
+
+<h2 id="為什麼-serverless-worker-特別適合-typescript">為什麼 serverless Worker 特別適合 TypeScript？</h2>
+<p>Worker 不需要管理伺服器，但不代表它沒有 production 風險。相反地，部署後的例外會在 edge 發生：某個 secret 沒有綁定、把 <code>request</code> 的屬性拼錯、或把不該快取的上游錯誤存進 cache，都可能直接影響使用者。</p>
+<p>TypeScript 不會取代測試，也不會阻止 NPS API 在網路上失敗；它處理的是另一類問題：在執行前檢查程式對資料和平台 contract 的假設是否一致。對這支 Worker 而言，這包括：</p>
+<ul>
+<li>程式碼是否以正確的名稱讀取 <code>env</code> 的 secret？</li>
+<li><code>fetch</code> handler 是否收到正確的 <code>Request</code>、<code>Env</code> 與 <code>ExecutionContext</code>？</li>
+<li>非同步快取工作是否交給 <code>ctx.waitUntil()</code>？</li>
+<li><code>catch</code> 裡的值是否能安全轉成可回傳的錯誤訊息？</li>
+</ul>
+<h2 id="先替-worker-的環境命名">先替 Worker 的環境命名</h2>
+<p>在 JavaScript 裡，<code>env.NPS_API_KEY</code> 可以直接讀；如果 secret 名稱打成 <code>NPS_APIKEY</code>，通常只能等到某個請求走進 production 才發現是 <code>undefined</code>。TypeScript 的第一步很單純：用 <code>interface</code> 描述這個 Worker 依賴的 binding。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">interface</span> <span style="color:#a6e22e">Env</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">NPS_API_KEY</span>: <span style="color:#66d9ef">string</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>Env</code> 不是執行期的 secret，也不會把 key 寫進 bundle；它是給 compiler 的契約。接著在 handler 的第二個參數標上 <code>Env</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#66d9ef">async</span> <span style="color:#a6e22e">fetch</span>(<span style="color:#a6e22e">request</span>: <span style="color:#66d9ef">Request</span>, <span style="color:#a6e22e">env</span>: <span style="color:#66d9ef">Env</span>, <span style="color:#a6e22e">ctx</span>: <span style="color:#66d9ef">ExecutionContext</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">Response</span>&gt; {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// env.NPS_API_KEY 是 string
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這裡先手動宣告 <code>interface Env</code>，方便看出程式依賴哪些 binding；完整 Worker 則使用 Wrangler 產生的全域 <code>Env</code>，避免手寫型別和部署設定分開維護。</p>
+<p>現在拼錯 <code>env.NPS_API_KEY</code> 的名稱就會在 <code>npm run typecheck</code> 被指出。這是編譯期檢查，不代表 TypeScript 讀過 Cloudflare 帳號設定。本文在 <code>wrangler.jsonc</code> 以 <code>secrets.required</code> 列出 <code>NPS_API_KEY</code>：<code>wrangler types</code> 會據此產生 <code>Env</code>，Wrangler 也會在本機開發與部署時檢查必要 secret 是否已設定。實際 secret 值仍要透過 <code>wrangler secret put NPS_API_KEY</code> 或 Cloudflare Dashboard 設定。</p>
+<h2 id="這支-proxy-的完整骨架">這支 proxy 的完整骨架</h2>
+<p>以下是 National Parks Passport Worker 專案中的 <code>worker/src/index.ts</code>。它提供 <code>/alerts</code> 與 <code>/visitorcenters</code> 兩個 GET endpoint，也接受 CORS 的 <code>OPTIONS</code> preflight；兩個 endpoint 都要求 <code>parkCode</code>，並把真正的 API key 留在 Worker 環境裡。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#75715e">// CORS enables browser access; it does not restrict callers or prevent quota abuse.
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">CORS_HEADERS</span> <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;Access-Control-Allow-Origin&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;*&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;Access-Control-Allow-Methods&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;GET, OPTIONS&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;Access-Control-Allow-Headers&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Accept, Content-Type&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;Access-Control-Max-Age&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;86400&#34;</span>,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">withCors</span>(<span style="color:#a6e22e">response</span>: <span style="color:#66d9ef">Response</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Response</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">headers</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Headers</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> [<span style="color:#a6e22e">name</span>, <span style="color:#a6e22e">value</span>] <span style="color:#66d9ef">of</span> Object.<span style="color:#a6e22e">entries</span>(<span style="color:#a6e22e">CORS_HEADERS</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">set</span>(<span style="color:#a6e22e">name</span>, <span style="color:#a6e22e">value</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Response</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">body</span>, {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">status</span>: <span style="color:#66d9ef">response.status</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">statusText</span>: <span style="color:#66d9ef">response.statusText</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">headers</span>,
+</span></span><span style="display:flex;"><span>  });
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">jsonResponse</span>(<span style="color:#a6e22e">body</span>: <span style="color:#66d9ef">unknown</span>, <span style="color:#a6e22e">status</span>: <span style="color:#66d9ef">number</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Response</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">withCors</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Response</span>(<span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>(<span style="color:#a6e22e">body</span>), {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">status</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">headers</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Cache-Control&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;no-store&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Content-Type&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;application/json; charset=utf-8&#34;</span>,
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>    }),
+</span></span><span style="display:flex;"><span>  );
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">default</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">async</span> <span style="color:#a6e22e">fetch</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">request</span>: <span style="color:#66d9ef">Request</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">env</span>: <span style="color:#66d9ef">Env</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">ctx</span>: <span style="color:#66d9ef">ExecutionContext</span>,
+</span></span><span style="display:flex;"><span>  )<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">Response</span>&gt; {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">request</span>.<span style="color:#a6e22e">method</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;OPTIONS&#34;</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">withCors</span>(<span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Response</span>(<span style="color:#66d9ef">null</span>, { <span style="color:#a6e22e">status</span>: <span style="color:#66d9ef">204</span> }));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">request</span>.<span style="color:#a6e22e">method</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;GET&#34;</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">jsonResponse</span>({ <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Method Not Allowed&#34;</span> }, <span style="color:#ae81ff">405</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">set</span>(<span style="color:#e6db74">&#34;Allow&#34;</span>, <span style="color:#e6db74">&#34;GET, OPTIONS&#34;</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">response</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">url</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">URL</span>(<span style="color:#a6e22e">request</span>.<span style="color:#a6e22e">url</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">path</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">url</span>.<span style="color:#a6e22e">pathname</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">path</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;/alerts&#34;</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">path</span> <span style="color:#f92672">!==</span> <span style="color:#e6db74">&#34;/visitorcenters&#34;</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">jsonResponse</span>(
+</span></span><span style="display:flex;"><span>        { <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Endpoint not found. Use /alerts or /visitorcenters&#34;</span> },
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">404</span>,
+</span></span><span style="display:flex;"><span>      );
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">parkCode</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">url</span>.<span style="color:#a6e22e">searchParams</span>.<span style="color:#66d9ef">get</span>(<span style="color:#e6db74">&#34;parkCode&#34;</span>)<span style="color:#f92672">?</span>.<span style="color:#a6e22e">trim</span>().<span style="color:#a6e22e">toLowerCase</span>();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">parkCode</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">jsonResponse</span>(
+</span></span><span style="display:flex;"><span>        { <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Missing required query parameter: parkCode&#34;</span> },
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">400</span>,
+</span></span><span style="display:flex;"><span>      );
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">apiKey</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">env</span>.<span style="color:#a6e22e">NPS_API_KEY</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">trim</span>();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">apiKey</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS_API_KEY binding is missing or empty.&#34;</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">jsonResponse</span>({ <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Worker is not configured correctly&#34;</span> }, <span style="color:#ae81ff">500</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">npsUrl</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">URL</span>(<span style="color:#e6db74">`https://developer.nps.gov/api/v1</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">path</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">npsUrl</span>.<span style="color:#a6e22e">searchParams</span>.<span style="color:#66d9ef">set</span>(<span style="color:#e6db74">&#34;parkCode&#34;</span>, <span style="color:#a6e22e">parkCode</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">path</span> <span style="color:#f92672">===</span> <span style="color:#e6db74">&#34;/visitorcenters&#34;</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">npsUrl</span>.<span style="color:#a6e22e">searchParams</span>.<span style="color:#66d9ef">set</span>(<span style="color:#e6db74">&#34;limit&#34;</span>, <span style="color:#e6db74">&#34;10&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// The cache key contains only this Worker URL and normalized public query data.
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cacheUrl</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">URL</span>(<span style="color:#a6e22e">request</span>.<span style="color:#a6e22e">url</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cacheUrl</span>.<span style="color:#a6e22e">pathname</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">path</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cacheUrl</span>.<span style="color:#a6e22e">search</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cacheUrl</span>.<span style="color:#a6e22e">searchParams</span>.<span style="color:#66d9ef">set</span>(<span style="color:#e6db74">&#34;parkCode&#34;</span>, <span style="color:#a6e22e">parkCode</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cacheKey</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Request</span>(<span style="color:#a6e22e">cacheUrl</span>.<span style="color:#a6e22e">toString</span>(), { <span style="color:#a6e22e">method</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;GET&#34;</span> });
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cache</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">caches</span>.<span style="color:#66d9ef">default</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cachedResponse</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">match</span>(<span style="color:#a6e22e">cacheKey</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">cachedResponse</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">withCors</span>(<span style="color:#a6e22e">cachedResponse</span>);
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS response cache lookup failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">upstreamResponse</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fetch</span>(<span style="color:#a6e22e">npsUrl</span>.<span style="color:#a6e22e">toString</span>(), {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">headers</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#e6db74">&#34;X-Api-Key&#34;</span><span style="color:#f92672">:</span> <span style="color:#a6e22e">apiKey</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">Accept</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;application/json&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#e6db74">&#34;User-Agent&#34;</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;ScratchbookNationalParks/1.0&#34;</span>,
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>      });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">withCors</span>(<span style="color:#a6e22e">upstreamResponse</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// Cache successful full responses; the Cache API cannot store 206 responses.
+</span></span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">shouldCache</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">upstreamResponse</span>.<span style="color:#a6e22e">ok</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">upstreamResponse</span>.<span style="color:#a6e22e">status</span> <span style="color:#f92672">!==</span> <span style="color:#ae81ff">206</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">set</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;Cache-Control&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">shouldCache</span> <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;public, max-age=1800&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;no-store&#34;</span>,
+</span></span><span style="display:flex;"><span>      );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">shouldCache</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">waitUntil</span>(
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">cacheKey</span>, <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">clone</span>()).<span style="color:#66d9ef">catch</span>((<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS response cache write failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>          }),
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">response</span>;
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS upstream request failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">jsonResponse</span>({ <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Upstream NPS gateway error&#34;</span> }, <span style="color:#ae81ff">502</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>} <span style="color:#a6e22e">satisfies</span> <span style="color:#a6e22e">ExportedHandler</span>&lt;<span style="color:#f92672">Env</span>&gt;;</span></span></code></pre></div>
+
+<p><code>export default</code> 是這個模組的預設匯出；Wrangler 會把這個物件視為 Worker 入口，並在每個 request 到達時呼叫它的 <code>fetch()</code>。</p>
+<p>有幾個容易忽略的細節。上游 URL 需要包含 <code>path</code>，所以 <code>/alerts</code> 會轉成 <code>https://developer.nps.gov/api/v1/alerts</code>，而不是只有 API 的 base URL。<code>apiKey</code> 透過 <code>X-Api-Key</code> 標頭傳遞給 NPS API，而不是放在上游 URL 裡；這樣做能避免 secret 出現在 URL、存取記錄（access logs）或中間代理的日誌中。快取鍵使用公開的 Worker URL、路徑與正規化後的 <code>parkCode</code>，不包含 secret 或其他不影響上游結果的查詢參數。</p>
+<p>這個 Worker 也處理 browser 的 CORS preflight：<code>OPTIONS</code> 回傳 204，且成功、錯誤與快取命中的回應都會帶上 CORS 標頭。<code>Access-Control-Allow-Origin: *</code> 適用於這份公開資料；若改成需要 cookie 或其他憑證的 API，就不能搭配萬用來源。</p>
+<p>把 <code>NPS_API_KEY</code> 留在 Worker 只避免 app 使用者直接取得 key，不會限制誰能呼叫這個公開 endpoint。<code>caches.default</code> 也不是 rate limit：cache miss 仍會打到 NPS，而不同的 <code>parkCode</code> 可以持續製造 miss。NPS 文件列出的預設 hourly limit 是每把 key 每小時 1,000 次，實際限制可能依 API 服務而異；公開部署前應替 Worker 設定合適的 Cloudflare rate limit 或其他 abuse control，並留意 NPS 用量。<a href="https://www.nps.gov/subjects/developer/guides.htm">NPS API 使用指南</a>列出限額與回應中的 <code>X-RateLimit</code> headers。</p>
+<h2 id="cloudflare-已經替我們提供的型別">Cloudflare 已經替我們提供的型別</h2>
+<p><code>Request</code>、<code>Response</code> 和 <code>ExecutionContext</code> 都是 Workers runtime 的 API 型別。把它們直接寫在函式簽名上，閱讀程式碼時就能知道每個值的責任。</p>
+<p><code>request</code> 是 browser 送進來的 Web <code>Request</code>，所以可以安全使用 <code>request.method</code>、<code>request.url</code>。<code>Response</code> 是 handler 的回傳契約；<code>Promise&lt;Response&gt;</code> 表示這是一個非同步 handler，但最後一定要交回 HTTP 回應。</p>
+<p><code>ctx</code> 則是容易被忽略、卻很適合 edge 程式的部分：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">waitUntil</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">cacheKey</span>, <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">clone</span>()).<span style="color:#66d9ef">catch</span>((<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS response cache write failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>  }),
+</span></span><span style="display:flex;"><span>);</span></span></code></pre></div>
+
+<p><code>waitUntil()</code> 告訴 Worker runtime：可以先把 <code>response</code> 回給使用者，但請讓 <code>cache.put()</code> 在背景繼續完成。<code>response.clone()</code> 也很重要，因為 response body 是 stream；一份要交給 client，另一份才交給 cache，不能共用同一個已被讀取的 body。若 <code>cache.put()</code> 拋出例外，<code>catch</code> 會在背景記錄 log；不過 Cache API 也可能完成呼叫卻沒有留下快取項目，因此不能把呼叫成功當成儲存保證。</p>
+<h2 id="satisfies驗證-contract又不犧牲推論"><code>satisfies</code>：驗證 contract，又不犧牲推論</h2>
+<p>檔案結尾的這一行是這次 migration 最值得記住的語法：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span>} <span style="color:#a6e22e">satisfies</span> <span style="color:#a6e22e">ExportedHandler</span>&lt;<span style="color:#f92672">Env</span>&gt;;</span></span></code></pre></div>
+
+<p><code>satisfies</code> 是 TypeScript 4.9 引入的 operator。它會檢查左邊的 Worker 物件是否符合右邊的 <code>ExportedHandler&lt;Env&gt;</code> contract；例如 handler 名稱、<code>fetch</code> 的參數和回傳值不對，compiler 會報錯。</p>
+<p><code>ExportedHandler</code> 是 Cloudflare Workers 為預設匯出物件提供的型別 contract。尖括號裡的 <code>Env</code> 是泛型參數，代表這支 Worker 的 bindings；本例中的 <code>Env</code> 由 <code>wrangler types</code> 從 <code>wrangler.jsonc</code> 產生，因此 <code>fetch</code> 的第二個參數會包含 <code>NPS_API_KEY</code>。這個型別只在 typecheck 時檢查程式碼；必要 secret 是否已設定，則由 Wrangler 的設定與部署檢查負責。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#75715e">// 讀作：使用 Env bindings 的 Cloudflare Worker handler 型別。
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">NpsWorker</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ExportedHandler</span>&lt;<span style="color:#f92672">Env</span>&gt;;</span></span></code></pre></div>
+
+<p>它和把整個物件直接註記成 <code>ExportedHandler&lt;Env&gt;</code> 的差別，在於 <code>satisfies</code> 仍保留左邊物件本身推論出的精確型別，不會把它整體「變寬」成 annotation 的型別。對只有一個 <code>fetch</code> 的 Worker 看起來差異不大；但當物件還有自訂欄位、或想保留更精確的回傳值推論時，這個特性很有用。</p>
+<p>換句話說，它像是在說：「請確認這是合法的 Cloudflare Worker handler，但不要抹掉我這個物件原本知道的細節。」</p>
+<h2 id="unknown-不是麻煩而是-catch-的安全欄杆"><code>unknown</code> 不是麻煩，而是 catch 的安全欄杆</h2>
+<p>strict TypeScript 不應假設所有被拋出的值都是 <code>Error</code>。JavaScript 允許 <code>throw &quot;network down&quot;</code>、<code>throw 42</code>，甚至丟出任意 object。因此 catch 到的值應該是 <code>unknown</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#66d9ef">catch</span> (<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS upstream request failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">jsonResponse</span>({ <span style="color:#a6e22e">error</span><span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Upstream NPS gateway error&#34;</span> }, <span style="color:#ae81ff">502</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>在 <code>err instanceof Error</code> 的 true 分支，TypeScript 知道可以讀 <code>err.message</code>；其餘情況先經過 <code>String(err)</code>，log 裡仍有可診斷的訊息，不會因為硬讀不存在的 <code>.message</code> 再引發第二個例外。對外只回傳通用的 502 訊息，避免把 runtime 或網路細節交給呼叫端。這種根據條件把較寬型別收窄到可安全操作範圍的過程，叫做 type narrowing。</p>
+<h2 id="快取真正保護的是成功回應">快取真正保護的是成功回應</h2>
+<p>這支 proxy 的目的之一是保護 NPS API 的 hourly rate limit。直覺上，拿到上游回應後就 <code>cache.put()</code> 很合理，但 production 裡有個危險的反例：NPS 暫時回 403、429 或 5xx 時，若我們照樣快取，接下來 30 分鐘的每個使用者都只會讀到那個失敗。</p>
+<p>所以快取必須放在成功條件後面：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">shouldCache</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">upstreamResponse</span>.<span style="color:#a6e22e">ok</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">upstreamResponse</span>.<span style="color:#a6e22e">status</span> <span style="color:#f92672">!==</span> <span style="color:#ae81ff">206</span>;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">set</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;Cache-Control&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">shouldCache</span> <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;public, max-age=1800&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;no-store&#34;</span>,
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">shouldCache</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">waitUntil</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cache</span>.<span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">cacheKey</span>, <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">clone</span>()).<span style="color:#66d9ef">catch</span>((<span style="color:#a6e22e">err</span>: <span style="color:#66d9ef">unknown</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">message</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">instanceof</span> Error <span style="color:#f92672">?</span> <span style="color:#a6e22e">err.message</span> : <span style="color:#66d9ef">String</span>(<span style="color:#a6e22e">err</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">error</span>(<span style="color:#e6db74">&#34;NPS response cache write failed:&#34;</span>, <span style="color:#a6e22e">message</span>);
+</span></span><span style="display:flex;"><span>    }),
+</span></span><span style="display:flex;"><span>  );
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>Response.ok</code> 代表 HTTP status 在 200 到 299；不過 Cloudflare Cache API 不接受 206 Partial Content，所以這支 Worker 另外排除 206。失敗回應使用 <code>Cache-Control: no-store</code>，不會被 Worker cache 寫入，也不會要求 browser 或中間 cache 保留。這裡的取捨是刻意的：下一個 request 仍可能再打上游。若未來需要處理短暫 outage，可以另行設計 stale cache 或短 TTL 的 error policy；不要不加區分地把錯誤快取 30 分鐘。</p>
+<p>還有一個 edge cache 的範圍問題：<code>caches.default</code> 的項目只存在處理這個 request 的 data center，不會自動複製到其他 Cloudflare edge location，也不能搭配 tiered cache。因此它能減少同一個 data center 後續請求打到 NPS 的次數，不代表同一區域或全球的請求都能共用這份快取。<code>cache.put()</code> 也不保證每次都成功儲存；30 分鐘是這支程式要求的 TTL。<code>Cache-Control: public, max-age=1800</code> 同時允許 browser 與中間 cache 保存成功回應，這裡的資料是公開資訊。詳情可參考 <a href="https://developers.cloudflare.com/workers/runtime-apis/cache/">Cloudflare Cache API 文件</a>。</p>
+<h2 id="測試會驗證型別以外的事">測試會驗證型別以外的事</h2>
+<p>TypeScript 可以檢查程式和測試程式是否符合型別 contract，但它不會執行 Worker，也不會證明每個分支真的回傳正確結果。這裡用兩種測試補上不同的觀察範圍：unit test 隔離 Worker handler 的邏輯；E2E test 則透過 HTTP 呼叫實際部署的 Worker，確認它和 NPS API 接在一起後的行為。</p>
+<h3 id="unit-test隔離-handler-的分支">Unit test：隔離 handler 的分支</h3>
+<p><code>test/proxy.spec.ts</code> 用 Vitest 直接呼叫匯出的 <code>worker.fetch()</code>。測試會用 spy 假造上游 <code>fetch()</code>，也會以記憶體中的 <code>Map</code> 模擬 <code>caches.default</code>；<code>ExecutionContext</code> 的 mock 則會收集 <code>waitUntil()</code> 交付的背景工作，讓測試可以等 cache write 完成後再檢查結果。這樣不需要真的呼叫 NPS，就能穩定檢查 Worker 自己的處理邏輯。</p>
+<p>例如，這個測試確認 secret 走 <code>X-Api-Key</code> header、正規化後的 <code>parkCode</code> 進入上游 URL，以及成功 response 會排入快取：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#a6e22e">fetchSpy</span>.<span style="color:#a6e22e">mockResolvedValueOnce</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Response</span>(<span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">stringify</span>({ <span style="color:#a6e22e">data</span><span style="color:#f92672">:</span> [] }), { <span style="color:#a6e22e">status</span>: <span style="color:#66d9ef">200</span> }),
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> { <span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">pendingPromises</span> } <span style="color:#f92672">=</span> <span style="color:#a6e22e">createMockContext</span>();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">request</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Request</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;https://national-parks.simplypatrick.workers.dev/alerts?parkCode=%20YOSE%20&#34;</span>,
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">worker</span>.<span style="color:#a6e22e">fetch</span>(<span style="color:#a6e22e">request</span>, <span style="color:#a6e22e">env</span>, <span style="color:#a6e22e">ctx</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">status</span>).<span style="color:#a6e22e">toBe</span>(<span style="color:#ae81ff">200</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> [, <span style="color:#a6e22e">init</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">fetchSpy</span>.<span style="color:#a6e22e">mock</span>.<span style="color:#a6e22e">calls</span>[<span style="color:#ae81ff">0</span>];
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Headers</span>(<span style="color:#a6e22e">init</span><span style="color:#f92672">?</span>.<span style="color:#a6e22e">headers</span>).<span style="color:#66d9ef">get</span>(<span style="color:#e6db74">&#34;X-Api-Key&#34;</span>)).<span style="color:#a6e22e">toBe</span>(<span style="color:#a6e22e">env</span>.<span style="color:#a6e22e">NPS_API_KEY</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">await</span> <span style="color:#a6e22e">Promise</span>.<span style="color:#a6e22e">all</span>(<span style="color:#a6e22e">pendingPromises</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#a6e22e">mockCache</span>.<span style="color:#a6e22e">put</span>).<span style="color:#a6e22e">toHaveBeenCalledTimes</span>(<span style="color:#ae81ff">1</span>);</span></span></code></pre></div>
+
+<p>目前的 unit tests 也檢查 CORS preflight、非支援的 HTTP method 和路徑、缺少或空白的 <code>parkCode</code>、未設定的 API key、兩個 NPS endpoint 的 query、cache hit、上游錯誤與 206 不寫入快取、cache lookup 失敗後仍繼續呼叫上游，以及網路錯誤時回傳通用的 502。它們很適合快速確認輸入驗證、安全邊界和錯誤分支；由於上游與 cache 都是 mock，這些測試本身不會驗證 Cloudflare 的實際 edge 行為。</p>
+<h3 id="e2e-test走過實際部署路徑">E2E test：走過實際部署路徑</h3>
+<p><code>test/proxy.e2e.spec.ts</code> 用標準 <code>fetch()</code> 對 Worker URL 發 HTTP request。預設目標是正式 Worker；設定 <code>WORKER_URL</code> 可以改指測試部署或本機 <code>wrangler dev</code>。測試會以十個不同區域的 park code 查 alerts 與 visitor centers，也會檢查大小寫和前後空白的正規化，以及 <code>OPTIONS</code>、缺少參數、不支援的路徑和 <code>POST</code> 等 HTTP 行為。</p>
+<p>以 alerts 測試為例，這裡的 assertion 會檢查實際回應，而不是 mock handler 的內部呼叫：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ts" data-lang="ts"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fetch</span>(<span style="color:#e6db74">`</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">BASE_URL</span><span style="color:#e6db74">}</span><span style="color:#e6db74">/alerts?parkCode=</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">code</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">status</span>).<span style="color:#a6e22e">toBe</span>(<span style="color:#ae81ff">200</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">get</span>(<span style="color:#e6db74">&#34;access-control-allow-origin&#34;</span>)).<span style="color:#a6e22e">toBe</span>(<span style="color:#e6db74">&#34;*&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(<span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">headers</span>.<span style="color:#66d9ef">get</span>(<span style="color:#e6db74">&#34;cache-control&#34;</span>)).<span style="color:#a6e22e">toContain</span>(<span style="color:#e6db74">&#34;public&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">body</span> <span style="color:#f92672">=</span> (<span style="color:#66d9ef">await</span> <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">json</span>()) <span style="color:#66d9ef">as</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">data?</span>: <span style="color:#66d9ef">Array</span><span style="color:#f92672">&lt;</span>{ <span style="color:#a6e22e">id</span>: <span style="color:#66d9ef">string</span>; <span style="color:#a6e22e">title</span>: <span style="color:#66d9ef">string</span> }<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">expect</span>(Array.<span style="color:#a6e22e">isArray</span>(<span style="color:#a6e22e">body</span>.<span style="color:#a6e22e">data</span>)).<span style="color:#a6e22e">toBe</span>(<span style="color:#66d9ef">true</span>);</span></span></code></pre></div>
+
+<p>E2E test 會透過實際 HTTP endpoint 走過 Worker 的 request path；若指定的是部署中的 Worker，也會經過 Cloudflare runtime 和正式部署設定，cache miss 時再呼叫 NPS。它比 unit test 更接近使用者實際走過的路徑，但不會強制每個測試都命中或 miss cache。代價是它需要網路和可用的測試 Worker、secret 與上游 API，NPS 資料或服務暫時異常時也可能失敗。這組測試會查詢多個 park code，cache miss 仍會消耗 NPS API quota；不要把它當成完全離線、每次都相同的 unit test。<code>npm run test:e2e</code> 會使用 <code>WORKER_URL</code> 指定的位置，而目前預設值是公開的正式 Worker URL，執行前要留意 target。</p>
+<h3 id="typescript-在測試裡幫了什麼">TypeScript 在測試裡幫了什麼？</h3>
+<p><code>tsconfig.json</code> 把 <code>test/**/*</code> 也納入 strict typecheck。unit test 的 <code>env: Env</code> 會要求測試提供 Worker 所需的 <code>NPS_API_KEY</code>，而 <code>worker.fetch(request, env, ctx)</code> 也會在編譯期檢查 <code>Request</code>、<code>Env</code> 和 <code>ExecutionContext</code> 參數。若改了 binding 名稱、handler 參數或 response 型別卻沒同步修正測試，<code>tsc --noEmit</code> 就能先指出程式和測試之間的落差；編輯器也能根據 Vitest 型別提供 assertion 與 mock 的補完。</p>
+<p>不過 TypeScript 不會替執行期 JSON 做驗證。E2E 範例裡的 <code>as { data?: ... }</code> 只是告訴 compiler 我們預期的形狀，真正檢查 <code>data</code> 是不是 array 的是 Vitest assertion。unit test 把精簡的 fake context 轉成 <code>ExecutionContext</code> 型別，也是測試替身的邊界；它不會因此變成 Cloudflare runtime。型別、mock 測試與 live E2E 各自提供不同證據，合起來才比較容易定位問題。</p>
+<h2 id="讓型別檢查進入日常流程">讓型別檢查進入日常流程</h2>
+<p>Worker 的 <code>package.json</code> 很精簡：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;scripts&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;dev&#34;</span>: <span style="color:#e6db74">&#34;wrangler dev&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;deploy&#34;</span>: <span style="color:#e6db74">&#34;wrangler deploy&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;cf-typegen&#34;</span>: <span style="color:#e6db74">&#34;wrangler types&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;typecheck&#34;</span>: <span style="color:#e6db74">&#34;tsc --noEmit&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;test&#34;</span>: <span style="color:#e6db74">&#34;vitest run&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;test:unit&#34;</span>: <span style="color:#e6db74">&#34;vitest run test/proxy.spec.ts&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;test:e2e&#34;</span>: <span style="color:#e6db74">&#34;vitest run test/proxy.e2e.spec.ts&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;test:watch&#34;</span>: <span style="color:#e6db74">&#34;vitest&#34;</span>
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>先在 <code>wrangler.jsonc</code> 宣告這支 Worker 必須設定的 secret：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-jsonc" data-lang="jsonc"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;secrets&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;required&#34;</span>: [<span style="color:#e6db74">&#34;NPS_API_KEY&#34;</span>]
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這讓 <code>wrangler types</code> 能穩定產生 <code>NPS_API_KEY</code> 型別，不必依賴開發機上的 <code>.dev.vars</code> 或 <code>.env</code>。Wrangler 也會在本機開發與部署時檢查這個必要 secret。接著產生 Cloudflare 對應的宣告檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>npm run cf-typegen</span></span></code></pre></div>
+
+<p>它會產生 <code>worker-configuration.d.ts</code>，提供 Worker runtime 型別，也依 Wrangler 設定產生全域 <code>Env</code> 宣告，包含 <code>NPS_API_KEY</code>。這是 TypeScript 編譯期讀取的型別，不會變成執行期 JavaScript，所以 Worker 原始碼不用匯入 <code>Request</code>、<code>Response</code> 或 <code>ExportedHandler</code>。前面的小範例手動寫 <code>interface Env</code> 是為了介紹型別 contract；完整 Worker 則直接使用生成的 <code>Env</code>，避免兩份宣告日後不同步。詳情可參考 <a href="https://developers.cloudflare.com/workers/languages/typescript/">Cloudflare TypeScript 文件</a>。</p>
+<p>無論採用哪種方式，都要讓 <code>tsconfig.json</code> 把生成檔納入 typecheck；本文的設定用 <code>include</code> 收錄 <code>worker-configuration.d.ts</code>。接著在部署前執行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>npm run typecheck
+</span></span><span style="display:flex;"><span>npm run test:unit
+</span></span><span style="display:flex;"><span>npm run deploy</span></span></code></pre></div>
+
+<p><code>tsc --noEmit</code> 只做檢查，不產生 JavaScript；Wrangler 仍負責本機開發、打包與部署。<code>npm run test:unit</code> 不依賴 live NPS API；需要檢查整條部署路徑時，再用 <code>npm run test:e2e</code>，並先確認 <code>WORKER_URL</code> 指向預期環境。<code>npm test</code> 會讓 Vitest 執行兩個測試檔，所以目前也會跑 E2E test，預設連到正式 Worker。<code>tsconfig.json</code> 的 <code>strict: true</code> 值得保留：它會讓可為空的值、隱含 <code>any</code> 和未處理的型別情況更早浮出來，而不是在 edge log 裡才第一次見面。</p>
+<h2 id="從-javascript-migration-帶走的事">從 JavaScript migration 帶走的事</h2>
+<p>這個 Worker 沒有突然變得很複雜。它仍是一個驗證 request、向 NPS 發送請求、快取成功結果並回傳 response 的小程式。TypeScript 把 secret 名稱、handler 參數、背景工作和錯誤值的 contract 變成編譯器可檢查的資訊；unit tests 會逐條走過 handler 的成功與失敗分支，E2E tests 再確認部署環境中的實際 HTTP 行為。</p>
+<p>我很喜歡把這類 edge proxy 當作 TypeScript 的實戰題目：程式碼短、每個型別都有現實意義，也能看出型別檢查和測試如何互補。型別能先抓出程式結構不一致的地方；要確認回應真的正確，還是得讓測試執行程式，甚至走過部署中的 Worker。過程也帶出一個 production 原則——快取的是可重複使用的成功結果，不是暫時的失敗。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

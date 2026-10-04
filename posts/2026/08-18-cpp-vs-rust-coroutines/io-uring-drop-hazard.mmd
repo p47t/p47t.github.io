@@ -1,0 +1,10 @@
+sequenceDiagram
+    autonumber
+    actor App as 🦀 Rust Future
+    participant Kernel as 🐧 Linux 核心 (io_uring)
+    participant Mem as 💾 記憶體 (Buffer: 0x1000)
+
+    App->>Kernel: 提交 SQE 讀取請求 (傳入 buffer: 0x1000 指標)
+    Note over App,Mem: 觸發 select! 逾時 ➜ Future 立即被 Drop！<br/>Buffer 所在的 0x1000 記憶體被釋放回收
+    Kernel-->>Mem: 核心非同步完成 DMA 傳輸，直接寫入 0x1000
+    Note over Mem: 💥 <b>Use-After-Free 記憶體毀損！</b> (Undefined Behavior)

@@ -1,0 +1,23 @@
+flowchart TD
+    subgraph RN ["RenderNode (Native C++ 物件結構)"]
+        direction TB
+        subgraph HP ["1. Header Properties (可變資料，更新耗時 < 1 µs)"]
+            direction TB
+            HPList["• translationX, translationY<br/>• scaleX, scaleY<br/>• rotationX, rotationY, rotationZ<br/>• alpha, elevation, pivotX, pivotY"]
+        end
+
+        subgraph DL ["2. Display List (繪製指令，錄製完成後不可變)"]
+            direction TB
+            DLList["• drawRect(0, 0, 100, 100)<br/>• drawText('Hello')<br/>• drawBitmap(...)"]
+        end
+    end
+
+    HP -.->|硬體矩陣變換| GPU["GPU RenderThread<br/>(直接套用 4x4 矩陣，重播 Display List)"]
+    DL -->|無需重新錄製| GPU
+
+    style RN fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a
+    style HP fill:#eff6ff,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a8a
+    style DL fill:#f1f5f9,stroke:#64748b,stroke-width:1.5px,color:#334155
+    style HPList fill:#ffffff,stroke:#93c5fd,stroke-width:1px,color:#1e3a8a
+    style DLList fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#334155
+    style GPU fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
