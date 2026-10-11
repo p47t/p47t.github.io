@@ -1,0 +1,425 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/go/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2019-04-21 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>Learning Rust (二)</title>
+      <link>https://blog.simplypatrick.com/posts/2019/04-21-learning-rust-2/</link>
+      <pubDate>Sun, 21 Apr 2019 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2019/04-21-learning-rust-2/</guid>
+      <description>&lt;blockquote&gt;&lt;p&gt;&lt;strong&gt;作者註：&lt;/strong&gt; 這是一篇在 2019 年開了頭卻未能完成的草稿，於 2026 年藉由 AI 協作補齊內容，並保留了 2019 年當時的技術生態與時空視角。&lt;/p&gt;
+&lt;/blockquote&gt;&lt;p&gt;在上一篇 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2019/04-08-learning-rust/&#34;&gt;Learning Rust&lt;/a&gt; 中，我分享了自己接觸 Rust 的背景、為了看懂 Fuchsia OS 系統服務而重拾這門語言的轉折點，以及幾本適合入門打底的書籍。&lt;/p&gt;
+&lt;p&gt;上一篇主要是全面性的入門材料。在跨過基礎語法、所有權（ownership）與借用（borrowing）的第一道門檻後，進入中進階階段時，往往會面臨更多細節設計的挑戰。這篇接續先前的承諾，整理我覺得極具啟發性的進階資源、精選文章、初學者容易卡關的語義盲點（例如 &lt;code&gt;Option::take()&lt;/code&gt; 的不可或缺），以及身為長期 Go 語言愛好者，在 2019 年如何看待 Go 與 Rust 的定位抉擇。&lt;/p&gt;
+&lt;h2 id=&#34;進階書籍深入-unsafe-的底層規則&#34;&gt;進階書籍：深入 Unsafe 的底層規則&lt;/h2&gt;
+&lt;p&gt;當你寫了一陣子 safe Rust，想要進一步探究效能極致、自訂底層資料結構，或是與 C 語言進行 FFI（Foreign Function Interface）介接時，就必須推開 &lt;code&gt;unsafe&lt;/code&gt; 的大門：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://doc.rust-lang.org/nomicon/README.html#the-rustonomicon&#34;&gt;The Rustonomicon&lt;/a&gt;（俗稱死靈之書 / 諾米康）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;很多人剛學 Rust 時會有一種誤解，以為寫 Rust 就應該完全杜絕 &lt;code&gt;unsafe&lt;/code&gt;。但在現實世界中，如果沒有 &lt;code&gt;unsafe&lt;/code&gt;，像 &lt;code&gt;Vec&lt;/code&gt;、&lt;code&gt;LinkedList&lt;/code&gt; 這些標準函式庫的核心容器便無法實現。&lt;/p&gt;
+&lt;p&gt;《The Rustonomicon》就是官方專門為這群想要了解底層機制的開發者撰寫的進階指南。它深入探討了記憶體佈局（memory layout）、未定義行為（Undefined Behavior, UB）、aliasing 規則、指標轉型以及 panic 安全（panic safety）與 RAII 銷毀保證。&lt;/p&gt;
+&lt;p&gt;即使你在日常開發中只寫 safe Rust，我也非常推薦抽空讀讀這本書。當你理解了編譯器背後在防範什麼底層未定義行為時，你就能從機制層面理解其設計哲學，不再把生命週期（lifetimes）與 borrow checker 的嚴格檢查視為單純的束縛。&lt;/p&gt;
+&lt;h2 id=&#34;精選技術文章&#34;&gt;精選技術文章&lt;/h2&gt;
+&lt;p&gt;網路上有很多優秀的工程師針對 Rust 的特定主題寫了深入淺出的文章，以下幾篇是我在學習過程中覺得含金量極高的技術分享：&lt;/p&gt;
+&lt;h3 id=&#34;閉包的本質finding-closure-in-rust&#34;&gt;閉包的本質：Finding Closure in Rust&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://huonw.github.io/blog/2015/05/finding-closure-in-rust/&#34;&gt;Finding Closure in Rust | Huon on the internet&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Rust 的閉包（closures）依捕獲環境的方式與呼叫約束，實作了 &lt;code&gt;FnOnce&lt;/code&gt;、&lt;code&gt;FnMut&lt;/code&gt; 與 &lt;code&gt;Fn&lt;/code&gt; 三種 trait（其繼承層級為 &lt;code&gt;FnOnce ⊃ FnMut ⊃ Fn&lt;/code&gt;）。初學者常常會被這三個 trait 搞得暈頭轉向。&lt;/p&gt;
+&lt;p&gt;Huon Wilson 這篇文章以非常清晰的步驟，剖析編譯器如何將閉包「解糖（desugar）」為一個匿名的 struct 以及對應的 trait 實作。文章深入解釋了閉包環境捕獲（by reference 實作 &lt;code&gt;Fn&lt;/code&gt;、by mutable reference 實作 &lt;code&gt;FnMut&lt;/code&gt;、by value 實作 &lt;code&gt;FnOnce&lt;/code&gt;）與呼叫方式之間的關聯，讀完後會讓人真正體會到 Rust 所謂的「零成本抽象（zero-cost abstractions）」是多麼優雅地落實在型別系統之中。此外，在跨執行緒傳遞閉包時，編譯器自動推導的 &lt;code&gt;Send + &#39;static&lt;/code&gt; 邊界更是並發與非同步程式設計的核心基石。&lt;/p&gt;
+&lt;h3 id=&#34;option-的優雅模式rust-using-options-by-example&#34;&gt;Option 的優雅模式：Rust: Using Options by example&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.ameyalokare.com/rust/2017/10/23/rust-options.html&#34;&gt;Rust: Using Options by example&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在剛從其他語言轉來 Rust 時，許多人處理 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt; 的方式依然充滿傳統指令式語言的影子，滿滿的 &lt;code&gt;if let Some(x) = ...&lt;/code&gt; 甚至動不動就 &lt;code&gt;.unwrap()&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;Ameya Lokare 這篇文章透過豐富且簡潔的程式碼範例，展示了如何活用 &lt;code&gt;map&lt;/code&gt;、&lt;code&gt;and_then&lt;/code&gt;、&lt;code&gt;unwrap_or_else&lt;/code&gt;、&lt;code&gt;filter&lt;/code&gt; 與 &lt;code&gt;take&lt;/code&gt; 等豐富的組合子（combinators）。學會用函數式風格來操作 &lt;code&gt;Option&lt;/code&gt;，是從「能寫出跑得動的 Rust」跨入「寫出 idiomatic 的 Rust」的重要轉折點。&lt;/p&gt;
+&lt;h3 id=&#34;非同步的基石futures-與-tokio&#34;&gt;非同步的基石：Futures 與 Tokio&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://tokio.rs/tokio/tutorial/async&#34;&gt;Futures · Tokio&lt;/a&gt;（註：官方文件現已更新為現代 &lt;code&gt;async/await&lt;/code&gt; 教學；而在 2019 年當時，非同步程式設計主要奠基於 &lt;code&gt;futures 0.1&lt;/code&gt; 的組合子模型）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在 2019 年的這個時間點，Rust 2018 edition 已經釋出，而大家引頸期盼的 &lt;code&gt;async/await&lt;/code&gt; 語法還在 nightly 版本中快速迭代（預計今年稍晚才會正式進入穩定版）。此時想要處理高併發網路 I/O，主流依然是透過 Tokio 與 &lt;code&gt;futures 0.1&lt;/code&gt; 的組合子。&lt;/p&gt;
+&lt;p&gt;理解 Rust 的 poll-based future 模型非常關鍵：與 JavaScript 或 Go 不同，Rust 中的 Future 是被動惰性的（lazy），建立 Future 物件並不會在背景啟動執行緒，它必須被主動丟進 executor 透過 &lt;code&gt;poll&lt;/code&gt; 方法驅動。這篇官方文件是掌握非同步本質必讀的敲門磚。&lt;/p&gt;
+&lt;h3 id=&#34;批判性回顧julio-merino-的-rust-review-系列&#34;&gt;批判性回顧：Julio Merino 的 Rust Review 系列&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://julio.meroh.net/series.html#Rust%20review&#34;&gt;Rust Review Series - Julio Merino&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;前 NetBSD 開發者、當時任職於 Google 的 Julio Merino 撰寫了一系列針對 Rust 的全面評測。&lt;/p&gt;
+&lt;p&gt;這系列文章的可貴之處在於他不盲目推崇，而是從資深系統軟體工程師的角度，既盛讚 Rust 在型別安全與防範並行錯誤上的突破，也客觀剖析了學習曲線陡峭、編譯速度緩慢、以及依賴套件（Cargo crates）膨脹所帶來的維護考驗。讀一讀這類冷靜客觀的評論，有助於我們在架構選型時保持清醒。&lt;/p&gt;
+&lt;h3 id=&#34;語言內部的特殊待遇rust-tidbits-box-is-special&#34;&gt;語言內部的特殊待遇：Rust Tidbits: Box Is Special&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://manishearth.github.io/blog/2017/01/10/rust-tidbits-box-is-special/&#34;&gt;Rust Tidbits: Box Is Special - In Pursuit of Laziness&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Manish Goregaokar 的這篇小品揭露了 &lt;code&gt;Box&amp;lt;T&amp;gt;&lt;/code&gt; 在編譯器眼中的特權。在標準的自訂智慧指標（如 &lt;code&gt;Rc&lt;/code&gt; 或 &lt;code&gt;Arc&lt;/code&gt;）中，因為 &lt;code&gt;Deref&lt;/code&gt; trait 的簽名是 &lt;code&gt;fn deref(&amp;amp;self) -&amp;gt; &amp;amp;Self::Target&lt;/code&gt;，你無法在解引用時把內部的值所有權移出（move out of deref）。&lt;/p&gt;
+&lt;p&gt;但是對於 &lt;code&gt;Box&amp;lt;T&amp;gt;&lt;/code&gt;，編譯器特別給予了多重特例支援：除了允許直接寫 &lt;code&gt;*b&lt;/code&gt; 取得內部值的所有權之外，還享有內建解構器、支援 &lt;code&gt;Box&amp;lt;Self&amp;gt;&lt;/code&gt; 方法接收者（method receiver），以及不受孤兒規則限制（可在定義 &lt;code&gt;T&lt;/code&gt; 的 crate 中為 &lt;code&gt;Box&amp;lt;T&amp;gt;&lt;/code&gt; 實作外部 trait）。這篇文章用簡潔有趣的語調揭開了編譯器特權底下的秘密。&lt;/p&gt;
+&lt;h3 id=&#34;物件與設計模式builder-patterntrait-objectsbox-與-rc&#34;&gt;物件與設計模式：Builder Pattern、Trait Objects、Box 與 Rc&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://abronan.com/rust-trait-objects-box-and-rc/&#34;&gt;Rust, Builder Pattern, Trait Objects, Box&lt;T&gt; and Rc&lt;T&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;習慣了物件導向（OOP）繼承體系的工程師在初學 Rust 時，常常苦惱於不知道該如何組織程式碼結構。Alexandre Beslic（@abronan）這篇文章串聯了 Builder 模式、Trait Objects 的動態分派（&lt;code&gt;Box&amp;lt;dyn Trait&amp;gt;&lt;/code&gt;），以及透過引用計數指標（&lt;code&gt;Rc&amp;lt;T&amp;gt;&lt;/code&gt;）處理多重所有權的時機，對於建立良好的程式碼設計心智模型非常有幫助。&lt;/p&gt;
+&lt;h2 id=&#34;常見困惑與盲點解析&#34;&gt;常見困惑與盲點解析&lt;/h2&gt;
+&lt;p&gt;在學習 Rust 的過程中，有幾個看似微小卻極容易困惑的點，特別值得拿出來探討：&lt;/p&gt;
+&lt;h3 id=&#34;foo-與-fooas_ref-的差異&#34;&gt;&amp;amp;foo 與 foo.as_ref() 的差異&lt;/h3&gt;
+&lt;p&gt;剛學 Rust 時，常常會看到有人寫 &lt;code&gt;&amp;amp;foo&lt;/code&gt;，有人卻寫 &lt;code&gt;foo.as_ref()&lt;/code&gt;，這兩者有何本質差別？&lt;/p&gt;
+&lt;p&gt;簡而言之：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;&amp;amp;foo&lt;/code&gt; 是編譯器原生的取參照操作。若 &lt;code&gt;foo&lt;/code&gt; 型別為 &lt;code&gt;Foo&lt;/code&gt;，在一般運算式中 &lt;code&gt;&amp;amp;foo&lt;/code&gt; 產生 &lt;code&gt;&amp;amp;Foo&lt;/code&gt;（但在模式比對遇到 &lt;code&gt;&amp;amp;mut foo&lt;/code&gt; 時，綁定模式亦可能推導出 &lt;code&gt;&amp;amp;mut Foo&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;foo.as_ref()&lt;/code&gt; 是呼叫 &lt;code&gt;AsRef&amp;lt;T&amp;gt;&lt;/code&gt; trait 定義的方法：&lt;code&gt;fn as_ref(&amp;amp;self) -&amp;gt; &amp;amp;T&lt;/code&gt;。它能返回的目標型別不限於 &lt;code&gt;&amp;amp;Foo&lt;/code&gt;，而是可以取得任何實作了 &lt;code&gt;AsRef&amp;lt;T&amp;gt;&lt;/code&gt; 的目標型別參照。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;最經典的例子就是 &lt;code&gt;String&lt;/code&gt; 與 &lt;code&gt;&amp;amp;str&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; s &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; String::from(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;hello&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ⚠️ 若不給予型別註記，直接呼叫會觸發編譯錯誤 error[E0283]：
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// let r = s.as_ref();
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 原因在於 String 同時實作了 AsRef&amp;lt;str&amp;gt;、AsRef&amp;lt;[u8]&amp;gt;、AsRef&amp;lt;Path&amp;gt; 與 AsRef&amp;lt;OsStr&amp;gt;，
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 編譯器在缺乏目標型別線索時無法推導。
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r1: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;String &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;s;           &lt;span style=&#34;color:#75715e&#34;&gt;// 原生借用，型別為 &amp;amp;String
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r2: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;    &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; s.as_ref();   &lt;span style=&#34;color:#75715e&#34;&gt;// 明確指定目標型別，直接取得 &amp;amp;str
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;AsRef&lt;/code&gt; 本質上是在不消耗原始值所有權的前提下提供低成本的唯讀視圖（與消耗所有權做型別轉換的 &lt;code&gt;Into&lt;/code&gt; 截然不同）。在撰寫通用函式 API 時，&lt;code&gt;AsRef&lt;/code&gt; 展現了相當關鍵的靈活性：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;print_length&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;T: AsRef&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;(input: &lt;span style=&#34;color:#a6e22e&#34;&gt;T&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;長度: &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, input.as_ref().len());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 呼叫者可以直接傳入 &amp;amp;str 或 String，完全不需要手動做格式轉換
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;print_length(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;world&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;print_length(String::from(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;world&amp;#34;&lt;/span&gt;));&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;另一個常見的應用是檔案路徑：&lt;code&gt;AsRef&amp;lt;Path&amp;gt;&lt;/code&gt; 讓你的函式可以同時無縫接受 &lt;code&gt;&amp;amp;str&lt;/code&gt;、&lt;code&gt;String&lt;/code&gt;、&lt;code&gt;&amp;amp;Path&lt;/code&gt; 或 &lt;code&gt;PathBuf&lt;/code&gt;，搭配 &lt;code&gt;Borrow&amp;lt;T&amp;gt;&lt;/code&gt; 與 &lt;code&gt;ToOwned&lt;/code&gt; 構成 Rust 兼顧效能與人體工學的型別抽象體系。&lt;/p&gt;
+&lt;h3 id=&#34;到底在什麼情境下需要使用-optiontake&#34;&gt;到底在什麼情境下需要使用 Option::take()？&lt;/h3&gt;
+&lt;p&gt;這是我在初學 Rust 時經常遇到的另一個痛點。&lt;/p&gt;
+&lt;p&gt;我們常會遇到這樣的情況：你擁有一個結構體的可變借用（&lt;code&gt;&amp;amp;mut self&lt;/code&gt;），裡面有一個欄位是 &lt;code&gt;Option&amp;lt;T&amp;gt;&lt;/code&gt;。在某個方法中，你想要取得裡面那個 &lt;code&gt;T&lt;/code&gt; 的所有權，拿去傳給某個需要 ownership 的函式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Worker&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    state: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;State&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Worker {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;transition&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 編譯報錯：cannot move out of `self.state` which is behind a mutable reference (error[E0507])
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// let old_state = self.state.unwrap();
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;編譯器之所以嚴厲拒絕，是因為從 &lt;code&gt;&amp;amp;mut self&lt;/code&gt; 參照中抽走資料會讓該記憶體位置處於未初始化（uninitialized）狀態，借用檢查器無法跨參照保證其有效性；此外若結構體實作了 &lt;code&gt;Drop&lt;/code&gt; trait，任何欄位的部分移動更會直接觸發 &lt;code&gt;error[E0509]&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;這時 &lt;code&gt;Option::take()&lt;/code&gt; 就是救星：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Worker {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;transition&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// take() 會將值取出並回傳 Some(old_state)，同時在原位置留下 None
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(old_state) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.state.take() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; new_state &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; process(old_state);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            self.state &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Some(new_state);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;take()&lt;/code&gt; 的妙處在於它是單一的取值操作（底層為 &lt;code&gt;mem::replace(self, None)&lt;/code&gt;）：把值抽走的同時，順手塞入一個合法的 &lt;code&gt;None&lt;/code&gt;。這樣既拿到了所有權，結構體內部在任何時刻也依然處於已初始化的合法狀態。&lt;/p&gt;
+&lt;p&gt;另一個經典場景是自訂鏈結串列（Linked List）或樹狀節點的析構。Rust 預設的遞迴 Drop 在遇到深層巢狀鏈結結構時，會因為呼叫堆疊過深而引發 stack overflow。透過在 &lt;code&gt;Drop&lt;/code&gt; 實作中搭配 &lt;code&gt;take()&lt;/code&gt; 進行迭代式釋放（iterative drop），能平坦化呼叫鏈：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;List&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    head: &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next: Option&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Box&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;List&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&amp;gt;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;impl&lt;/span&gt; Drop &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; List {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;drop&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; self) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; cursor &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; self.next.take();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; node) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; cursor {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 每次迴圈切斷下一節點並接管其所有權，使前一節點在局部作用域平坦釋放
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            cursor &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; node.next.take();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在日常開發中，相關的同族 API 還包括：&lt;code&gt;mem::take(&amp;amp;mut val)&lt;/code&gt;（要求目標型別實作 &lt;code&gt;Default&lt;/code&gt;）、&lt;code&gt;mem::replace(&amp;amp;mut place, new_val)&lt;/code&gt; 以及 &lt;code&gt;Option::insert(val)&lt;/code&gt; 等實用工具。&lt;/p&gt;
+&lt;h2 id=&#34;go-vs-rust2019-年的雙城思維&#34;&gt;Go vs Rust：2019 年的雙城思維&lt;/h2&gt;
+&lt;p&gt;身為 Go 語言的長期使用者，在深入學習 Rust 之後，無可避免地會面臨兩者的比較：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://endler.dev/2017/go-vs-rust/&#34;&gt;Go vs Rust? Choose Go. | Matthias Endler&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://julio.meroh.net/2018/07/rust-vs-go.html&#34;&gt;Rust vs. Go - Julio Merino&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;社群上常有人喜歡挑起語言之間的優劣爭論，但在我看來，這兩個語言在設計哲學上根本不是零和博弈，而是為了完全不同的目標進行極致優化：&lt;/p&gt;
+&lt;h3 id=&#34;解決問題的維度不同&#34;&gt;解決問題的維度不同&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Go 追求的是開發者的心智簡潔與團隊一致性&lt;/strong&gt;：
+Go 的語法極其精簡，刻意捨棄了許多複雜的高階抽象特性。搭配高速編譯、強大的內建工具鏈（gofmt、go test）、Goroutine 並發模型以及高效能垃圾回收（GC）。它讓任何水平的工程師都能在短時間內寫出風格一致、易於維護的後端微服務與網路工具。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Rust 追求的是極致的控制力與記憶體絕對安全&lt;/strong&gt;：
+Rust 沒有 GC，執行時期負擔僅限於 allocator 與 panic 處理機制；在 &lt;code&gt;no_std&lt;/code&gt; 裸機或嵌入式環境下更可做到近乎零執行時期負擔。它把所有驗證壓力前置到編譯期，透過型別系統與借用檢查徹底杜絕資料競爭（data races）與記憶體安全隱患。它的型別表現力極為強大，但也伴隨著顯著的心智負擔與編譯成本。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;如何選擇&#34;&gt;如何選擇？&lt;/h3&gt;
+&lt;p&gt;Matthias Endler 與 Julio Merino 的文章給出了非常中肯的指引：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;選擇 Go 的情境&lt;/strong&gt;：如果你要做的是一般的網路 API、微服務、內部 CLI 工具，或是需要帶領背景多元的團隊快速交付業務價值，Go 通常是更務實、性價比更高的選擇。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;選擇 Rust 的情境&lt;/strong&gt;：如果你在開發底層系統軟體（如 Fuchsia OS 的底層服務）、作業系統核心、資料庫引擎、瀏覽器渲染器、嵌入式系統，或是音訊與影像即時編解碼，任何 GC 停頓都會造成致命影響，且對記憶體 footprint 有極嚴苛要求的場景，Rust 是當前無可取代的現代化利器。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;從 Go 跨進 Rust 的過程，就像是習慣了自排車的便利後，重新學習開手排車——你必須自己思考離合器接合點、檔位與轉速比，一開始難免挫折手忙腳亂；但一旦開順了，那種每一滴引擎動力與機械運轉都在自己精確掌控之下的充實感，是前所未有的。&lt;/p&gt;
+&lt;p&gt;學習 Rust 不只是多掌握了一門語法，更是一趟重新反思記憶體管理、並發安全與型別抽象的思維重塑之旅。&lt;/p&gt;
+&lt;h2 id=&#34;參考資源清單&#34;&gt;參考資源清單&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://doc.rust-lang.org/nomicon/README.html#the-rustonomicon&#34;&gt;The Rustonomicon&lt;/a&gt;：官方 Unsafe Rust 深度指南。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://huonw.github.io/blog/2015/05/finding-closure-in-rust/&#34;&gt;Finding Closure in Rust&lt;/a&gt;：Huon Wilson 剖析閉包編譯機制的經典之作。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.ameyalokare.com/rust/2017/10/23/rust-options.html&#34;&gt;Rust: Using Options by example&lt;/a&gt;：Ameya Lokare 的 Option 組合子模式實例。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://tokio.rs/tokio/tutorial/async&#34;&gt;Futures · Tokio&lt;/a&gt;：Tokio 官方非同步與 Futures 入門文件。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://julio.meroh.net/series.html#Rust%20review&#34;&gt;Rust Review Series&lt;/a&gt;：Julio Merino 從系統軟體工程師視角的深度評測。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://manishearth.github.io/blog/2017/01/10/rust-tidbits-box-is-special/&#34;&gt;Rust Tidbits: Box Is Special&lt;/a&gt;：Manish Goregaokar 剖析 Box&lt;T&gt; 編譯器特權。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://abronan.com/rust-trait-objects-box-and-rc/&#34;&gt;Rust, Builder Pattern, Trait Objects, Box&lt;T&gt; and Rc&lt;T&gt;&lt;/a&gt;：Alexandre Beslic（@abronan）探討物件設計模式在 Rust 中的落實。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://endler.dev/2017/go-vs-rust/&#34;&gt;Go vs Rust? Choose Go.&lt;/a&gt;：Matthias Endler 的技術選型理性分析。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://julio.meroh.net/2018/07/rust-vs-go.html&#34;&gt;Rust vs. Go&lt;/a&gt;：Julio Merino 對 Rust 與 Go 實踐經驗的客觀對比。&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Kotlin Coroutine API</title>
+      <link>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</link>
+      <pubDate>Tue, 13 Feb 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/02-13-kotlin-coroutines-api/</guid>
+      <description>&lt;h3 id=&#34;kotlin-coroutine-的架構&#34;&gt;Kotlin Coroutine 的架構&lt;/h3&gt;
+&lt;p&gt;Kotlin 從 1.1 版開始實驗性地支援 coroutine，主要的目標是簡化非同步編程的複雜度。&lt;a href=&#34;https://www.kotlindevelopment.com/deep-dive-coroutines/&#34;&gt;Diving deep into Kotlin Coroutines&lt;/a&gt; 解釋了 coroutine 跟一般常用的 callback 及目前蠻多人在用的 reactive 模式有何不同。&lt;/p&gt;
+&lt;p&gt;由於目前 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines&#34;&gt;kotlinx-coroutines-core&lt;/a&gt; 的實現包含了不同抽象程度的 API，初學者建議可以用下面這張圖來學習如何使用 Kotlin coroutine：&lt;/p&gt;
+&lt;img src=&#34;https://docs.google.com/drawings/d/e/2PACX-1vR70Re48nVLUrBy7crWv4oBTGeDsWKAYmYz2zFCb0NZCnUwd7vmh2LZFsJs9bgeBrLjs7oRrwV_rDQD/pub?w=360&amp;amp;h=284&#34;&gt;
+&lt;h3 id=&#34;範例分析&#34;&gt;範例分析&lt;/h3&gt;
+&lt;p&gt;套用下面這個&lt;a href=&#34;https://proandroiddev.com/approaching-kotlin-coroutines-an-extensive-feature-concurrent-programming-in-kotlin-eaaa19b003d2&#34;&gt;範例&lt;/a&gt;來理解:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-kotlin&#34; data-lang=&#34;kotlin&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sendEmail&lt;/span&gt;(r: String, msg: String): Boolean { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;2000&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Sent &amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$msg&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39; to &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;$r&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;getReceiverAddressFromDatabase&lt;/span&gt;(): String { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;1000&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;coroutine@kotlin.org&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;suspend&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sendEmailSuspending&lt;/span&gt;(): Boolean { &lt;span style=&#34;color:#75715e&#34;&gt;// 3
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; msg = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        delay(&lt;span style=&#34;color:#ae81ff&#34;&gt;500&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;The message content&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; recipient = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        getReceiverAddressFromDatabase()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Waiting for email data&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; sendStatus = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; async(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sendEmail(recipient.await(), msg.await()) &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; sendStatus.await()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fun&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;(args: Array&amp;lt;String&amp;gt;) = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; runBlocking(CommonPool) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;val&lt;/span&gt; job = &lt;span style=&#34;color:#75715e&#34;&gt;/* 1 */&lt;/span&gt; launch(CommonPool) { &lt;span style=&#34;color:#75715e&#34;&gt;// 2
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        sendEmailSuspending()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Email sent successfully.&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    job.join() &lt;span style=&#34;color:#75715e&#34;&gt;// 4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    println(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Finished&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;其中：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;runBlocking&lt;/code&gt;, &lt;code&gt;launch&lt;/code&gt;, 及 &lt;code&gt;async&lt;/code&gt; 是最常被使用的 coroutine builder。&lt;/li&gt;
+&lt;li&gt;coroutine builder 後面跟著的就是我們撰寫的 suspending lambda，可以視為 coroutine 的進入點。&lt;/li&gt;
+&lt;li&gt;通常在 suspending lambda 裡會再呼叫其他 suspending function，例如 &lt;code&gt;sendEmailSuspending&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;delay&lt;/code&gt;, &lt;code&gt;Job.join&lt;/code&gt;, &lt;code&gt;Deferred.await&lt;/code&gt; 則是用來&lt;strong&gt;等待&lt;/strong&gt;的 high-level API。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;high-level-api&#34;&gt;High-level API&lt;/h3&gt;
+&lt;p&gt;範例中的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#concurrent-using-async&#34;&gt;async/await&lt;/a&gt; 並不是目前唯一支援的 concurrency pattern，目前看到正在開發中的還有：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Golang 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#channels&#34;&gt;channel/select&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Python 的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#generators-api-in-kotlincoroutines&#34;&gt;generator/yield&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Erlang 或 Scala 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/blob/master/coroutines-guide.md#actors&#34;&gt;Actor&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Java 的 &lt;a href=&#34;https://github.com/Kotlin/kotlinx.coroutines/tree/master/reactive/kotlinx-coroutines-reactor&#34;&gt;Reactor&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;low-level-api&#34;&gt;Low-level API&lt;/h3&gt;
+&lt;p&gt;所有的 coroutine 機制都是基於底層的 &lt;a href=&#34;https://kotlinlang.org/docs/reference/coroutines.html#low-level-api-kotlincoroutines&#34;&gt;low-level API&lt;/a&gt; 來實現的。之後有時間的話會再研究並分享 high-level API 是如何用 low-level API 來實現的。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Useful Go Channel Types</title>
+      <link>https://blog.simplypatrick.com/posts/2014/05-05-golang-channels/</link>
+      <pubDate>Mon, 05 May 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/05-05-golang-channels/</guid>
+      <description>&lt;p&gt;CloudFlare 的 John Graham-Cumming 在 GopherCon 2014 給了一個 &lt;a href=&#34;https://www.slideshare.net/cloudflare/a-channel-compendium&#34;&gt;A Channel Compendium&lt;/a&gt; 的演講，其中介紹了:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;利用 channel 來通知事件 (Signalling)&lt;/li&gt;
+&lt;li&gt;利用 channel 來隱藏狀態 (Hide state)&lt;/li&gt;
+&lt;li&gt;Nil channels 及 closed channels 的特性&lt;/li&gt;
+&lt;li&gt;利用 channel 來實現 timer&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;整個 talk 的結尾下的非常好：&lt;/p&gt;
+&lt;blockquote&gt;&lt;p&gt;The Go Way: &amp;ldquo;small sequential pieces joined by channels&amp;rdquo;&lt;/p&gt;
+&lt;/blockquote&gt;&lt;p&gt;可以說 Go 的重點特色就是 concurrency programming 的支援，而善用 channel 則是實現 concurrency 的重要能力。&lt;/p&gt;
+&lt;p&gt;對於剛接觸 go concurrency programming 的開發者，分享一下兩個簡單但好用的 channel 類型: channel of error 及 channel of function。&lt;/p&gt;
+&lt;h3 id=&#34;channel-of-error&#34;&gt;channel of error&lt;/h3&gt;
+&lt;p&gt;類型爲 chan error 這算是 response channel 的一種，通常用來處理單一非同步操作。應用的場景通常是一個 goroutine 執行工作，另一個 goroutine 等待工作完成後做善後清理的工作。&lt;/p&gt;
+&lt;p&gt;範例可以看 &lt;a href=&#34;http://blog.golang.org/pipelines&#34;&gt;Go Concurrency Patterns: Pipelines and cancellation&lt;/a&gt; 裡的例子。&lt;/p&gt;
+&lt;h3 id=&#34;channel-of-function&#34;&gt;channel of function&lt;/h3&gt;
+&lt;p&gt;先看一個我覺的寫得太複雜的例子：Programming in Go 書中的 SafeMap 範例，把所有對 map 的操作都透過 channel 送到同一個 goroutine 內來進行，操作結果也是透過 channel 再送回來：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;safeMap&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; make(&lt;span style=&#34;color:#66d9ef&#34;&gt;map&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;string&lt;/span&gt;]&lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt;{})
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;range&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;switch&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;action&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;insert&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;] = &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;remove&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      delete(&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;find&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;findResult&lt;/span&gt;{&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;length&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; len(&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;update&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;] = &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;updater&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;end&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      close(&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;data&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;(完整的程式請參考 &lt;a href=&#34;http://play.golang.org/p/I4Rqbguhud&#34;&gt;http://play.golang.org/p/I4Rqbguhud&lt;/a&gt;)&lt;/p&gt;
+&lt;p&gt;Find() 的操作如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;safeMap&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;Find&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;string&lt;/span&gt;) (&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt;{}, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#a6e22e&#34;&gt;reply&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; make(&lt;span style=&#34;color:#66d9ef&#34;&gt;chan&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt;{})
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;commandData&lt;/span&gt;{&lt;span style=&#34;color:#a6e22e&#34;&gt;action&lt;/span&gt;: &lt;span style=&#34;color:#a6e22e&#34;&gt;find&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;: &lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt;: &lt;span style=&#34;color:#a6e22e&#34;&gt;reply&lt;/span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;reply&lt;/span&gt;).(&lt;span style=&#34;color:#a6e22e&#34;&gt;findResult&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;result&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;程式的邏輯被分成兩個部份，一部份在 Find() 裡，一部份在 run() 裡，然後兩邊要溝通還要建立相對應的 struct 做爲傳輸用，
+爲了共用同一個 commandData 還需要做 type assertion，基本上我不喜歡這樣的寫法。&lt;/p&gt;
+&lt;p&gt;此時 channel of function 就派上用場了，基本步驟就是將要共享的資料宣告成 chan func() 或其他 func 類型：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;type&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Store&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;map&lt;/span&gt;[&lt;span style=&#34;color:#66d9ef&#34;&gt;string&lt;/span&gt;]&lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt;{}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;type&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;safeMap&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;chan&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Store&lt;/span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;(完整的程式請參考 &lt;a href=&#34;http://play.golang.org/p/rDrA6CfCZn&#34;&gt;http://play.golang.org/p/rDrA6CfCZn&lt;/a&gt;)&lt;/p&gt;
+&lt;p&gt;goroutine 很簡單就是接收 func 然後執行它們：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;safeMap&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; make(&lt;span style=&#34;color:#a6e22e&#34;&gt;Store&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;range&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;		&lt;span style=&#34;color:#a6e22e&#34;&gt;command&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;	}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;想對於之前的 Find() 更簡潔及易讀：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;safeMap&lt;/span&gt;) &lt;span style=&#34;color:#a6e22e&#34;&gt;Find&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;string&lt;/span&gt;) (&lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;interface&lt;/span&gt;{}, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;bool&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;done&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; make(&lt;span style=&#34;color:#66d9ef&#34;&gt;chan&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt;{})
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;sm&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;func&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Store&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;value&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;found&lt;/span&gt; = &lt;span style=&#34;color:#a6e22e&#34;&gt;store&lt;/span&gt;[&lt;span style=&#34;color:#a6e22e&#34;&gt;key&lt;/span&gt;]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;done&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt;{}{}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;-&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Book for Golang Learning</title>
+      <link>https://blog.simplypatrick.com/posts/2014/03-19-go-book/</link>
+      <pubDate>Wed, 19 Mar 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/03-19-go-book/</guid>
+      <description>&lt;p&gt;學習一個新的程式語言我習慣先看網路上的 tutorial 或 get started guide 入門，然後用看官方文件或是搜索網路資源的方式來學習，等到有了手感後，就會找本好的書來進一步提昇自己的程度，用畫的來表示大概是這樣：&lt;/p&gt;
+&lt;img src=&#34;learning-effectiveness.png&#34; alt=&#34;&#34; class=&#34;center-block&#34;&gt;
+&lt;p&gt;就學習 Go 而言，我認爲那本書就是 Mark Summerfield 的 &lt;a href=&#34;http://www.amazon.com/Programming-Go-Creating-Applications-Developers/dp/0321774639&#34;&gt;Programming in Go: Creating Applications for the 21st Century&lt;/a&gt;:&lt;/p&gt;
+&lt;img src=&#34;//lh5.googleusercontent.com/-OC2VHgTFmKI/UymTlmCrFtI/AAAAAAAAGJ8/i0la49Teypk/w293-h375-no/programming-in-go.jpg&#34; alt=&#34;&#34; class=&#34;center-block&#34;&gt;
+&lt;p&gt;這本書不適合程式設計的初學者，而是適合已經精通其它程式語言的開發者。例如一般的 if 及 for 的用法直到第五章才有詳細介紹，但對有經驗的開發者絕對是 OK 的。&lt;/p&gt;
+&lt;p&gt;我推薦的原因是書中的範例程式都很高水準，看得出來是作者精心設計過的，示範如何用 Go 來解決實際會遇到的問題，解法都很漂亮並符合 Go 的風格。這種採用最佳示範的方法可以讓你快速學會 Go 的精華而不是一直停留在初學者階段。&lt;/p&gt;
+&lt;p&gt;另外書中也有提供了不少有用的建議做法：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;實現可選參數的推薦做法&lt;/li&gt;
+&lt;li&gt;實現泛型的替代做法&lt;/li&gt;
+&lt;li&gt;常用的並發模式&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這本書也有&lt;a href=&#34;http://book.douban.com/subject/24869910/&#34;&gt;簡中翻譯版本&lt;/a&gt;可以買，有一些翻譯、排版、拼字錯誤，但整體來說翻譯品質還不錯，不會影響你對 Go 的學習。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Page Scrapping By Go</title>
+      <link>https://blog.simplypatrick.com/posts/2014/01-07-page-scrapping-by-go/</link>
+      <pubDate>Tue, 07 Jan 2014 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2014/01-07-page-scrapping-by-go/</guid>
+      <description>&lt;p&gt;分享一下怎麼用 Go 爬網頁：&lt;/p&gt;
+&lt;p&gt;先 import 之後步驟會用到的 package:&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;code.google.com/p/cascadia&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;code.google.com/p/go.net/html&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;code.google.com/p/go.text/encoding/traditionalchinese&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;code.google.com/p/go.text/transform&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;第一步當然是用 &lt;code&gt;http.Get&lt;/code&gt; 把網頁抓回來：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;resp&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;http&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Get&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;url&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nil&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;log&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Println&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Failed to download:&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Error&lt;/span&gt;())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;defer&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;resp&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Body&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Close&lt;/span&gt;()&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;第二步: 如果網頁內容不是 UTF-8 encoding 要做一下轉換，&lt;code&gt;go.text&lt;/code&gt; 包有提供編碼轉換及 Big 的支援，然後用 &lt;code&gt;go.net/html&lt;/code&gt; 包提供的 HTML parser 來輸出(非標準) DOM tree：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;big5Reader&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;transform&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;NewReader&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;resp&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Body&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;traditionalchinese&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Big5&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;NewDecoder&lt;/span&gt;())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;doc&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;html&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Parse&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;big5Reader&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;nil&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#a6e22e&#34;&gt;log&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Println&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Failed to parse:&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;err&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;Error&lt;/span&gt;())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;再來要從 doc 中撈出資訊則可以使用 &lt;code&gt;cascadia&lt;/code&gt; 包提供的 CSS selector 來做：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-go&#34; data-lang=&#34;go&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;rowSel&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;cascadia&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;MustCompile&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;table table tr&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;colSel&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;cascadia&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;MustCompile&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;td&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;_&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;row&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;range&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;rowSel&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;MatchAll&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;doc&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;_&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;col&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;range&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;colSel&lt;/span&gt;.&lt;span style=&#34;color:#a6e22e&#34;&gt;MatchAll&lt;/span&gt;(&lt;span style=&#34;color:#a6e22e&#34;&gt;row&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;花費的時間比我想像中的少，本來以為找不到好的 package 可以幫忙處理這些事，沒想到三兩下就搞定了。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Go on Heroku</title>
+      <link>https://blog.simplypatrick.com/posts/2013/12-15-go-on-heroku/</link>
+      <pubDate>Sun, 15 Dec 2013 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2013/12-15-go-on-heroku/</guid>
+      <description>&lt;p&gt;要將 Go app 放到 Heroku 上執行基本上並不複雜，只要依照這篇 &lt;a href=&#34;http://mmcgrana.github.io/2012/09/getting-started-with-go-on-heroku.html&#34;&gt;Getting Started With Go on Heroku&lt;/a&gt; 一步一步照著做就行了，如果出了問題可以查一下是否是下列幾個原因造成的：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;.godir&lt;/code&gt; 要設定成你的 package 路徑，例如你的程式是放在 &lt;code&gt;$GOPATH/src/simplypatrick/flights&lt;/code&gt;，那 package 路徑就是 &lt;code&gt;simplypatrick/flights&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;Procfile&lt;/code&gt; 裡的 &lt;code&gt;web: &lt;/code&gt; 後面是接執行檔的路徑，我目前試驗的結果是放在 &lt;code&gt;bin/&lt;/code&gt; 裡面，所以以我的例子要設定成 &lt;code&gt;web: bin/flights&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Heroku 目前預設好像都不會把 web process 跑起來，所以需要執行 &lt;code&gt;heroku ps:scale web=1&lt;/code&gt; 來啟動 web process。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;話說回來，目前 Heroku 目前並沒有正式支援 Go，目前能夠放 Go app 上去跑其實是透過 &lt;a href=&#34;https://devcenter.heroku.com/articles/buildpacks#using-a-custom-buildpack&#34;&gt;custom buildpack&lt;/a&gt; 完成的。要怎麼創建自己的 buildpack 可以參考 &lt;a href=&#34;http://www.petekeen.net/introduction-to-heroku-buildpacks&#34;&gt;Run Anything on Heroku with Custom Buildpacks&lt;/a&gt;，例如前面例子的 Go buildpack 是用 Go 1.1.2，如果你想改成用 Go 1.2 可以自己 fork 一份 buildpack 來改。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

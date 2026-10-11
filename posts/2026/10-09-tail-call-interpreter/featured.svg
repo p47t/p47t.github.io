@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-labelledby="title desc">
+  <title id="title">Python 3.15 的 Tail-Call Interpreter 與 Rust 效能實證</title>
+  <desc id="desc">解析 CPython 直譯器調度架構，以 Rust 實作 A/B Benchmark 與組合語言剖析尾呼叫如何提升效能</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#16161e"/>
+      <stop offset="100%" stop-color="#1a1b26"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7dcfff"/>
+      <stop offset="50%" stop-color="#bb9af7"/>
+      <stop offset="100%" stop-color="#ff9e64"/>
+    </linearGradient>
+    <linearGradient id="glow-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0.02"/>
+    </linearGradient>
+    <linearGradient id="glow-orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff9e64" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ff9e64" stop-opacity="0.02"/>
+    </linearGradient>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="none" stroke="#7dcfff" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="none" stroke="#9ece6a" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="none" stroke="#bb9af7" stroke-width="1.5"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  
+  <!-- Accent bar top-left -->
+  <rect x="50" y="48" width="140" height="4" rx="2" fill="url(#accent)"/>
+
+  <!-- Title & Subtitle -->
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, 'Microsoft JhengHei', sans-serif">
+    <text x="50" y="108" font-size="38" font-weight="700" fill="#c0caf5">Python 3.15 Tail-Call Interpreter 深入剖析</text>
+    <text x="52" y="148" font-size="20" fill="#7dcfff">CPython VM Dispatch · Hardware Branch Predictor · Rust A/B Benchmark</text>
+  </g>
+
+  <!-- Left Card: Classical Switch Dispatch -->
+  <g transform="translate(60, 185)">
+    <rect width="500" height="380" rx="14" fill="#1f2335" stroke="#414868" stroke-width="1.5"/>
+    <rect width="500" height="46" rx="14" fill="#24283b"/>
+    <rect y="32" width="500" height="14" fill="#24283b"/>
+    <text x="20" y="30" font-family="Segoe UI, sans-serif" font-size="17" font-weight="600" fill="#f7768e">Classical Switch Dispatch</text>
+    <text x="480" y="30" font-family="monospace" font-size="13" fill="#565f89" text-anchor="end">2 Jumps / Opcode</text>
+
+    <!-- Content: Loop diagram -->
+    <g transform="translate(30, 70)">
+      <!-- Loop Header -->
+      <rect x="130" y="0" width="180" height="42" rx="8" fill="#1a1b26" stroke="#f7768e" stroke-width="1.2"/>
+      <text x="220" y="26" font-family="monospace" font-size="14" fill="#f7768e" font-weight="bold" text-anchor="middle">while(true) / loop</text>
+
+      <!-- Central Switch Branch -->
+      <rect x="110" y="80" width="220" height="46" rx="8" fill="#16161e" stroke="#565f89" stroke-width="1.2"/>
+      <text x="220" y="104" font-family="monospace" font-size="13" fill="#c0caf5" text-anchor="middle">switch(opcode) / bounds</text>
+      <text x="220" y="119" font-family="Segoe UI, sans-serif" font-size="11" fill="#7aa2f7" text-anchor="middle">單一共享間接跳躍點 (BTB 容易失誤)</text>
+
+      <!-- Handlers -->
+      <g transform="translate(0, 160)">
+        <rect x="10" y="0" width="125" height="44" rx="6" fill="#1a1b26" stroke="#414868"/>
+        <text x="72" y="27" font-family="monospace" font-size="13" fill="#7dcfff" text-anchor="middle">op_add</text>
+
+        <rect x="155" y="0" width="125" height="44" rx="6" fill="#1a1b26" stroke="#414868"/>
+        <text x="217" y="27" font-family="monospace" font-size="13" fill="#7dcfff" text-anchor="middle">op_sub</text>
+
+        <rect x="300" y="0" width="125" height="44" rx="6" fill="#1a1b26" stroke="#414868"/>
+        <text x="362" y="27" font-family="monospace" font-size="13" fill="#7dcfff" text-anchor="middle">op_mul</text>
+      </g>
+
+      <!-- Connections -->
+      <path d="M220 42 V80" stroke="#f7768e" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+      <path d="M150 126 L72 160" stroke="#7dcfff" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <path d="M220 126 L220 160" stroke="#7dcfff" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <path d="M290 126 L362 160" stroke="#7dcfff" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+      <!-- Jump back to top line -->
+      <path d="M72 204 V235 H440 V20 H315" fill="none" stroke="#f7768e" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text x="430" y="145" font-family="Segoe UI, sans-serif" font-size="12" fill="#f7768e" text-anchor="end">Jump back to loop head ↑</text>
+      <text x="220" y="270" font-family="Segoe UI, sans-serif" font-size="13" fill="#565f89" text-anchor="middle">每執行一個指令需跳躍 2 次 + 1 次邊界檢查</text>
+    </g>
+  </g>
+
+  <!-- Right Card: Tail-Call Interpreter -->
+  <g transform="translate(640, 185)">
+    <rect width="500" height="380" rx="14" fill="#1f2335" stroke="#9ece6a" stroke-width="1.8"/>
+    <rect width="500" height="46" rx="14" fill="#24283b"/>
+    <rect y="32" width="500" height="14" fill="#24283b"/>
+    <text x="20" y="30" font-family="Segoe UI, sans-serif" font-size="17" font-weight="600" fill="#9ece6a">Tail-Call Interpreter</text>
+    <rect x="360" y="10" width="125" height="26" rx="13" fill="rgba(158, 206, 106, 0.2)" stroke="#9ece6a" stroke-width="1"/>
+    <text x="422" y="27" font-family="Segoe UI, sans-serif" font-size="12" font-weight="bold" fill="#9ece6a" text-anchor="middle">+18% Faster</text>
+
+    <!-- Content: Direct Tail-call Chain -->
+    <g transform="translate(30, 70)">
+      <!-- Box 1 -->
+      <rect x="20" y="10" width="400" height="54" rx="8" fill="#1a1b26" stroke="#7dcfff" stroke-width="1.2"/>
+      <text x="40" y="35" font-family="monospace" font-size="14" fill="#7dcfff" font-weight="bold">fn op_add(ctx, pc, acc)</text>
+      <text x="40" y="52" font-family="monospace" font-size="12" fill="#9ece6a">jmp [table + next_op * 8] (Tail Call)</text>
+
+      <!-- Direct arrow down -->
+      <path d="M220 64 V95" stroke="#9ece6a" stroke-width="2" marker-end="url(#arrow-green)"/>
+      <text x="235" y="85" font-family="Segoe UI, sans-serif" font-size="12" fill="#9ece6a">直接跳躍 (無額外 Stack Frame)</text>
+
+      <!-- Box 2 -->
+      <rect x="20" y="95" width="400" height="54" rx="8" fill="#1a1b26" stroke="#bb9af7" stroke-width="1.2"/>
+      <text x="40" y="120" font-family="monospace" font-size="14" fill="#bb9af7" font-weight="bold">fn op_mul(ctx, pc, acc)</text>
+      <text x="40" y="137" font-family="monospace" font-size="12" fill="#9ece6a">jmp [table + next_op * 8] (Tail Call)</text>
+
+      <!-- Direct arrow down -->
+      <path d="M220 149 V180" stroke="#9ece6a" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+      <!-- Box 3 -->
+      <rect x="20" y="180" width="400" height="54" rx="8" fill="#1a1b26" stroke="#ff9e64" stroke-width="1.2"/>
+      <text x="40" y="205" font-family="monospace" font-size="14" fill="#ff9e64" font-weight="bold">fn op_sub(ctx, pc, acc)</text>
+      <text x="40" y="222" font-family="monospace" font-size="12" fill="#9ece6a">jmp [table + next_op * 8] (Tail Call)</text>
+
+      <!-- Explanation at bottom -->
+      <text x="220" y="270" font-family="Segoe UI, sans-serif" font-size="13" fill="#c0caf5" text-anchor="middle">每指令僅 1 次間接跳躍 · 獨立分支預測 · 零邊界檢查</text>
+    </g>
+  </g>
+
+  <!-- Tech tags bottom-left -->
+  <g transform="translate(60, 625)">
+    <!-- Tag 1: Python -->
+    <rect x="0" y="-18" width="85" height="32" rx="6" fill="rgba(125, 207, 255, 0.15)" stroke="#7dcfff" stroke-width="1.2"/>
+    <text x="42" y="3" font-family="monospace" font-size="14" fill="#7dcfff" text-anchor="middle">Python</text>
+
+    <!-- Tag 2: Rust -->
+    <rect x="95" y="-18" width="75" height="32" rx="6" fill="rgba(255, 158, 100, 0.15)" stroke="#ff9e64" stroke-width="1.2"/>
+    <text x="132" y="3" font-family="monospace" font-size="14" fill="#ff9e64" text-anchor="middle">Rust</text>
+
+    <!-- Tag 3: Performance -->
+    <rect x="180" y="-18" width="125" height="32" rx="6" fill="rgba(158, 206, 106, 0.15)" stroke="#9ece6a" stroke-width="1.2"/>
+    <text x="242" y="3" font-family="monospace" font-size="14" fill="#9ece6a" text-anchor="middle">Performance</text>
+
+    <!-- Tag 4: Compiler -->
+    <rect x="315" y="-18" width="105" height="32" rx="6" fill="rgba(187, 154, 247, 0.15)" stroke="#bb9af7" stroke-width="1.2"/>
+    <text x="367" y="3" font-family="monospace" font-size="14" fill="#bb9af7" text-anchor="middle">Compiler</text>
+  </g>
+
+  <!-- Branding bottom-right -->
+  <text x="1140" y="630" font-family="Segoe UI, sans-serif" font-size="16" fill="rgba(255, 255, 255, 0.45)" text-anchor="end">
+    blog.simplypatrick.com
+  </text>
+</svg>

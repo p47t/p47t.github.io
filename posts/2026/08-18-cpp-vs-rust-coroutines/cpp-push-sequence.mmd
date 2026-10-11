@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor Client as 📱 Downstream Client
+    participant EL as 🔄 Linux epoll / EventLoop
+    participant Parent as 📦 Server Coroutine (handle_request)
+    participant Child as 📦 Client Coroutine (stream_request)
+    participant Upstream as 🦙 Upstream LLM (Ollama/vLLM)
+
+    Note over EL,Parent: 【Push 1: 連線事件就緒，直接精確喚醒伺服器協程】
+    Client->>EL: POST /v1/chat/completions (stream: true)
+    EL->>Parent: h_server.resume() (O(1) 直接跳轉至暫停點)
+    activate Parent
+    Parent->>Parent: picohttpparser 解析請求 & std::expected 路由比對
+
+    Note over Parent,Child: 【對稱轉移：父協程切換至子協程，零堆疊增長】
+    Parent->>Child: co_await stream_request()<br/>(設定 continuation_ = h_server，回傳 h_child 尾跳躍)
+    deactivate Parent
+    activate Child
+    Child->>Upstream: 轉發 HTTP POST 請求至上游 LLM
+    Child->>EL: co_await AsyncReadable{upstream_fd}<br/>(註冊 upstream_fd & h_child，暫停出讓控制權)
+    deactivate Child
+
+    Note over EL,Child: 【Push 2: 上游 Token 就緒，EventLoop 直接推入子協程 Frame】
+    Upstream-->>EL: 傳送 SSE Token Chunk (Linux Kernel epoll_wait 喚醒)
+    EL->>Child: h_child.resume() (精確直達 stream_request 中斷點，無需自頂向下 re-poll)
+    activate Child
+    Child->>Client: 即時 Pass-Through 轉發 SSE Chunk
+
+    Note over Child,Parent: 【Push 3: 串流結束，final_suspend 對稱轉移交回父協程】
+    Upstream-->>Child: SSE [DONE] (上游連線關閉 / 完成)
+    Child->>Parent: final_suspend() 尾呼叫跳轉 (return continuation_)
+    deactivate Child
+    activate Parent
+    Parent->>Client: 結束 HTTP 串流回應
+    deactivate Parent

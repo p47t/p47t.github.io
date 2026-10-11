@@ -1,0 +1,24 @@
+flowchart TD
+    Start["需要對共享變數進行原子操作"] --> Q1{"這項操作是否需要傳遞<br/>其他周邊資料的有效性？"}
+
+    Q1 -- "否 (純獨立狀態或統計)" --> S_Relaxed["使用 Relaxed<br/>(例如：全域計數器、Metrics 採樣、終止旗標宣告)"]
+
+    Q1 -- "是 (需要訊息傳遞 / Safe Publication)" --> Q2{"操作的性質是什麼？"}
+
+    Q2 -- "單純讀取 (Load)" --> S_Acquire["使用 Acquire<br/>(接收發布者準備好的資料)"]
+    Q2 -- "單純寫入 (Store)" --> S_Release["使用 Release<br/>(確保資料已寫入完成才發布旗標/指標)"]
+    Q2 -- "讀改寫複合操作 (RMW / CAS)" --> Q3{"該操作需要單向發布、<br/>接收還是雙向同步？"}
+
+    Q3 -- "只接收" --> S_RMW_Acq["使用 Acquire (如 CAS 失敗重試分支)"]
+    Q3 -- "只發布" --> S_RMW_Rel["使用 Release (如 CAS 成功發布新頂端)"]
+    Q3 -- "同時接收與發布" --> S_AcqRel["使用 AcqRel (如引用計數扣減、雙向狀態機移轉)"]
+
+    Q1 -- "需要排除 Store-Load 盲區<br/>(如 Dekker 雙向旗標判定)" --> S_SeqCst["使用 SeqCst<br/>(強制全域單一操作總序)"]
+
+    classDef dec fill:#24283b,stroke:#bb9af7,stroke-width:2px,color:#c0caf5;
+    classDef opt fill:#1f2335,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+    classDef strong fill:#2a1e2d,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class Q1,Q2,Q3 dec;
+    class S_Relaxed,S_Acquire,S_Release,S_RMW_Acq,S_RMW_Rel,S_AcqRel opt;
+    class S_SeqCst strong;

@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-labelledby="title desc">
+  <title id="title">C++ 與 Rust 記憶體模型</title>
+  <desc id="desc">Memory Ordering、硬體快取機制到 Safe Publication 的架構解析</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#16161e"/>
+      <stop offset="100%" stop-color="#1a1b26"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7dcfff"/>
+      <stop offset="50%" stop-color="#bb9af7"/>
+      <stop offset="100%" stop-color="#ff9e64"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="none" stroke="#7dcfff" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="none" stroke="#9ece6a" stroke-width="1.5"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="50" y="48" width="140" height="4" rx="2" fill="url(#accent)"/>
+
+  <!-- Title & Subtitle -->
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, 'Microsoft JhengHei', sans-serif">
+    <text x="50" y="115" font-size="44" font-weight="700" fill="#c0caf5">C++ 與 Rust 記憶體模型</text>
+    <text x="52" y="160" font-size="22" fill="#7dcfff">Memory Ordering · Hardware Cache · Safe Publication</text>
+  </g>
+
+  <!-- Central Architecture Diagram -->
+  <!-- Thread 1: Writer -->
+  <g transform="translate(60, 200)">
+    <rect width="320" height="260" rx="12" fill="#1f2335" stroke="#414868" stroke-width="1.5"/>
+    <rect width="320" height="40" rx="12" fill="#24283b"/>
+    <rect y="28" width="320" height="12" fill="#24283b"/>
+    <text x="160" y="26" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#7dcfff" text-anchor="middle">Thread A (Writer)</text>
+
+    <!-- Operations inside Thread 1 -->
+    <g transform="translate(20, 60)" font-family="Consolas, 'Source Code Pro', monospace" font-size="14">
+      <rect width="280" height="42" rx="6" fill="#1a1b26" stroke="#565f89" stroke-width="1"/>
+      <text x="15" y="26" fill="#a9b1d6">data = 42 <tspan fill="#565f89">// non-atomic payload</tspan></text>
+
+      <path d="M140 45 V65" stroke="#565f89" stroke-width="2" stroke-dasharray="3 3"/>
+
+      <rect y="70" width="280" height="52" rx="6" fill="#1a1b26" stroke="#bb9af7" stroke-width="1.5"/>
+      <text x="15" y="93" fill="#bb9af7" font-weight="600">ready.store(true,</text>
+      <text x="35" y="111" fill="#7dcfff">std::memory_order_release)</text>
+    </g>
+
+    <!-- Sequenced-before annotation -->
+    <text x="160" y="240" font-family="Segoe UI, sans-serif" font-size="13" fill="#9aa5ce" text-anchor="middle">sequenced-before ↓</text>
+  </g>
+
+  <!-- Middle Hardware / Sync Barrier Layer -->
+  <g transform="translate(420, 200)">
+    <rect width="360" height="260" rx="12" fill="#1f2335" stroke="#7aa2f7" stroke-width="1" stroke-dasharray="6 4"/>
+    <text x="180" y="32" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#7aa2f7" text-anchor="middle">Synchronizes-With (跨執行緒同步橋樑)</text>
+
+    <!-- Hardware layers -->
+    <g transform="translate(20, 55)" font-family="Segoe UI, sans-serif" font-size="13">
+      <rect width="320" height="36" rx="6" fill="#24283b" stroke="#414868" stroke-width="1"/>
+      <text x="160" y="23" fill="#c0caf5" text-anchor="middle">Compiler Optimization Barrier</text>
+
+      <rect y="46" width="320" height="36" rx="6" fill="#24283b" stroke="#414868" stroke-width="1"/>
+      <text x="160" y="69" fill="#c0caf5" text-anchor="middle">Store Buffer / Load Queue Flush / Ordering</text>
+
+      <rect y="92" width="320" height="36" rx="6" fill="#24283b" stroke="#414868" stroke-width="1"/>
+      <text x="160" y="115" fill="#c0caf5" text-anchor="middle">Cache Coherence Protocol (MESI/MOESI)</text>
+    </g>
+
+    <!-- Happpens-before indicator -->
+    <g transform="translate(30, 200)">
+      <rect width="300" height="42" rx="8" fill="#292e42" stroke="#9ece6a" stroke-width="1.5"/>
+      <text x="150" y="26" font-family="Consolas, monospace" font-size="14" font-weight="600" fill="#9ece6a" text-anchor="middle">happens-before 關係成立</text>
+    </g>
+  </g>
+
+  <!-- Thread 2: Reader -->
+  <g transform="translate(820, 200)">
+    <rect width="320" height="260" rx="12" fill="#1f2335" stroke="#414868" stroke-width="1.5"/>
+    <rect width="320" height="40" rx="12" fill="#24283b"/>
+    <rect y="28" width="320" height="12" fill="#24283b"/>
+    <text x="160" y="26" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600" fill="#9ece6a" text-anchor="middle">Thread B (Reader)</text>
+
+    <!-- Operations inside Thread 2 -->
+    <g transform="translate(20, 60)" font-family="Consolas, 'Source Code Pro', monospace" font-size="14">
+      <rect width="280" height="52" rx="6" fill="#1a1b26" stroke="#9ece6a" stroke-width="1.5"/>
+      <text x="15" y="23" fill="#9ece6a" font-weight="600">ready.load(</text>
+      <text x="35" y="41" fill="#7dcfff">std::memory_order_acquire) == true</text>
+
+      <path d="M140 55 V75" stroke="#565f89" stroke-width="2" stroke-dasharray="3 3"/>
+
+      <rect y="80" width="280" height="42" rx="6" fill="#1a1b26" stroke="#565f89" stroke-width="1"/>
+      <text x="15" y="106" fill="#a9b1d6">assert(data == 42); <tspan fill="#9ece6a">✓ 安全讀取</tspan></text>
+    </g>
+
+    <!-- Sequenced-before annotation -->
+    <text x="160" y="240" font-family="Segoe UI, sans-serif" font-size="13" fill="#9aa5ce" text-anchor="middle">sequenced-before ↓</text>
+  </g>
+
+  <!-- Connective Arrows -->
+  <path d="M380 345 H420" stroke="#bb9af7" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M780 345 H820" stroke="#9ece6a" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+
+  <!-- Bottom Orderings Badges -->
+  <g transform="translate(60, 500)" font-family="Consolas, monospace" font-size="14">
+    <!-- Relaxed -->
+    <g transform="translate(0, 0)">
+      <rect width="200" height="60" rx="8" fill="#1f2335" stroke="#ff9e64" stroke-width="1"/>
+      <text x="100" y="27" fill="#ff9e64" font-weight="600" text-anchor="middle">Relaxed</text>
+      <text x="100" y="48" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6" text-anchor="middle">僅保證原子性與修改序</text>
+    </g>
+    <!-- Acquire / Release -->
+    <g transform="translate(220, 0)">
+      <rect width="280" height="60" rx="8" fill="#1f2335" stroke="#7dcfff" stroke-width="1"/>
+      <text x="140" y="27" fill="#7dcfff" font-weight="600" text-anchor="middle">Acquire / Release</text>
+      <text x="140" y="48" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6" text-anchor="middle">單向屏障 · 配對建立同步鏈</text>
+    </g>
+    <!-- AcqRel -->
+    <g transform="translate(520, 0)">
+      <rect width="260" height="60" rx="8" fill="#1f2335" stroke="#bb9af7" stroke-width="1"/>
+      <text x="130" y="27" fill="#bb9af7" font-weight="600" text-anchor="middle">AcqRel (RMW)</text>
+      <text x="130" y="48" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6" text-anchor="middle">讀取 acquire + 寫入 release</text>
+    </g>
+    <!-- SeqCst -->
+    <g transform="translate(800, 0)">
+      <rect width="280" height="60" rx="8" fill="#1f2335" stroke="#f7768e" stroke-width="1"/>
+      <text x="140" y="27" fill="#f7768e" font-weight="600" text-anchor="middle">SeqCst</text>
+      <text x="140" y="48" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6" text-anchor="middle">全域單一總序 · 代價最高</text>
+    </g>
+  </g>
+
+  <!-- Footer Tags & Domain -->
+  <g transform="translate(60, 615)" font-family="Consolas, monospace" font-size="14">
+    <rect width="60" height="26" rx="4" fill="#24283b" stroke="#7dcfff"/>
+    <text x="30" y="18" fill="#7dcfff" text-anchor="middle">C++</text>
+    <rect x="75" width="65" height="26" rx="4" fill="#24283b" stroke="#ff9e64"/>
+    <text x="107" y="18" fill="#ff9e64" text-anchor="middle">Rust</text>
+    <rect x="155" width="135" height="26" rx="4" fill="#24283b" stroke="#9ece6a"/>
+    <text x="222" y="18" fill="#9ece6a" text-anchor="middle">Memory Model</text>
+  </g>
+  <text x="1140" y="630" font-family="Segoe UI, sans-serif" font-size="15" fill="#565f89" text-anchor="end">blog.simplypatrick.com</text>
+</svg>

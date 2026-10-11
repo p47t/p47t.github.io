@@ -1,0 +1,28 @@
+flowchart TD
+    subgraph Host ["omarchy-shell (Quickshell 單一常駐主體)"]
+        direction TB
+        Services["全域共用服務 (QML)<br/>• 統一主題色票 (colors.toml)<br/>• PipeWire 音訊 / Network 狀態"]
+        Registry["PluginRegistry 外掛註冊表<br/>• inotify 監聽即時熱重載<br/>• manifest.json 契約驗證"]
+    end
+
+    subgraph Plugins ["插件生態系統 (Plugins)"]
+        direction LR
+        Builtin["<b>系統第一方插件</b> (<code>/usr/share/...</code>)<br/>• omarchy.bar · omarchy.audio<br/>• omarchy.agents · omarchy.network"]
+        Custom["<b>使用者自訂插件</b> (<code>~/.config/...</code>)<br/>• custom.cpu-monitor (自訂)<br/>• 第三方 Git 克隆插件"]
+    end
+
+    Services --- Registry
+    Registry ==>|動態載入 &amp; 生命週期託管| Builtin
+    Registry ==>|動態載入 &amp; 熱重載| Custom
+
+    classDef hostNode fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f0fdf4;
+    classDef subNode fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#e2e8f0;
+    classDef builtinNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef customNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+
+    class Host hostNode;
+    class Services,Registry subNode;
+    class Builtin builtinNode;
+    class Custom customNode;
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;

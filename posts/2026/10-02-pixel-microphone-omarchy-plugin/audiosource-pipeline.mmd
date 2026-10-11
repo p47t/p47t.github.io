@@ -1,0 +1,47 @@
+flowchart TD
+    subgraph AndroidDevice ["1. Android 端 (Google Pixel 3)"]
+        direction TB
+        MicHardware["硬體麥克風矩陣<br/>多麥克風降噪 · 聲學調校"]
+        AudioRecord["Android AudioRecord API<br/>44.1 kHz · 16-bit PCM 單聲道"]
+        AppSocket["fr.dzx.audiosource<br/>localabstract:audiosource (Unix Socket)"]
+        MicHardware --> AudioRecord --> AppSocket
+    end
+
+    subgraph AudioSubsystem ["2. Linux 桌面音訊核心 (PipeWire / PulseAudio)"]
+        direction TB
+        ModulePipe["pactl load-module module-pipe-source<br/>建立具名管線 FIFO · 精準清除既有同名模組"]
+        VirtualMic["系統虛擬錄音裝置<br/>device.description = 'Pixel 3 Microphone'"]
+        ModulePipe --> VirtualMic
+    end
+
+    subgraph BridgeLayer ["3. 轉送與原生串流橋 (Rust pocket-mic)"]
+        direction TB
+        AdbForward["ADB 埠轉送 (USB 或 Wi-Fi)<br/>adb forward localabstract:android-xxxx localabstract:audiosource"]
+        RustBridge["pocket-mic (Rust 原生串流與 RAII 守護)<br/>clap 子命令 · 結構化錯誤 · Drop 自動清理"]
+        AdbForward --> RustBridge
+    end
+
+    subgraph OmarchyShell ["4. Omarchy 桌面整合 (Quickshell Qt6/QML)"]
+        direction TB
+        ShellService["Service.qml (背景常駐單例)<br/>串流行程管理 · 斷線 5 秒自動重連"]
+        BarUI["BarWidget.qml (狀態列與選單)<br/>展開選單按需探測設備 · 全鍵盤操作 (Tab/Space)"]
+        Apps["桌面應用程式<br/>Google Meet · Discord · voxtype (Whisper 語音聽寫)"]
+        ShellService <--> BarUI
+        BarUI --> Apps
+    end
+
+    AndroidDevice ==>|USB / 無線除錯連線| BridgeLayer
+    BridgeLayer ==>|以 1024-byte 原子區塊寫入 FIFO| AudioSubsystem
+    AudioSubsystem ==>|提供標準 PulseAudio / PipeWire 音訊源| OmarchyShell
+
+    classDef androidNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f0fdf4;
+    classDef audioNode fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef bridgeNode fill:#1e3a8a,stroke:#60a5fa,stroke-width:2px,color:#eff6ff;
+    classDef shellNode fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#faf5ff;
+
+    class AndroidDevice androidNode;
+    class AudioSubsystem audioNode;
+    class BridgeLayer bridgeNode;
+    class OmarchyShell shellNode;
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;

@@ -1,0 +1,600 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>WebRTC 筆記 - 從網路傳輸架構、NAT 穿透到擁塞控制機制</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2015/07-04-webrtc/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2015/07-04-webrtc/"/>
+  <meta property="og:title" content="WebRTC 筆記 - 從網路傳輸架構、NAT 穿透到擁塞控制機制"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2015-07-04 00:00:00 &#43;0000 UTC"/>
+  
+  <meta property="og:article:tag" content="web"/>
+  
+  <meta property="og:article:tag" content="network"/>
+  
+  <meta property="og:article:tag" content="javascript"/>
+  
+  <meta property="og:article:tag" content="webrtc"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">257</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">62</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2015/06-19-cmake-notes/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            CMake 筆記
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2016/01-23-gn/">
+            GN (Generate Ninja)
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">WebRTC 筆記</h1>
+      
+      <div class="post-subtitle">從網路傳輸架構、NAT 穿透到擁塞控制機制</div>
+      
+      <div class="post-meta">
+        <span class="post-date">July 4, 2015</span>
+        
+        <a href="/categories/web"><span class="label label-info">web</span></a>
+        
+        
+        <a href="/tags/web"><span class="label label-primary">web</span></a>
+        
+        <a href="/tags/network"><span class="label label-primary">network</span></a>
+        
+        <a href="/tags/javascript"><span class="label label-primary">javascript</span></a>
+        
+        <a href="/tags/webrtc"><span class="label label-primary">webrtc</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        <blockquote><p><strong>作者註：</strong> 這是一篇在 2015 年開了頭卻未能完成的草稿，於 2026 年藉由 AI 協作補齊內容，並保留了 2015 年當時的技術生態與時空視角。</p>
+</blockquote><p>以往在瀏覽器中要做到即時音訊或視訊對話，通常必須依賴 Flash 外掛程式、Java applets，或是要求使用者安裝像 Skype 這樣的獨立桌面通訊軟體。這不僅帶來使用者體驗上的門檻，在安全性、效能與跨平台上也一直為人詬病。</p>
+<p>自從 Google 在 2011 年開源 WebRTC（Web Real-Time Communication）專案，並與 W3C 和 IETF 攜手推動標準化以來，現代瀏覽器（Chrome 與 Firefox）已經原生具備了點對點（P2P）的即時音訊、視訊與資料傳輸能力。特別是今年 4 月 27 日，Facebook Messenger 正式宣布跨平台（iOS 與 Android）上線免費視訊通話功能，背後正是由 WebRTC 提供技術支援；此外 Ericsson 開源了基於 GStreamer 的 OpenWebRTC，Matrix.org 也在推廣去中心化通訊架構。</p>
+<p>最近花了一些時間研讀 Ilya Grigorik 的著作《High Performance Browser Networking》（作者在 hpbn.co 提供免費線上閱讀版）中關於 WebRTC 的章節，以及社群裡探討底層實作的文章。這篇筆記嘗試整理 WebRTC 的核心架構、連線建立過程，以及最容易被忽略但極為關鍵的網路擁塞控制（congestion control）機制。</p>
+<h2 id="webrtc-的三大核心-api">WebRTC 的三大核心 API</h2>
+<p>對前端開發者來說，W3C 將複雜的底層網路與媒體處理封裝成三個主要的 JavaScript API：</p>
+<h3 id="mediastream-getusermedia">MediaStream (getUserMedia)</h3>
+<p><code>MediaStream</code> 負責存取使用者裝置的攝影機與麥克風。透過 <code>navigator.getUserMedia()</code>，網頁可以向使用者請求授權，取得包含音訊軌（audio tracks）與視訊軌（video tracks）的串流物件。</p>
+<p>這個 API 的重點在於本機端的音視訊採集、同步與本機預覽（例如直接指定給 <code>&lt;video&gt;</code> 標籤的 <code>src</code>）。它只處理本機媒體流的擷取，並不涉及網路傳輸。</p>
+<h3 id="rtcpeerconnection">RTCPeerConnection</h3>
+<p><code>RTCPeerConnection</code> 是 WebRTC 的靈魂核心。它負責管理整個 P2P 呼叫的完整生命週期，包含：</p>
+<ul>
+<li>影音編解碼器（codecs）的協商（透過 SDP 內容協商，由瀏覽器底層媒體引擎負責編解碼，如音訊 Opus、視訊 VP8 / H.264）</li>
+<li>網路封包的發送與接收</li>
+<li>聲學回音消除（AEC）、降噪（NS）與自動增益控制（AGC）</li>
+<li>NAT 穿透與候選位址收集</li>
+<li>即時網路頻寬估算與品質監控</li>
+</ul>
+<p>所有端對端的影音串流傳輸，都是透過這個物件來建立與維護。</p>
+<h3 id="rtcdatachannel">RTCDataChannel</h3>
+<p>除了影音傳輸之外，WebRTC 另一個極具潛力的功能是 <code>RTCDataChannel</code>。它允許兩個瀏覽器之間直接建立雙向、低延遲的任意二進位或文字資料傳輸通道。</p>
+<p><code>RTCDataChannel</code> 的 API 設計刻意模仿了 WebSocket，但最大的差異在於它是真正的 P2P 傳輸（不需經過中間伺服器繞行），而且底層採用了 SCTP 協定，讓開發者可以在「可靠傳送（reliable）」與「不可靠傳送（unreliable）」、「依序到達（ordered）」與「不依序到達（unordered）」之間彈性選擇。這對於網頁即時多人遊戲、P2P 檔案分享或是協同編輯工具來說非常實用。</p>
+<h2 id="網路傳輸架構與協定疊構">網路傳輸架構與協定疊構</h2>
+<p>WebRTC 之所以強大且複雜，是因為它不是跑在傳統的 HTTP 或單純的 TCP 協定之上，而是在 UDP 之上整合了多種既有的網際網路標準協定：</p>
+
+  <div class="mermaid">flowchart TD
+    Sig[&#34;&lt;div style=&#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&#39;&gt;&lt;span style=&#39;font-weight:bold;&#39;&gt;信令與連線協商 (Signaling and Session Control)&lt;/span&gt;&lt;br/&gt;&lt;span style=&#39;font-weight:normal;&#39;&gt;帶外信令交換 SDP（RFC 7116 / JSEP 草案）與 ICE 候選位址&lt;/span&gt;&lt;/div&gt;&#34;]
+    style Sig width:580px;
+
+    ICE[&#34;&lt;div style=&#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&#39;&gt;&lt;span style=&#39;font-weight:bold;&#39;&gt;連線建立與 NAT 穿透 (ICE Framework)&lt;/span&gt;&lt;br/&gt;&lt;span style=&#39;font-weight:normal;&#39;&gt;STUN 探測公網位址 · TURN 中繼轉發 · 連線優先級檢測與提名&lt;/span&gt;&lt;/div&gt;&#34;]
+    style ICE width:580px;
+
+    subgraph DataPlane [&#34;&lt;div style=&#39;font-size:14px; font-weight:bold; padding:2px 0;&#39;&gt;端對端資料傳輸 (P2P Data Plane)&lt;/div&gt;&#34;]
+        direction LR
+        Media[&#34;&lt;div style=&#39;width:270px; max-width:100%; font-size:14px; font-weight:normal; line-height:1.5; padding:4px;&#39;&gt;&lt;span style=&#39;font-weight:bold;&#39;&gt;影音媒體串流&lt;/span&gt;&lt;br/&gt;&lt;span style=&#39;font-weight:normal;&#39;&gt;SRTP / RTCP（音訊 Opus · 視訊 VP8 / H.264）&lt;br/&gt;金鑰由 DTLS-SRTP 交握導出&lt;br/&gt;擁塞控制：GCC 雙控制器 &#43; REMB&lt;/span&gt;&lt;/div&gt;&#34;]
+        Data[&#34;&lt;div style=&#39;width:270px; max-width:100%; font-size:14px; font-weight:normal; line-height:1.5; padding:4px;&#39;&gt;&lt;span style=&#39;font-weight:bold;&#39;&gt;資料通道 (RTCDataChannel)&lt;/span&gt;&lt;br/&gt;&lt;span style=&#39;font-weight:normal;&#39;&gt;SCTP 多串流傳輸&lt;br/&gt;DTLS 傳輸加密與認證&lt;br/&gt;可自訂可靠度與有序性&lt;/span&gt;&lt;/div&gt;&#34;]
+    end
+    style DataPlane fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px;
+
+    Network[&#34;&lt;div style=&#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&#39;&gt;&lt;span style=&#39;font-weight:bold;&#39;&gt;底層傳輸與網路層 (Transport and Network)&lt;/span&gt;&lt;br/&gt;&lt;span style=&#39;font-weight:normal;&#39;&gt;UDP (User Datagram Protocol) over IPv4 / IPv6&lt;/span&gt;&lt;/div&gt;&#34;]
+    style Network width:580px;
+
+    Sig --&gt; ICE
+    ICE --&gt; DataPlane
+    Media --&gt; Network
+    Data --&gt; Network</div>
+
+<h3 id="為什麼選擇-udp-而非-tcp">為什麼選擇 UDP 而非 TCP？</h3>
+<p>在網頁開發的世界裡，我們習慣了 TCP 帶來的可靠性。但在即時音訊與視訊通話的場景下，延遲（latency）是第一要務，封包遺失反而退居其次：</p>
+<ul>
+<li><strong>避免隊頭阻塞 (Head-of-Line Blocking)</strong>：TCP 必須嚴格按序遞送所有資料。一旦中間有封包遺失，TCP 會停止後續資料遞送並等待重傳，直到遺失的封包補齊為止。這在網頁載入檔案時很理想，但在視訊對話中，幾百毫秒前的畫面如果遺失，重傳回來早已毫無意義，使用者只會感受到嚴重的畫面凍結與語音延遲。</li>
+<li><strong>即時性優於完整性</strong>：UDP 沒有重傳機制與按序保證，任何封包抵達就立即交給解碼器處理。即使遺失少數封包，音訊可以透過 PLC（Packet Loss Concealment）做波形補償，視訊則可容忍輕微馬賽克，整體對話依然能保持即時流暢。</li>
+</ul>
+<p>因此，WebRTC 的影音傳輸採用了建立在 UDP 之上的 SRTP（Secure Real-time Transport Protocol），搭配 RTCP 傳遞控制資訊；而加密方面，雙方透過 DTLS 交握交換身分憑證並導出 SRTP 金鑰（DTLS-SRTP），資料通道則由 DTLS 直接進行傳輸加密，兼顧傳輸效率與安全性。</p>
+<h2 id="p2p-連線建立signalingnat-穿透與-ice">P2P 連線建立：Signaling、NAT 穿透與 ICE</h2>
+<p>建立 P2P 連線的最大難題在於真實世界的網路環境。絕大多數終端裝置都沒有獨立的公開 IP 位址，而是隱藏在路由器 NAT（Network Address Translation）與防火牆後方。</p>
+<p>兩個瀏覽器要建立直接通訊，必須經歷以下連線建立流程：</p>
+<h3 id="信令機制-signaling">信令機制 (Signaling)</h3>
+<p>WebRTC 規範刻意不定義信令協定（signaling protocol）。開發者可以自由選擇任何現有機制（例如 WebSocket、SIP、XMPP 甚至是 HTTP POST）來讓雙方交換連線意向。</p>
+<p>雙方需要交換的連線資訊包含：</p>
+<ul>
+<li><strong>SDP (Session Description Protocol)</strong>：透過 Offer / Answer 模型交換雙方支援的影音編解碼格式、加密方式與傳輸參數。2015 年當時的規範依據為 RFC 7116，而負責將其抽象為 JavaScript 操作的 JSEP 當時仍為 IETF 草案。</li>
+<li><strong>ICE 參數與候選位址</strong>：在標準流程中，ICE 的認證資訊（<code>a=ice-ufrag</code>、<code>a=ice-pwd</code>）與候選位址（<code>a=candidate</code>）會直接寫在 SDP 內。若採用 Trickle ICE（當時仍為 IETF 草案），雙方可先交換初期 SDP，待候選位址蒐集完成後再增量傳送，能大幅縮短通話建立的等待時間。</li>
+</ul>
+<h3 id="nat-穿透三部曲stunturn-與-ice">NAT 穿透三部曲：STUN、TURN 與 ICE</h3>
+<p>當雙方交換了 SDP 後，需要透過以下三種機制打通連線：</p>
+<ul>
+<li><strong>STUN (Session Traversal Utilities for NAT)</strong>：客戶端向公開網路上的 STUN 伺服器發送請求，STUN 伺服器會將看到的來源公開 IP 與 Port 回傳。這樣客戶端就能得知自己在公網上的反射位址（reflexive candidate）。對於大多數錐型 NAT，只要雙方互相向對方的公開位址發送封包，就能成功穿透連線。不過若遇到對稱型（symmetric）NAT、NAT 不支援回送繞路（hairpinning），或是企業防火牆直接阻擋 UDP 流量，STUN 就無法穿透。</li>
+<li><strong>TURN (Traversal Using Relays around NAT)</strong>：若直接穿透失敗，連線會退回到 TURN 伺服器，由 TURN 伺服器作為第三方中繼節點轉發所有媒體與資料封包（必要時甚至可透過 TCP 443 埠繞過嚴格的防火牆）。雖然走 TURN 會增加伺服器頻寬負擔並稍微增加延遲，但它保證了通話的成功率。</li>
+<li><strong>ICE (Interactive Connectivity Establishment)</strong>：ICE 是一個整合框架（當時依循 RFC 5245 規範）。它會收集本機位址（host candidate）、STUN 反射位址（srflx candidate）以及 TURN 中繼位址（relay candidate），將兩端的候選位址配對，並依 candidate pair 的優先級（priority）排序逐組發送 STUN 連線檢查請求，第一組通過檢查的組合即被提名（nomination）為使用中的路徑；連線建立後，仍會持續發送 STUN binding request 作為 keepalive 探測。</li>
+</ul>
+<h2 id="關鍵挑戰網路擁塞控制-congestion-control">關鍵挑戰：網路擁塞控制 (Congestion Control)</h2>
+<p>在研讀 WebRTC 時，最讓我感到精妙的是它的網路擁塞控制機制。</p>
+<h3 id="為什麼-udp-也需要擁塞控制">為什麼 UDP 也需要擁塞控制？</h3>
+<p>TCP 內建流量控制（接收視窗 rwnd）與壅塞控制（壅塞視窗 cwnd）兩套機制；後者從慢啟動（slow start，指數增加）起步，當偵測到網路丟包時改以 AIMD（加法增大、乘法遞減）收斂發送速率，避免網路發生擁塞崩潰（congestion collapse）。</p>
+<p>但原生 UDP 完全沒有任何頻寬調節機制。如果 WebRTC 視訊以固定的高碼率（例如 2 Mbps）持續發送 UDP 封包，一旦途經網路瓶頸（例如家用 Wi-Fi 訊號減弱或行動網路切換基地台），發送端若毫無警覺繼續硬塞，封包就會在路由器佇列中堆積，導致延遲劇增、嚴重丟包，甚至將同一網路環境下的其他連線一併拖垮。</p>
+<p>因此，如何在沒有 TCP 內建機制的 UDP 上，實現靈敏且平滑的動態擁塞控制，是 WebRTC 能夠實用的關鍵。</p>
+<h3 id="媒體串流的動態頻寬估算gcc-雙控制器架構與-remb">媒體串流的動態頻寬估算：GCC 雙控制器架構與 REMB</h3>
+<p>WebRTC（特別是 Google 的開放原始碼實作）採用了 Google Congestion Control（GCC）演算法（記錄於 IETF draft-ietf-rmcat-gcc 草案中）。GCC 的核心是「延遲型控制器」與「遺失型控制器」的分工協作：</p>
+<ul>
+<li><strong>延遲型控制器 (Delay-based Controller)</strong>：分析連續封包抵達時間間隔的變化趨勢，做為路徑排隊延遲的過載偵測器（over-use detector）。當路由器佇列開始積壓時，封包排隊延遲會逐漸上升。延遲型控制器能在實際丟包發生之前，就預先偵測到網路負載過重。此控制器可部署於接收端（透過 REMB 回傳估算上限），亦可部署於發送端。</li>
+<li><strong>REMB (Receiver Estimated Maximum Bitrate)</strong>：在接收端架構下，接收端依據延遲型控制器推估出這條路徑目前能承載的位元率上限，並透過 RTCP REMB 訊息回報給發送端。它是一個純粹的頻寬上限估計值，兩大訊號的共識融合主要在發送端完成。</li>
+<li><strong>RTCP 統計回報與 RTT 計算</strong>：發送端定期發送 RTCP Sender Report（SR）記錄發送時間戳；接收端則回傳 Receiver Report（RR）提供遺失率（fraction lost）與抖動（jitter），並夾帶前次 SR 的時間戳（LSR）與收受後的延遲（DLSR）。發送端收到 RR 後，即可計算出目前的 RTT（Round-Trip Time）。</li>
+<li><strong>遺失型控制器 (Loss-based Controller)</strong>：執行於發送端，綜合考量封包遺失率、RTT 以及 REMB 所提供的頻寬上限，計算出最終建議的發送碼率。在早期 WebRTC 實作中，發送端速率還會受到 TFRC（TCP-Friendly Rate Control, RFC 3448）公式的調節與約束。</li>
+<li><strong>動態編碼調整</strong>：發送端在確定目標發送碼率後，會即時通知本機的視訊編碼器（如 VP8 或 H.264）。當頻寬吃緊時，編碼器會調高量化參數（QP）、降低輸出碼率、調降幀率，甚至在極端情況下降低解析度；當網路恢復暢通時，再逐步向上探測可用頻寬。</li>
+</ul>
+<p>這種結合了「延遲偵測」與「遺失率回饋」的雙重控制，讓視訊對話既能充分利用可用頻寬，又不會因為網路波動而頻繁斷訊。</p>
+<h3 id="資料通道的擁塞控制sctp-over-dtls">資料通道的擁塞控制：SCTP over DTLS</h3>
+<p>在 <code>RTCDataChannel</code> 方面，WebRTC 並沒有自己從頭發明一套協議，而是選擇將 SCTP（Stream Control Transmission Protocol）架構在 DTLS/UDP 之上，並由 DTLS 直接提供傳輸層加密。</p>
+<p>SCTP 本身就定義了完整的流量控制（flow control）與類似 TCP 的擁塞控制（具備 slow start 與 congestion avoidance），但它比 TCP 更具彈性：</p>
+<ul>
+<li>支援多串流（multi-streaming），不同串流之間不會相互卡住。</li>
+<li>可透過參數設定是否需要可靠傳送（<code>maxRetransmits</code>、<code>maxPacketLifeTime</code>）與是否嚴格保證順序（<code>ordered: false</code>）。</li>
+</ul>
+<p>這使得 DataChannel 既能享有標準的網路擁塞防護，不至於癱瘓網路，又能保有 UDP 敏捷彈性的傳輸特質。</p>
+<h2 id="2015-年的-webrtc-生態觀察">2015 年的 WebRTC 生態觀察</h2>
+<p>回顧目前的發展，WebRTC 的影響力已經從單純的瀏覽器實驗走向大規模商業應用：</p>
+<ul>
+<li><strong>主流社交軟體的採用</strong>：Facebook Messenger 在今年 4 月 27 日正式跨平台（iOS 與 Android）上線視訊通話功能（5 月底推廣至全球），並選擇 WebRTC 作為核心底層，證明了這套架構在大規模跨平台行動通訊中的穩定度。</li>
+<li><strong>原生客戶端的新選擇</strong>：除了 Google 主導的 <code>libwebrtc</code> 程式庫之外，Ericsson 推出了開源的 OpenWebRTC。它以 GStreamer 為基底，架構簡潔且容易自訂擴充，為 iOS 與 Android 開發者提供了另一個不錯的選擇。</li>
+<li><strong>去中心化通訊架構</strong>：Matrix.org 正推動開放且去中心化的聯邦通訊標準，將 WebRTC 作為即時語音與視訊傳輸的協定層。今年 4 月他們首度展示了透過 OpenWebRTC 實現 iOS App 與網頁客戶端的互通，不過完整的 WebRTC 與 TURN 整合仍在積極完善中。</li>
+<li><strong>尚未定案的 SDP 格式之爭</strong>：多串流（multistream）該採用 Chrome 的 Plan B 還是標準化的 Unified Plan，是當前社群最大的分歧之一。Firefox 在今年 6 月剛完成 Unified Plan 的初步實作，而 Chrome 仍維持 Plan B，Jitsi 等團隊甚至必須自製 <code>sdp-interop</code> 來跨瀏覽器轉譯。這段標準過渡期考驗著開發者的相容性處理。</li>
+<li><strong>瀏覽器支援與規範演進</strong>：Chrome 與 Firefox 已經提供相當成熟的原生支援；微軟在 2015 年 4 月的 Build 大會宣布 Windows 10 與全新的 Edge 瀏覽器將支援 ORTC（Object RTC）；Apple Safari 目前尚未跟進。需要強調的是，當前的 WebRTC 規範仍處於不斷修訂的編者草案（Editor&rsquo;s Draft）階段，各項 API 與底層實作依舊處於「建構中（under active construction）」的演進狀態。</li>
+</ul>
+<h2 id="結論">結論</h2>
+<p>WebRTC 不只是讓瀏覽器多了幾個 API，它本質上是將過去電信與 VoIP 領域累積數十年的複雜網路技術（NAT 穿透、SRTP 加密、SCTP 多串流、GCC 擁塞控制）進行了高度整合與標準化。</p>
+<p>理解這些底層運作機制後，在除錯通話品質不佳、連線建立失敗或頻寬震盪時，才能有清楚的方向。</p>
+<h2 id="參考資料">參考資料</h2>
+<ul>
+<li><a href="https://hpbn.co/webrtc/">High Performance Browser Networking - Ch 18. WebRTC</a>：Ilya Grigorik 撰寫的必讀經典，深入淺出地說明 WebRTC 網路架構（作者提供免費線上閱讀版）。</li>
+<li><a href="https://matrix.org">Matrix.org</a>：開放去中心化即時通訊標準。</li>
+<li><a href="https://web.archive.org/web/20150228073512/http://nschoe.com/articles/2015-02-14-Lets-Have-Fun-With-WebRTC-Part-1.html">LET&rsquo;S HAVE FUN WITH WEBRTC!</a>：生動有趣的 WebRTC 基礎教學與實作（Wayback Machine 存檔）。</li>
+<li><a href="https://web.archive.org/web/20150701192757/http://www.openwebrtc.io/">OpenWebRTC</a>：Ericsson 開發、基於 GStreamer 的開源 WebRTC 實作（Wayback Machine 存檔）。</li>
+<li><a href="https://webrtchacks.com/own-phoneco-with-webrtc/">Build your own phone company with WebRTC and a weekend</a>：webrtcHacks 上的實戰範例。</li>
+<li><a href="https://webrtchacks.com/facetime-decode/">Facetime doesn’t face WebRTC</a>：解析 Apple FaceTime 協定與 WebRTC 之異同。</li>
+<li><a href="https://webrtchacks.com/facebook-webrtc/">Facebook Messenger likes WebRTC</a>：剖析 Facebook Messenger 為何選擇 WebRTC 與其架構特色。</li>
+<li><a href="http://www.slideshare.net/victorpascual/webrtc-datachannels-demystified">WebRTC DataChannels demystified</a>：Victor Pascual 對 SCTP / DataChannel 底層機制的詳盡投影片。</li>
+<li><a href="https://datatracker.ietf.org/doc/rfc7116/">IETF RFC 7116 - SDP Offer/Answer for WebRTC</a>：2015 年 3 月發布的 WebRTC SDP 協商規範。</li>
+<li><a href="https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-00">IETF draft-ietf-rmcat-gcc-00</a>：Google Congestion Control 演算法原始草案規格。</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

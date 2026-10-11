@@ -1,0 +1,865 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Python 3.15 的 Tail-Call Interpreter 架構與效能實證 - 釐清 TCO 迷思 · CPython 指令調度架構演進 · 組合語言剖析與 Rust 2,000 萬次運算基準測試</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/"/>
+  <meta property="og:title" content="Python 3.15 的 Tail-Call Interpreter 架構與效能實證 - 釐清 TCO 迷思 · CPython 指令調度架構演進 · 組合語言剖析與 Rust 2,000 萬次運算基準測試"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-10-09 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="python"/>
+  
+  <meta property="og:article:tag" content="rust"/>
+  
+  <meta property="og:article:tag" content="performance"/>
+  
+  <meta property="og:article:tag" content="compiler"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">56</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">257</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">26</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">62</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/10-02-pixel-microphone-omarchy-plugin/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            將閒置 Pixel 3 改造為 Omarchy 桌面麥克風插件 Pocket Mic
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">Python 3.15 的 Tail-Call Interpreter 架構與效能實證</h1>
+      
+      <div class="post-subtitle">釐清 TCO 迷思 · CPython 指令調度架構演進 · 組合語言剖析與 Rust 2,000 萬次運算基準測試</div>
+      
+      <div class="post-meta">
+        <span class="post-date">October 9, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/python"><span class="label label-primary">python</span></a>
+        
+        <a href="/tags/rust"><span class="label label-primary">rust</span></a>
+        
+        <a href="/tags/performance"><span class="label label-primary">performance</span></a>
+        
+        <a href="/tags/compiler"><span class="label label-primary">compiler</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/10-09-tail-call-interpreter/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>前陣子翻閱 Python 3.15 的 What&rsquo;s New 文件時，官方安裝檔的一項底層變更引起了我的注意：在官方 64-bit Windows 安裝檔中，預設正式啟用了 Tail-Call Interpreter（尾呼叫直譯器）。</p>
+<p>社群裡不少人的第一反應是：「哇！Python 終於支援尾遞迴最佳化（Tail Call Optimization, TCO）了嗎？以後寫深度遞迴不用再怕 <code>RecursionError</code> 了？」</p>
+<p>很可惜，答案是完全沒有。</p>
+<p>如果你在 Python 3.15 裡寫了一個沒有終止條件的遞迴函式，它依然會在跑完第一千層時準時噴出熟悉的 <code>RecursionError: maximum recursion depth exceeded</code>。Python 之父 Guido van Rossum 與核心開發團隊過去多次明確表示，為了保留完整的呼叫堆疊資訊（traceback）與除錯能力，Python 不會採用語言層級的尾遞迴消除。</p>
+<p>那麼，官方所說的 Tail-Call Interpreter 究竟是什麼？</p>
+<p>它不是提供給一般開發者的語言語法特性，而是 CPython 虛擬機核心在執行位元組碼（bytecode）時，在指令調度（opcode dispatch）架構上的一場精妙重構。這項機制最初在 Python 3.14 以選用編譯參數（<code>--with-tail-call-interp</code>）亮相，到了 Python 3.15 則正式成為官方 Windows 64-bit 二進位發行版的預設架構。</p>
+<p>這篇文章我們就來拆解：直譯器核心是如何執行位元組碼的？從經典的 <code>switch-case</code> 迴圈到 computed goto，再到現在的 tail-call interpreter，底層發生了什麼改變？接著，我們會用 Rust 親手刻出兩套直譯器，透過真實的 A/B 效能評測與組合語言反組譯，看看尾呼叫調度究竟是憑藉哪些硬體機制跑出 15% 到 20% 的效能提升。</p>
+<h2 id="什麼是直譯器的指令調度opcode-dispatch">什麼是直譯器的指令調度（Opcode Dispatch）？</h2>
+<p>要理解尾呼叫直譯器，首先得先看看所有虛擬機的心臟地帶。</p>
+<p>當我們把 Python 原始碼編譯成位元組碼後，程式會變成一連串緊湊的指令流。虛擬機的主要工作，就是一個無止境的調度迴圈：讀取下一個 opcode、執行它對應的邏輯、再讀取下一個。</p>
+<p>在 CPython 歷史與大多數入門直譯器中，最直觀的寫法是 <strong>Switch Dispatch</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// 傳統的 switch 調度迴圈
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">switch</span> (<span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> OP_ADD:
+</span></span><span style="display:flex;"><span>            acc <span style="color:#f92672">+=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> OP_SUB:
+</span></span><span style="display:flex;"><span>            acc <span style="color:#f92672">-=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> OP_HALT:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> acc;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這段程式碼看起來非常單純，但在現代超純量處理器（superscalar CPU）的硬體管線上，這樣的設計存在兩個嚴重的效能瓶頸：</p>
+
+
+  
+    <img src="/posts/2026/10-09-tail-call-interpreter/switch-dispatch.svg" alt="switch-dispatch.svg" class="img-responsive post-image">
+  
+
+<p>每執行一條 bytecode，CPU 至少得承擔兩次跳躍：</p>
+<ol>
+<li><strong>跳到目標 opcode</strong>：從中央 <code>switch</code> 跳躍表發起的間接跳躍（indirect branch）。</li>
+<li><strong>跳回迴圈頂端</strong>：opcode 處理完後踩到 <code>break</code>，無條件跳回 <code>while</code> 迴圈開頭。</li>
+</ol>
+<p>更致命的是硬體分支預測器（branch predictor）的負擔。在中央 <code>switch</code> 處，只有唯一一個間接跳躍指令位址。不管當前執行的位元組碼是加法、乘法還是屬性存取，全都必須通過這同一個跳躍點。現代處理器的分支目標緩衝區（Branch Target Buffer, BTB）很難在單一站點記錄高動態的跳躍規律，導致間接分支預測失誤（branch misprediction）頻繁發生。每次預測失誤，CPU 都得清空管線（pipeline flush），白白浪費 15 到 20 個時脈週期。</p>
+<h2 id="從-direct-threaded-code-到編譯器的極限">從 Direct-Threaded Code 到編譯器的極限</h2>
+<p>為了解決中央跳躍點的擁擠問題，直譯器領域多年前就發展出了 Direct-Threaded Code（直通線程代碼，常利用 C 語言的 computed goto 實現）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// GCC / Clang 的 Labels as Values 擴充
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> dispatch_table[] <span style="color:#f92672">=</span> { <span style="color:#f92672">&amp;&amp;</span>do_add, <span style="color:#f92672">&amp;&amp;</span>do_sub, <span style="color:#f92672">&amp;&amp;</span>do_halt };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#define DISPATCH() goto *dispatch_table[*pc++]
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>do_add:
+</span></span><span style="display:flex;"><span>    acc <span style="color:#f92672">+=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">DISPATCH</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>do_sub:
+</span></span><span style="display:flex;"><span>    acc <span style="color:#f92672">-=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">DISPATCH</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>do_halt:
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> acc;</span></span></code></pre></div>
+
+<p>在 direct-threaded code 裡，不再有中央的 <code>while</code> 迴圈與 <code>switch</code>。每個 opcode 執行完後，直接抓取下一個 opcode 的位址並就地跳躍。</p>
+<p>這個做法把間接跳躍點分散到各個 opcode 的末端。例如，<code>do_add</code> 末尾有一個專屬的 <code>goto *</code>，<code>do_sub</code> 末尾也有自己的 <code>goto *</code>。硬體分支預測器可以分別記錄不同 opcode 之後通常會接續哪些指令，分支預測命中率因此顯著上升。</p>
+<p>自 2010 年前後起，CPython 在 Unix 平台（使用 GCC/Clang 編譯）就一直預設開啟 computed goto。但這個方案有兩個難以克服的痛點：</p>
+<ul>
+<li><strong>非標準語法與平台碎片化</strong>：Labels as values 是 GCC/Clang 的擴充功能，微軟的 MSVC 編譯器長期以來完全不支援。這意味著近二十年間，<strong>Windows 平台上的 Python 官方安裝檔只能退回最慢的 switch 迴圈</strong>！</li>
+<li><strong>編譯器最佳化的惡夢</strong>：CPython 的執行核心 <code>ceval.c</code>（連同內嵌由 <code>Python/bytecodes.c</code> DSL 產生的 <code>generated_cases.c.h</code>）超過五千行，核心評估函式 <code>_PyEval_EvalFrameDefault</code> 本身也有數千行。當一個函式裡塞入幾百個互相 <code>goto</code> 的標籤時，編譯器的暫存器分配器（register allocator）會面臨嚴重的溢出（register spilling）。現代 LLVM/GCC 很難對這種錯綜複雜的控制流程圖（Control Flow Graph, CFG）進行激進的就地最佳化。</li>
+</ul>
+<p>這就是為什麼 Faster CPython 團隊（包括 Mark Shannon、Brandt Bucher、Ken Jin 等人）開始探索新的調度架構：<strong>Tail-Call Interpreter</strong>。</p>
+<h2 id="tail-call-interpreter-的運作機制">Tail-Call Interpreter 的運作機制</h2>
+<p>尾呼叫直譯器的核心概念非常純粹：<strong>將每一個 opcode 拆成一個獨立、專門的小函式，函式的最後一行直接尾呼叫（tail call）下一個 opcode 函式</strong>。</p>
+<p>在現代 C 語言中（仰賴 Clang 與 MSVC 提供的屬性）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#a6e22e">void</span> (<span style="color:#f92672">*</span>OpHandler)(State<span style="color:#f92672">*</span> state, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span><span style="color:#f92672">*</span> pc, <span style="color:#66d9ef">int64_t</span> acc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">op_add</span>(State<span style="color:#f92672">*</span> state, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span><span style="color:#f92672">*</span> pc, <span style="color:#66d9ef">int64_t</span> acc) {
+</span></span><span style="display:flex;"><span>    acc <span style="color:#f92672">+=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint8_t</span> next_op <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>pc;
+</span></span><span style="display:flex;"><span>    [[clang<span style="color:#f92672">::</span>musttail]] <span style="color:#66d9ef">return</span> state<span style="color:#f92672">-&gt;</span>table[next_op](state, pc, acc);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">op_sub</span>(State<span style="color:#f92672">*</span> state, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span><span style="color:#f92672">*</span> pc, <span style="color:#66d9ef">int64_t</span> acc) {
+</span></span><span style="display:flex;"><span>    acc <span style="color:#f92672">-=</span> <span style="color:#f92672">*</span>pc<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint8_t</span> next_op <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>pc;
+</span></span><span style="display:flex;"><span>    [[clang<span style="color:#f92672">::</span>musttail]] <span style="color:#66d9ef">return</span> state<span style="color:#f92672">-&gt;</span>table[next_op](state, pc, acc);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>這個結構看起來像是相互遞迴，直覺上會讓人擔心：「每執行一個指令就呼叫一個函式，呼叫堆疊（stack frame）不是幾千層就爆掉了嗎？」</p>
+<p>這正是關鍵所在：<strong><code>musttail</code> 屬性會強制編譯器保證進行尾呼叫消除</strong> (tail call elimination, TCE)。</p>
+<p>當函式在 return 時直接呼叫另一個函式，且本身不再需要保留任何本地變數時，編譯器不需要分配新的堆疊框架，也不需要發出 <code>call</code> 與 <code>ret</code> 指令。它會直接重複使用當前的堆疊框架，並將呼叫改寫成單純的跳躍指令：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-nasm" data-lang="nasm"><span style="display:flex;"><span><span style="color:#a6e22e">jmp</span>    rax                            <span style="color:#75715e">; 一條直接跳躍，堆疊深度永遠維持在 1！</span></span></span></code></pre></div>
+
+
+
+  
+    <img src="/posts/2026/10-09-tail-call-interpreter/tail-call-dispatch.svg" alt="tail-call-dispatch.svg" class="img-responsive post-image">
+  
+
+<h3 id="關鍵利器preserve_none-呼叫慣例">關鍵利器：preserve_none 呼叫慣例</h3>
+<p>許多人不知道的是，單純依靠 <code>musttail</code> 其實並不足以榨出直譯器的極致效能。在傳統 ABI 呼叫慣例（calling convention）下，跨函式呼叫依然必須維護被呼叫端保存暫存器（callee-saved registers）的序幕（prologue）與尾聲（epilogue）。</p>
+<p>CPython 真正的關鍵突破，是結合了源自 GHC 風格的專屬呼叫慣例：<code>__attribute__((preserve_none))</code>。</p>
+<h4 id="何謂-ghc-風格">何謂 GHC 風格？</h4>
+<p>這裡提到的 GHC，指的是純函數式程式語言 Haskell 最知名的旗艦編譯器——<strong>Glasgow Haskell Compiler</strong>。</p>
+<p>在純函數式語言的世界裡，語法層面完全沒有傳統的 <code>while</code> 或 <code>for</code> 迴圈。所有的重複運算、狀態移轉與控制流程，本質上都是透過高階函式與廣泛的尾遞迴呼叫來實現。這意味著 GHC 編譯出的二進位程式，每一秒鐘都在底層進行數以百萬計的尾呼叫與跳躍。</p>
+<p>如果 GHC 遵循標準 C 語言的呼叫慣例（例如 x86-64 上的 System V AMD64 ABI 或 Windows x64 ABI），編譯器就必須在每次呼叫時為呼叫端保留一整批 callee-saved 暫存器（如 <code>rbx</code>、<code>r12</code>–<code>r15</code>）。在無窮無盡的連續尾呼叫場景中，反覆把暫存器 <code>push</code> 到記憶體堆疊、跳躍後再 <code>pop</code> 還原，完全是在虛耗寶貴的 CPU 週期。</p>
+<p>為了解決這個瓶頸，GHC 很久以前就為其內部虛擬機設計了專屬的呼叫慣例：</p>
+<ul>
+<li><strong>零 callee-saved 暫存器</strong>：沒有任何暫存器需要為呼叫端保留，所有一般暫存器全數視為拋棄式的暫時暫存器（scratch registers）。</li>
+<li><strong>狀態長駐暫存器</strong>：核心狀態（如堆疊指標、當前指令指標、累加值）可以在暫存器之間自由直通傳遞，跳躍時不需要進出記憶體堆疊。</li>
+</ul>
+<p>這項設計在編譯器領域極為著名，甚至十多年前 LLVM 就特別為 GHC 內建了專屬呼叫慣例代碼 <code>ghccc</code>（GHC Calling Convention）。</p>
+<h4 id="將-ghc-哲學帶入-cpython">將 GHC 哲學帶入 CPython</h4>
+<p>傳統上，這種高度客製化的呼叫慣例只存在於 GHC 等少數編譯器內部。但在位元組碼直譯器的場景中，問題本質其實與 GHC 如出一轍：每一個 opcode handler 執行完畢後，只會直接尾呼叫下一個 opcode handler，根本沒有返回原本呼叫端的需求。</p>
+<p>現代 Clang 所引入的 <code>__attribute__((preserve_none))</code>，本質上就是將 GHC 這種「零保留負擔」的設計哲學通用化引進 C 語言體系。</p>
+<p>當我們為 opcode handler 加上這個屬性時，等於明確告訴編譯器「被呼叫的函式不需要為呼叫端保留任何一般暫存器」。這讓虛擬機能將當前評估堆疊指標（stack pointer）、位元組碼指標（program counter）與累加狀態長駐在 CPU 暫存器中，跳躍時不需要反覆在記憶體堆疊上存取與還原，大幅釋放了暫存器分配器（register allocator）的自由度，才真正實現了與 <code>musttail</code> 完美搭配的極致調度效能。</p>
+<h3 id="跨平台編譯器支援clang-與-msvc-18">跨平台編譯器支援：Clang 與 MSVC 18</h3>
+<p>在編譯器支援層面上：</p>
+<ul>
+<li><code>[[clang::musttail]]</code> 屬性早在 Clang 13（2021 年）就已支援；而 CPython 的尾呼叫直譯器之所以在規格上指定 Clang 19+，是因為結合了 <code>preserve_none</code> 慣例與針對 tail call 的深度優化。</li>
+<li>在 Windows 平台，微軟在 MSVC 18（Visual Studio 2026）中正式引入了 <code>[[msvc::musttail]]</code>（見 CPython 相關 issue gh-143068 與 gh-139922）。這讓 Python 官方 Windows 64-bit 發行版在 Python 3.15 終於能原生啟用尾呼叫直譯器，徹底告別長年落後的 switch 迴圈！</li>
+</ul>
+<h3 id="nelson-elhage-的效能排錯與真實數據">Nelson Elhage 的效能排錯與真實數據</h3>
+<p>在 Python 3.14 開發初期，社群首次測試 <code>--with-tail-call-interp</code> 時，曾傳出「效能暴增 10% 到 15%」的驚人數據。</p>
+<p>知名系統工程師 Nelson Elhage 在其部落格文章中深入分析反組譯與編譯器行為後，揭開了有趣的真相：這項驚人的數據，很大一部分是因為當時主流的 LLVM 19 出現了針對 computed goto 的效能衰退（regression），導致作為對照組的基準直譯器異常變慢，才反襯出尾呼叫直譯器的巨大優勢。</p>
+<p>當基準線修正回正常的編譯器設定後：</p>
+<ul>
+<li>在原本就有 computed goto 的 Linux/macOS 環境中，尾呼叫帶來的純效能增益大約是穩健的 <strong>1% 到 5%</strong>。</li>
+<li>但在原本只能跑 switch 迴圈的 Windows x86-64 平台，官方 What&rsquo;s New 數據顯示，在 Visual Studio 18.1.1 編譯下獲得了高達 <strong>15% 到 20%</strong> 的幾何平均吞吐量躍升（pyperformance geomean）！</li>
+</ul>
+<h2 id="用-rust-親手實作兩套直譯器">用 Rust 親手實作兩套直譯器</h2>
+<p>理論說得再漂亮，不如親手實作並觀察底層指令。我們用現代系統語言 Rust 來實作一個精簡的虛擬機，並同時打造 <strong>Switch Dispatch</strong> 與 <strong>Tail-Call Dispatch</strong> 兩個版本進行 A/B 評測。</p>
+<h3 id="指令集定義">指令集定義</h3>
+<p>我們定義一組包含算術、位元運算與控制流的典型指令：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[repr(C)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[derive(Copy, Clone, Debug)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Instruction</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> op: <span style="color:#66d9ef">u32</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> arg: <span style="color:#66d9ef">i32</span>,
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_ADD</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_SUB</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_MUL</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">2</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_XOR</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">3</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_INC</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_DEC</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">5</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">OP_HALT</span>: <span style="color:#66d9ef">u32</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>;</span></span></code></pre></div>
+
+<h3 id="對照組經典-switch-直譯器">對照組：經典 Switch 直譯器</h3>
+<p>首先是大家最熟悉的中央迴圈版本：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run_switch</span>(code: <span style="color:#66d9ef">&amp;</span>[Instruction], <span style="color:#66d9ef">mut</span> acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> pc <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">loop</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> instr <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> { <span style="color:#f92672">*</span>code.get_unchecked(pc) };
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">match</span> instr.op {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_ADD</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">=</span> acc.wrapping_add(instr.arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_SUB</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">=</span> acc.wrapping_sub(instr.arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_MUL</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">=</span> acc.wrapping_mul(instr.arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_XOR</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">^=</span> instr.arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_INC</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">=</span> acc.wrapping_add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_DEC</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                acc <span style="color:#f92672">=</span> acc.wrapping_sub(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">OP_HALT</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            _ <span style="color:#f92672">=&gt;</span> <span style="color:#a6e22e">unreachable!</span>(),
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        pc <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    acc
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="實驗組tail-call-直譯器">實驗組：Tail-Call 直譯器</h3>
+<p>在 Tail-Call 版本中，我們定義一個函式指標簽名 <code>OpHandler</code>。每個指令都是一個獨立函式，參數透過暫存器傳遞，最後一行抓出下一個指令並直接尾呼叫：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">VmContext</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">pub</span> table: [OpHandler; <span style="color:#ae81ff">16</span>],
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">OpHandler</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_add</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc.wrapping_add((<span style="color:#f92672">*</span>pc).arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_sub</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc.wrapping_sub((<span style="color:#f92672">*</span>pc).arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_mul</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc.wrapping_mul((<span style="color:#f92672">*</span>pc).arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_xor</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc <span style="color:#f92672">^</span> ((<span style="color:#f92672">*</span>pc).arg <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">i64</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_inc</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc.wrapping_add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_dec</span>(ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_acc <span style="color:#f92672">=</span> acc.wrapping_sub(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_pc <span style="color:#f92672">=</span> pc.add(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>next_pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> next_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(next_op);
+</span></span><span style="display:flex;"><span>    next_fn(ctx, next_pc, next_acc)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_halt</span>(_ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, _pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    acc
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">TABLE</span>: [OpHandler; <span style="color:#ae81ff">16</span>] <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> t: [OpHandler; <span style="color:#ae81ff">16</span>] <span style="color:#f92672">=</span> [op_unreachable; <span style="color:#ae81ff">16</span>];
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_ADD</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_add;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_SUB</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_sub;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_MUL</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_mul;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_XOR</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_xor;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_INC</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_inc;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_DEC</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_dec;
+</span></span><span style="display:flex;"><span>    t[<span style="color:#66d9ef">OP_HALT</span> <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>] <span style="color:#f92672">=</span> op_halt;
+</span></span><span style="display:flex;"><span>    t
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">unsafe</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">op_unreachable</span>(_ctx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">VmContext</span>, _pc: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Instruction, _acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">unreachable!</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[inline(never)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">run_tail_call</span>(code: <span style="color:#66d9ef">&amp;</span>[Instruction], acc: <span style="color:#66d9ef">i64</span>) -&gt; <span style="color:#66d9ef">i64</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> ctx <span style="color:#f92672">=</span> VmContext { table: <span style="color:#a6e22e">TABLE</span> };
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> pc <span style="color:#f92672">=</span> code.as_ptr();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">unsafe</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> first_op <span style="color:#f92672">=</span> (<span style="color:#f92672">*</span>pc).op <span style="color:#66d9ef">as</span> <span style="color:#66d9ef">usize</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">let</span> first_fn <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>ctx.table.get_unchecked(first_op);
+</span></span><span style="display:flex;"><span>        first_fn(<span style="color:#f92672">&amp;</span>ctx, pc, acc)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;Note</span>
+  </div>
+  <div class="markdown-alert-content"><p>在 Rust 穩定的編譯器版本中，當函式末端的型別簽名與呼叫慣例完全契合時，LLVM 後端會自動將其最佳化為單一跳躍指令。在 Rust 的語言演進中，亦有專屬的 <code>become</code> 關鍵字提案（RFC 3407 / <code>#![feature(explicit_tail_calls)]</code>，追蹤於 issue #112788）正在推進，旨在讓開發者能在語言層級強制要求編譯器進行保證消除。</p></div>
+</div><h2 id="組合語言對決為什麼尾呼叫能勝出">組合語言對決：為什麼尾呼叫能勝出？</h2>
+<p>我們使用 <code>objdump -d -M intel</code> 將編譯出來的機器碼反組譯，答案立刻浮現眼前。</p>
+<h3 id="對照組run_switch-的反組譯機器碼">對照組：<code>run_switch</code> 的反組譯機器碼</h3>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-nasm" data-lang="nasm"><span style="display:flex;"><span><span style="color:#75715e">; 中央 switch 迴圈的頭部 (位址 16fd0)</span>
+</span></span><span style="display:flex;"><span>.loop_head:
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mov</span>    r8d, <span style="color:#66d9ef">DWORD</span> PTR [rdi<span style="color:#f92672">+</span>rax<span style="color:#f92672">*</span><span style="color:#ae81ff">8</span>]     <span style="color:#75715e">; [16fd0] 讀取 code[pc].op</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">cmp</span>    r8, <span style="color:#ae81ff">0x6</span>                        <span style="color:#75715e">; [16fd4] 邊界檢查</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">ja</span>     .out_of_bounds                 <span style="color:#75715e">; [16fd8] 超出範圍跳出 (1701e)</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">movsxd</span> rsi, <span style="color:#66d9ef">DWORD</span> PTR [rdi<span style="color:#f92672">+</span>rax<span style="color:#f92672">*</span><span style="color:#ae81ff">8</span><span style="color:#f92672">+</span><span style="color:#ae81ff">0x4</span>] <span style="color:#75715e">; [16fda] 讀取 code[pc].arg</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">movsxd</span> r8, <span style="color:#66d9ef">DWORD</span> PTR [rcx<span style="color:#f92672">+</span>r8<span style="color:#f92672">*</span><span style="color:#ae81ff">4</span>]       <span style="color:#75715e">; [16fdf] 查詢跳躍表</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">add</span>    r8, rcx                        <span style="color:#75715e">; [16fe3]</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">jmp</span>    r8                             <span style="color:#75715e">; [16fe6] 【跳躍 1】間接跳躍到 handler</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">; OP_ADD 處理區塊 (位址 16fe9)</span>
+</span></span><span style="display:flex;"><span>.op_add:
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">add</span>    rdx, rsi                       <span style="color:#75715e">; [16fe9] acc += arg</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">inc</span>    rax                            <span style="color:#75715e">; [16fec] pc++</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">jmp</span>    .loop_head                     <span style="color:#75715e">; [16fef] 【跳躍 2】無條件跳回迴圈頭部 (16fd0)！</span></span></span></code></pre></div>
+
+<p>看見問題了嗎？
+每執行一個指令，CPU 必須：</p>
+<ol>
+<li>執行運算並增加 <code>pc</code>。</li>
+<li>執行一次無條件跳躍 <code>jmp .loop_head</code>（位址 <code>16fd0</code>）回到迴圈頭部。</li>
+<li>執行 <code>cmp r8, 0x6</code> 與條件分支 <code>ja</code> 進行保護性檢查。</li>
+<li>查表後執行間接跳躍 <code>jmp r8</code> 進入下一個 opcode。</li>
+</ol>
+<h3 id="實驗組op_addtail-call的反組譯機器碼">實驗組：<code>op_add</code>（Tail Call）的反組譯機器碼</h3>
+<p>再來看看 Tail Call 版本的 <code>op_add</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-nasm" data-lang="nasm"><span style="display:flex;"><span>op_add:
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">movsxd</span> rax, <span style="color:#66d9ef">DWORD</span> PTR [rsi<span style="color:#f92672">+</span><span style="color:#ae81ff">0x4</span>]       <span style="color:#75715e">; [18320] 讀取當前 arg</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">add</span>    rdx, rax                       <span style="color:#75715e">; [18324] acc += arg</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">mov</span>    eax, <span style="color:#66d9ef">DWORD</span> PTR [rsi<span style="color:#f92672">+</span><span style="color:#ae81ff">0x8</span>]       <span style="color:#75715e">; [18327] 預先讀取下一個指令的 op</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">add</span>    rsi, <span style="color:#ae81ff">0x8</span>                       <span style="color:#75715e">; [1832a] pc++</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">jmp</span>    <span style="color:#66d9ef">QWORD</span> PTR [rdi<span style="color:#f92672">+</span>rax<span style="color:#f92672">*</span><span style="color:#ae81ff">8</span>]          <span style="color:#75715e">; [1832e] 【唯一的跳躍】直接跳進下一個 handler！</span></span></span></code></pre></div>
+
+<p>整整<strong>只有 5 條組合語言指令</strong>！</p>
+<ul>
+<li><strong>沒有第二個跳躍指令</strong>：執行完運算後，直接一條 <code>jmp</code> 跳到下一個 handler 的位址。</li>
+<li><strong>免除熱路徑檢查</strong>：不需要跳回迴圈頂端做 <code>cmp/ja</code>。</li>
+<li><strong>零堆疊框架</strong>：沒有 <code>call</code>、沒有 <code>ret</code>、沒有 <code>push rbp</code>。</li>
+<li><strong>分散的分支預測目標</strong>：<code>op_add</code> 的間接跳躍位址固定在 <code>1832e</code>，<code>op_sub</code> 則在 <code>1834e</code>，兩者各自建立獨立的分支歷史快取。</li>
+</ul>
+<h2 id="ab-實測-benchmark-數據">A/B 實測 Benchmark 數據</h2>
+<p>我們寫了一個基準測試程式，隨機生成包含加法、減法、乘法、XOR、遞增、遞減等混合分佈的 <strong>2,000 萬條（20,000,000）bytecode 指令序列</strong>。</p>
+<p>為了避免編譯器 dead code elimination，我們使用 <code>std::hint::black_box</code> 封裝輸入，並嚴格斷言兩種直譯器跑完 2,000 萬條指令後產生的數值完全一致：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">// 驗證運算結果正確性
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">assert_eq!</span>(res_switch, res_tail, <span style="color:#e6db74">&#34;Results must match!&#34;</span>);</span></span></code></pre></div>
+
+<h3 id="實測數據對比">實測數據對比</h3>
+<p>在 x86-64 機器（Linux, Release Mode, <code>opt-level = 3</code>）上執行 5 次運算取平均值：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">指令調度機制</th>
+					<th style="text-align: left">2,000 萬條指令平均執行時間</th>
+					<th style="text-align: left">指令吞吐量（Ops / sec）</th>
+					<th style="text-align: left">效能表現</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><strong>Switch Dispatch</strong></td>
+					<td style="text-align: left"><strong>91.09 ms</strong></td>
+					<td style="text-align: left">219.6 M ops/sec</td>
+					<td style="text-align: left">基準對照組</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong>Tail-Call Dispatch</strong></td>
+					<td style="text-align: left"><strong>74.86 ms</strong></td>
+					<td style="text-align: left">267.1 M ops/sec</td>
+					<td style="text-align: left">快 17.81%（1.22x 吞吐量）</td>
+			</tr>
+	</tbody>
+</table>
+<p>各輪次運算時間十分穩定：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>[Switch]   Run 1: 91.25 ms | Run 2: 91.03 ms | Run 3: 90.93 ms | Run 4: 90.87 ms | Run 5: 91.38 ms
+</span></span><span style="display:flex;"><span>[TailCall] Run 1: 74.85 ms | Run 2: 74.82 ms | Run 3: 74.78 ms | Run 4: 74.89 ms | Run 5: 74.98 ms</span></span></code></pre></div>
+
+<p>在完全相同的指令流與相同的硬體環境下，<strong>Tail-Call Dispatch 跑出了整整 17.81% 的效能提升</strong>！</p>
+<p>這 17.8% 的差距正來自我們稍早在反組譯分析中所看見的三大優勢：</p>
+<ol>
+<li><strong>指令跳躍次數減半</strong>：每條 opcode 省下了跳回迴圈頂端的一道跳躍指令。</li>
+<li><strong>省除熱路徑檢查</strong>：省下了每輪迴圈的邊界比對。</li>
+<li><strong>更友善的分支預測</strong>：處理器 BTB 分散記錄跳躍歷史，管線空泡大幅減少。</li>
+</ol>
+<p>這個實測幅度，也正好落在 CPython 官方於 What&rsquo;s New 中公布的 Windows（Visual Studio 18.1.1）15% 到 20% 增益區間。</p>
+<div class="markdown-alert markdown-alert-tip">
+  <div class="markdown-alert-title"><i class="fa fa-lightbulb-o"></i><span>&nbsp;Tip</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>線上即時體驗與組合語言對照</strong>：本實驗的完整可重現程式碼已發布至 <a href="https://godbolt.org/z/93Wxoq3fT">Compiler Explorer (Godbolt)</a>，包含兩種直譯器的完整實作與 2,000 萬次指令隨機測試。讀者可直接在瀏覽器中對照編譯後的 x86-64 組合語言，並點擊 Run 即時執行驗證。</p></div>
+</div><h2 id="結語與技術省思">結語與技術省思</h2>
+<p>回過頭來看 Python 3.15 的變更：</p>
+<ol>
+<li><strong>Python 依然沒有尾遞迴最佳化</strong>：使用者寫的遞迴函式行為完全沒變，依舊保留最完整的 traceback 偵錯堆疊（沒有語言層級的 TCO）。</li>
+<li><strong>Tail-Call 是直譯器核心的工程升級</strong>：它藉由把 opcode 拆分為獨立函式、依賴編譯器的尾呼叫消除與 <code>preserve_none</code> 慣例，在兼顧程式碼模組化與編譯器暫存器優化的同時，在硬體層級模擬出高效的分散式間接跳躍。</li>
+<li><strong>Windows 使用者是最大受益者</strong>：長期受限於 MSVC 無法支援 computed goto 的 Windows 版 Python，透過 MSVC 18 的 <code>[[msvc::musttail]]</code> 終於補齊了近二十年的跳躍效能缺口。</li>
+</ol>
+<p>在軟體工程的世界裡，許多看似屬於高階語言語義的名詞，換到了編譯器與硬體管線的視角，往往展現出截然不同、卻又無比精妙的底層面貌。下次看見直譯器更新日誌中的「Tail-Call」，我們就能會心一笑：它不是讓你在程式碼裡寫無窮遞迴，而是悄悄替 CPU 的分支預測器卸下了一副沉重的枷鎖。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>
