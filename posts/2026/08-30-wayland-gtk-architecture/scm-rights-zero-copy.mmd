@@ -1,0 +1,19 @@
+flowchart TD
+    subgraph G_ClientProcess["GTK Client 行程"]
+        MEM["GPU Framebuffer / DMA-BUF<br/>或 memfd_create 共享記憶體"]
+        FD["Client 端 FD (如 fd=7)"]
+        MEM --- FD
+    end
+
+    subgraph G_Kernel["Linux Kernel IPC"]
+        SCM["sendmsg(..., SCM_RIGHTS, fd=7)<br/>Kernel 在 Compositor FD 表建立副本"]
+    end
+
+    subgraph G_Compositor["Compositor 行程"]
+        SFD["Server 端 FD (如 fd=12)"]
+        SMEM["直接映射相同的實體 RAM<br/>或 GPU 顯存紋理"]
+        SFD --- SMEM
+    end
+
+    FD -->|sendmsg| SCM
+    SCM -->|recvmsg| SFD

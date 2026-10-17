@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph SingleWindow ["單一視窗：雙進程隔離即時基準測試"]
+        direction LR
+        subgraph LeftProc ["⚡ 左側進程 (:left_gpu / PID X)"]
+            direction TB
+            GPUCard["GPU 硬體繪製卡片<br/><b>100 / 500 / 1000 Nodes</b>"]
+            GPULayout["Layout Phase: <b>0 µs</b><br/>✓ 0 Passes / 秒（跳過 measureAndLayout）"]
+            GPUDraw["Draw Phase: <b>~280 µs</b><br/>✓ 鎖定 60~62 FPS 絲滑運作"]
+            GPUCard --> GPULayout --> GPUDraw
+        end
+
+        subgraph RightProc ["⚠️ 右側進程 (:right_cpu / PID Y)"]
+            direction TB
+            CPUCard["CPU 排版計算卡片<br/><b>100 / 500 / 1000 Nodes</b>"]
+            CPULayout["Layout Phase: <b>~14,700 µs</b><br/>⚠️ 44 Passes / 秒（每幀全樹重排重測）"]
+            CPUDraw["Draw Phase: <b>~6,580 µs</b><br/>⚠️ 總幀耗時 ~21 ms（幀率掉至 44 FPS）"]
+            CPUCard --> CPULayout --> CPUDraw
+        end
+
+        LeftProc ~~~ RightProc
+    end
+
+    style LeftProc fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style RightProc fill:#fff1f2,stroke:#f43f5e,stroke-width:2px,color:#881337
+    style GPUCard fill:#ffffff,stroke:#34d399,stroke-width:1.5px,color:#065f46
+    style CPUCard fill:#ffffff,stroke:#fb7185,stroke-width:1.5px,color:#881337
+    style GPULayout fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPULayout fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239
+    style GPUDraw fill:#d1fae5,stroke:#059669,stroke-width:1px,color:#064e3b
+    style CPUDraw fill:#ffe4e6,stroke:#e11d48,stroke-width:1px,color:#9f1239

@@ -1,0 +1,23 @@
+flowchart TD
+    subgraph CoroutineFrame["📦 Coroutine Frame (堆積記憶體佈局)"]
+        direction TB
+        Header["🏷️ <b>Function Pointers &amp; State</b><br/>Resume Fn · Destroy Fn · Suspend Index"]
+        PromiseObj["🎯 <b>promise_type (TaskPromise&lt;T&gt;)</b><br/>continuation_ · exception_ · result_"]
+        ArgsLocals["💾 <b>Parameters &amp; Local Variables</b><br/>req, buffer, total_read, sock..."]
+    end
+
+    Handle["🔗 <b>std::coroutine_handle&lt;promise_type&gt;</b><br/>(非擁有指標，指向 Frame 起始位址)"]
+    TaskObj["🛡️ <b>Task&lt;T&gt; (RAII 封裝)</b><br/>持有 handle_ · 解構時 handle_.destroy()"]
+
+    Handle -->|指向| Header
+    TaskObj -->|包裝| Handle
+
+    classDef frameNode fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef handleNode fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef taskNode fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+
+    class Header,PromiseObj,ArgsLocals frameNode;
+    class Handle handleNode;
+    class TaskObj taskNode;
+
+    style CoroutineFrame fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:4 4,color:#0f172a;

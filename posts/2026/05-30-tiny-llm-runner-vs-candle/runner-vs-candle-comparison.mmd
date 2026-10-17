@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph TLR[tiny-llm-runner]
+        T1[mmap bytes]
+        T2[TensorView<br/>32 bytes]
+        T3[matvec/rmsnorm/<br/>RoPE 純函式]
+        T4[Runner.forward<br/>寫死 Llama]
+        T5[只 CPU + rayon]
+        T1 --> T2 --> T3 --> T4 --> T5
+    end
+
+    subgraph C[candle]
+        C1[mmap bytes]
+        C2[QTensor / Tensor<br/>多 backend]
+        C3[Module trait<br/>Linear/RmsNorm/...]
+        C4[VarBuilder 載入<br/>架構組合]
+        C5[CPU + CUDA + Metal<br/>autograd]
+        C1 --> C2 --> C3 --> C4 --> C5
+    end
