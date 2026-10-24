@@ -1,0 +1,18 @@
+flowchart TD
+    Source["📄 原始協程原始碼<br/><code>HttpServer::handle_connection(int client_fd)</code>"]
+    
+    subgraph Compiler["⚙️ GCC / Clang 編譯期拆解 (CoroSplit Pass)"]
+        direction TB
+        Ramp["🚀 <b>Ramp 函數 (銜接入口)</b><br/><code>HttpServer::handle_connection(int)</code><br/>• 呼叫 operator new 分配 Coroutine Frame<br/>• 複製引數 client_fd 至 Frame<br/>• 構造 promise 物件並呼叫 get_return_object()<br/>• 執行 initial_suspend() 並回傳 Task&lt;void&gt;"]
+        Actor["🎭 <b>Actor 函數 (實際狀態機本體)</b><br/><code>handle_connection(Frame*) [clone .actor]</code><br/>• 包含 switch(frame->__suspend_index)<br/>• 存放所有跨暫停點的局部變數 (如 8KB buffer)<br/>• 每次 handle.resume() 時由此處跳轉至中斷點續行"]
+        Destroy["🗑️ <b>Destroy 函數 (解構清理)</b><br/><code>handle_connection(Frame*) [clone .destroy]</code><br/>• 當 Task 解構呼叫 handle.destroy() 時觸發<br/>• 解構 Frame 內局部變數並呼叫 operator delete"]
+    end
+
+    Source --> Compiler
+    Ramp -.->|建立並指向| Actor
+    Ramp -.->|綁定銷毀邏輯| Destroy
+
+    classDef srcNode fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef compNode fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a;
+    class Source srcNode;
+    class Ramp,Actor,Destroy compNode;

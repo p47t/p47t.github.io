@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant U as 使用者
+    participant TG as Telegram
+    participant A as Agent
+    participant LLM as LLM
+
+    U->>TG: 送出訊息
+    TG->>A: ChannelMessage
+    A->>TG: send_draft("...") → message_id
+    A->>+LLM: 串流請求
+    loop 每隔 N ms
+        LLM-->>A: delta token
+        A->>TG: update_draft(message_id, 累積文字)
+        Note over TG,U: 使用者看到訊息逐漸變長
+    end
+    LLM-->>-A: 生成完畢
+    A->>TG: finalize_draft(message_id, 最終格式)

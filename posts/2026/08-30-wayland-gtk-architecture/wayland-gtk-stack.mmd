@@ -1,0 +1,35 @@
+flowchart TD
+    subgraph G_Client["GTK 應用程式 (Client Process)"]
+        GTK["GTK 4 / GTK 3<br/>(Widgets, Layout, State)"]
+        GSK["GSK / Cairo<br/>(Scene Graph & 2D/3D Rendering)"]
+        GDK["GDK Wayland Backend<br/>(gdk/wayland)"]
+        EGL["EGL / Mesa (GPU 加速)<br/>wl_shm (軟體繪製)"]
+        LIBWAYLAND["libwayland-client<br/>(IPC Protocol)"]
+
+        GTK --> GSK
+        GSK --> GDK
+        GDK --> EGL
+        GDK --> LIBWAYLAND
+    end
+
+    subgraph G_IPC["Wayland Protocol (UNIX Domain Socket)"]
+        SOCKET["$XDG_RUNTIME_DIR/wayland-0"]
+    end
+
+    subgraph G_Server["Wayland Compositor (如 Mutter, KWin)"]
+        COMP["Compositor Core<br/>(Windowing & Shell Management)"]
+        RENDERER["Compositor Renderer<br/>(OpenGL / Vulkan)"]
+        LIBINPUT["libinput<br/>(Input Event Handling)"]
+    end
+
+    subgraph G_Kernel["Linux Kernel"]
+        DRM["DRM / KMS<br/>(Display Output)"]
+        EVD["evdev<br/>(Keyboard, Mouse, Touch)"]
+    end
+
+    LIBWAYLAND <-->|傳遞 Buffer Handle 與狀態請求| SOCKET
+    SOCKET <--> COMP
+    EVD --> LIBINPUT
+    LIBINPUT --> COMP
+    COMP --> RENDERER
+    RENDERER --> DRM

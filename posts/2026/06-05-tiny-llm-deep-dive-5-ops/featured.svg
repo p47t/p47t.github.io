@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff9e64"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2e42"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="50" y="50" width="140" height="4" fill="url(#accent)" rx="2"/>
+
+  <text x="60" y="92" font-family="monospace" font-size="14" fill="#9ece6a">tiny-llm-runner · deep dive</text>
+  <text x="60" y="138" font-family="Arvo, serif" font-size="42" fill="#c0caf5" font-weight="bold">(5) ops.rs</text>
+  <text x="60" y="170" font-family="Arial, sans-serif" font-size="20" fill="rgba(192,202,245,0.65)">six Transformer primitives — the LEGO bricks</text>
+
+  <!-- 6 op tiles -->
+  <g transform="translate(70, 220)">
+    <!-- rmsnorm -->
+    <g transform="translate(0, 0)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#7dcfff" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#7dcfff">rmsnorm</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">out = w · x / √(mean(x²) + ε)</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(192,202,245,0.6)">f64 accumulator (ggml-aligned)</text>
+    </g>
+    <!-- matvec -->
+    <g transform="translate(360, 0)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#9ece6a" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#9ece6a">matvec</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">out[i] = dot(W.row(i), x)</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(158,206,106,0.7)">par_iter_mut → rayon parallel</text>
+    </g>
+    <!-- softmax -->
+    <g transform="translate(720, 0)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#bb9af7" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#bb9af7">softmax</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">e^(x - max) / Σ e^(x - max)</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(187,154,247,0.7)">max-shift to prevent overflow</text>
+    </g>
+    <!-- RoPE -->
+    <g transform="translate(0, 140)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#ff9e64" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#ff9e64">apply_rope</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">(v0, v1) → rotate(θ = pos · freq)</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(255,158,100,0.7)">Llama vs Neox pairing — gotcha!</text>
+    </g>
+    <!-- silu -->
+    <g transform="translate(360, 140)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#e0af68" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#e0af68">silu</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">x · σ(x) = x / (1 + e^-x)</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(224,175,104,0.7)">SwiGLU activation (Llama FFN)</text>
+    </g>
+    <!-- add_inplace -->
+    <g transform="translate(720, 140)">
+      <rect width="340" height="120" rx="10" fill="url(#card)" stroke="#f7768e" stroke-width="2"/>
+      <text x="20" y="32" font-family="monospace" font-size="16" fill="#f7768e">add_inplace</text>
+      <text x="20" y="60" font-family="monospace" font-size="13" fill="#c0caf5">a[i] += b[i]</text>
+      <text x="20" y="98" font-family="monospace" font-size="11" fill="rgba(247,118,142,0.7)">residual connection (x = x + …)</text>
+    </g>
+  </g>
+
+  <!-- composition note -->
+  <g transform="translate(70, 510)">
+    <rect width="1060" height="80" rx="10" fill="rgba(125,207,255,0.06)" stroke="#7dcfff" stroke-width="1" stroke-dasharray="6,4"/>
+    <text x="20" y="35" font-family="monospace" font-size="14" fill="#7dcfff">// every Transformer op decomposes into these six primitives</text>
+    <text x="20" y="62" font-family="monospace" font-size="13" fill="rgba(192,202,245,0.85)">x = add(x, matvec(wo, attn(rope(matvec(wq, rmsnorm(x))), rope(K), V)))</text>
+  </g>
+
+  <!-- Tech tags -->
+  <g transform="translate(600, 635)" font-family="monospace" font-size="14">
+    <g transform="translate(-180, 0)">
+      <rect x="-50" y="-15" width="100" height="30" rx="6" fill="rgba(255,158,100,0.18)" stroke="#ff9e64" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#ff9e64" text-anchor="middle">RoPE</text>
+    </g>
+    <g transform="translate(-60, 0)">
+      <rect x="-60" y="-15" width="120" height="30" rx="6" fill="rgba(125,207,255,0.18)" stroke="#7dcfff" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#7dcfff" text-anchor="middle">RMSNorm</text>
+    </g>
+    <g transform="translate(70, 0)">
+      <rect x="-50" y="-15" width="100" height="30" rx="6" fill="rgba(158,206,106,0.18)" stroke="#9ece6a" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#9ece6a" text-anchor="middle">rayon</text>
+    </g>
+    <g transform="translate(180, 0)">
+      <rect x="-50" y="-15" width="100" height="30" rx="6" fill="rgba(187,154,247,0.18)" stroke="#bb9af7" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#bb9af7" text-anchor="middle">SwiGLU</text>
+    </g>
+  </g>
+
+  <text x="1160" y="650" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.5)" text-anchor="end">blog.simplypatrick.com</text>
+</svg>
