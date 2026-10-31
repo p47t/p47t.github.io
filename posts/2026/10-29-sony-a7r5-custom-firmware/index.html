@@ -1,0 +1,891 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>Sony A7R V 第三方韌體逆向與本地編譯實戰 - 剖析 BIONZ XR 雙處理器架構、FL2/FL3 風格外觀移植、Unicorn 虛擬 CPU 驗證與 Android Fastboot 信任鏈</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/"/>
+  <meta property="og:title" content="Sony A7R V 第三方韌體逆向與本地編譯實戰 - 剖析 BIONZ XR 雙處理器架構、FL2/FL3 風格外觀移植、Unicorn 虛擬 CPU 驗證與 Android Fastboot 信任鏈"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-10-29 00:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="embedded"/>
+  
+  <meta property="og:article:tag" content="linux"/>
+  
+  <meta property="og:article:tag" content="c&#43;&#43;"/>
+  
+  <meta property="og:article:tag" content="emulator"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">260</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/10-17-ioskeley-mono-custom-build/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            從原始碼編譯與客製化 Ioskeley Mono
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/">
+            相機創意外觀與硬體 ISP 色彩管線運作機制
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">Sony A7R V 第三方韌體逆向與本地編譯實戰</h1>
+      
+      <div class="post-subtitle">剖析 BIONZ XR 雙處理器架構、FL2/FL3 風格外觀移植、Unicorn 虛擬 CPU 驗證與 Android Fastboot 信任鏈</div>
+      
+      <div class="post-meta">
+        <span class="post-date">October 29, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/embedded"><span class="label label-primary">embedded</span></a>
+        
+        <a href="/tags/linux"><span class="label label-primary">linux</span></a>
+        
+        <a href="/tags/c&#43;&#43;"><span class="label label-primary">c&#43;&#43;</span></a>
+        
+        <a href="/tags/emulator"><span class="label label-primary">emulator</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/10-29-sony-a7r5-custom-firmware/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>Sony Alpha 7R V（<code>ILCE-7RM5</code>，機種代碼 <code>0x11030080</code>，內部代號 <code>R5</code>）憑藉 6,100 萬畫素的感光元件與獨立 AI 處理單元，在畫質細節與自動對焦表現上幾乎無可挑剔；但只要聊到機身直出（SOOC）的色彩選擇，許多 R5 用戶心裡多少都有個小遺憾：明明與隨後推出的 A7C II、ZV-E1、FX3 採用同世代的 BIONZ XR 影像處理器，Sony 卻在後續機型上新增了廣受好評的 <code>FL2</code> 與 <code>FL3</code> 兩種風格外觀（Creative Look），而身為高階機身的 R5 即使升級到官方 v4.00 韌體，依然停留在原本的 10 種預設外觀。</p>
+<p>更進一步來說，許多攝影師希望能將 Fujifilm 經典的軟片模擬（如 Classic Chrome、Classic Neg、Nostalgic Neg、Astia、Velvia、Acros、Reala Ace）直接寫入相機的硬體 ISP 管線，在電子觀景窗（EVF）取景與直出 JPEG / HEIF 時即時套用，而不必每次都進 Lightroom 從 RAW 檔慢慢調色。</p>
+<p>近期開源社群出現了針對 R5 v4.00 韌體的逆向工程專案（<code>sony-a7r5-custom-firmware</code> v4.34，韌體標頭版本號編碼為 BCD <code>0x34, 0x04</code>）。出於對嵌入式系統架構與相機底層運作的好奇，我花了一段時間將整套專案與 Sony 官方 v4.00 的 <code>BODYDATA.DAT</code>（<code>754,525,608 bytes</code>）徹底拆解開來，在 Windows 環境下搭配 LLVM Clang 23.1.4 與 <code>uv</code> 從頭走完解包、雙目標交叉編譯、Unicorn 虛擬 CPU 模擬測試與 RSA-2048 重簽章封裝。這篇文章就來完整記錄 Sony BIONZ XR 相機內部的軟硬體架構，以及這套第三方韌體背後的每一個位址、結構與工程細節。</p>
+<h2 id="這套自製韌體做了什麼">這套自製韌體做了什麼？</h2>
+<p>在進入記憶體位址與組語之前，先看看這套 R5 v4.34 第三方韌體在功能層面完成了哪些擴充：</p>
+<ol>
+<li><strong>開啟隱藏的 <code>FL2</code> 與 <code>FL3</code> 風格外觀</strong>：
+原廠 R5 內建 10 組風格外觀（<code>ST</code>、<code>PT</code>、<code>NT</code>、<code>VV</code>、<code>VV2</code>、<code>FL</code>、<code>IN</code>、<code>SH</code>、<code>BW</code>、<code>SE</code>）。這套韌體將新世代 BIONZ XR 機型（A7C II v2.00、ZV-E1 v2.00、FX3 v6.00）原生的 <code>FL2</code>（沉穩柔和的底片感）與 <code>FL3</code>（通透高光與清亮色調）完整移植回 R5，將機身內的 Creative Look 槽位從 10 組擴充為 12 組。</li>
+<li><strong>支援從 SD 卡動態匯入自訂濾鏡與 3D LUT</strong>：
+使用者只要在插槽 1 或插槽 2（<code>/mnt/sd0</code> 或 <code>/mnt/sd1</code>）根目錄放置一個 <code>29,552 bytes</code> 的 <code>CUSTOM_F.BIN</code> 或 <code>SONY_LUT.BIN</code>（採用 <code>BIN v4</code> 格式，4-byte 魔術字元為 <code>R5F4</code>，版本號 <code>4</code>），就能在選單中一鍵觸發匯入，直接覆寫全部 12 組 Creative Look 在 RAM 與硬體 ISP 中的底層色彩結構。專案隨附了經過實機 ISP 校準的 12 組 Fujifilm 軟片模擬組合：
+<ul>
+<li><code>PROVIA</code>（標準）、<code>VELVIA</code>（高飽和風景）、<code>ASTIA</code>（柔和人像）、<code>CC</code>（Classic Chrome 經典正片）</li>
+<li><code>PRO_NG</code>（PRO Neg.Hi）、<code>PRO_NS</code>（PRO Neg.Std）、<code>CL_NEG</code>（Classic Neg. 經典負片）、<code>NOSTAL</code>（Nostalgic Neg. 懷舊負片）</li>
+<li><code>ETERNA</code>（電影感）、<code>ET_BLC</code>（Eterna Bleach Bypass 跳漂）、<code>ACROS</code>（高質感黑白）、<code>REALA</code>（Reala Ace）</li>
+</ul>
+</li>
+<li><strong>完整的原生 UI、動態圖示與 Fn 選單整合</strong>：
+不同於早期單純替換常數表的硬改做法，v4.34 會在拍攝資訊畫面（HUD）與轉盤上顯示自訂的 <strong>6 字元簡稱</strong>，例如 <code>CL_NEG</code>、<code>NOSTAL</code>，並在 Creative Look 選單列表中顯示 <strong>32 字元完整名稱</strong>，同時支援動態解析選單圖示（修正了早期 v4.33 誤將部分槽位索引至說明文字資源的問題，確保 <code>ST</code> 顯示原生 <code>ST</code> 圖示且其餘槽位動態對應正確圖示）。此外，它將「匯入自訂濾鏡」直接註冊為可指派的 <code>Fn</code> 快捷選單項目（項目 ID <code>0x26e</code> / <code>0x1f8</code>）。</li>
+<li><strong>出廠備份範本與自動白平衡微調</strong>：
+一併修補了 <code>original.tar</code> 內全部 12 個地區的出廠設定備份範本（<code>0110_backup/SYSIPSX-DSLR/GL/CX89200_*.bin</code> 與 <code>CX89201_*.bin</code>）：將 Creative Look 啟用位元遮罩（bitmask）從 10-bit（<code>0x03ff</code>）擴充為 12-bit（<code>0x0fff</code>），在偏移量 <code>0x76c5d</code> 填入 <code>FL2</code> 與 <code>FL3</code> 的 43-byte 預設參數紀錄，並將自動白平衡（AWB）調整為 <code>White Priority = 97</code>（<code>0x61</code>）與 <code>Ambience Priority = -1</code>（<code>0xff</code>），改善 Sony 原廠在室內暖光下容易偏冷或偏綠的傾向。</li>
+</ol>
+<h2 id="bionz-xr-cxd90057-的雙處理器與雙作業系統架構">BIONZ XR (<code>CXD90057</code>) 的雙處理器與雙作業系統架構</h2>
+<p>要理解為什麼在相機裡「多加兩個濾鏡槽位」需要動到兩套截然不同的編譯器與修補管線，我們必須先看懂 Sony BIONZ XR（晶片代號 <code>CXD90057</code>）內部的異質雙處理器架構。</p>
+<p>檢視從韌體解出的 Device Tree Blob（<code>0800_appli/setting/cxd90057.dtb</code>）、Linux 核心映像（<code>0700_part_image/dev/nflasha3:/vmlinux.bin</code>）以及開源授權清單（<code>0650_prfile/PMBP/LICENSE/CP_TOPRS.txt</code>），可以清楚看見 Sony 的「雙腦分工（split-brain）」設計——將「使用者介面與檔案管理」以及「硬體 ISP 即時影像管線」嚴格切分在兩顆不同架構的處理器與兩套作業系統上：</p>
+
+
+  
+    <img src="/posts/2026/10-29-sony-a7r5-custom-firmware/bionz-xr-architecture.svg" alt="bionz-xr-architecture.svg" class="img-responsive post-image">
+  
+
+<h3 id="ap-應用處理器64-位元-scel-linux-與-973-mb-的-appfwso">AP 應用處理器：64 位元 SCEL Linux 與 97.3 MB 的 <code>appFw.so</code></h3>
+<p>第一顆處理器是應用處理器 <strong>AP</strong> (Application Processor)，在 Device Tree 中宣告為 <code>sony,cxd90057</code>，內部搭載四核心 64 位元 <strong>ARM Cortex-A35</strong> (<code>arm,cortex-a35</code>，ARMv8-A 架構) 叢集，並配備 <code>arm,gic-400</code> 中斷控制器、<code>arm,pl011</code> UART、<code>arm,pl022</code> SPI 與 <code>arm,pl330</code> DMA 控制器。</p>
+<p>從 <code>nflasha3</code> 分區內的 <code>/vmlinux.bin</code> 提取出的核心版本字串如下：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Linux version 4.9.337-scel (jp10239@dic-build-scm-u20-006)
+</span></span><span style="display:flex;"><span>(gcc version 6.4.0 (20201211 (Sony CE Linux 14.0.1.0)) )
+</span></span><span style="display:flex;"><span>#1 SMP PREEMPT Fri Oct 31 13:51:16 JST 2025</span></span></code></pre></div>
+
+<p>AP 運行的是簡稱 SCEL 的 <strong>Sony CE Linux 14.0.1.0</strong>。最令人印象深刻的是它的應用程式架構：在 <code>nflasha15</code>（一個大小為 <code>410,652,672 bytes</code>、約 391.6 MB 的 <code>ext2</code> 檔案系統分區）中，幾乎整台相機的 GUI 選單樹、轉盤與 <code>Fn</code> 事件派發、組態屬性儲存（對應 <code>nflasha2</code> / <code>nflasha6</code>）、記憶卡 I/O 以及與底層硬體的 IPC 通訊，全部被編譯進單一一個高達 <code>97,368,304 bytes</code>（97.3 MB）的 64 位元 ARM64 ELF 共享函式庫——<code>/lib/appFw.so</code>。</p>
+<h4 id="05-秒瞬間開機的秘密nflasha5-與-wbi2-休眠快照陷阱">0.5 秒瞬間開機的秘密：<code>nflasha5</code> 與 <code>WBI2</code> 休眠快照陷阱</h4>
+<p>拆解分區時，我們注意到一個非常關鍵的機制：如果讓一顆 Cortex-A35 從頭冷啟動 Linux 4.9 kernel、掛載 <code>nflasha15</code> 並動態連結載入 97.3 MB 的 <code>/lib/appFw.so</code>，開機時間至少需要好幾秒鐘，這對抓拍優先的專業相機來說是不可接受的。</p>
+<p>為了達成撥開電源開關後「0.5 秒內進入可拍攝狀態」，Sony 在 <code>nflasha5</code> 分區（<code>243,789,184 bytes</code>，約 232.5 MB）中存放了一份預先壓縮好的記憶體休眠快照，開頭 8 bytes 為魔術字元 <code>WBI2\x00\x00\x00\x00</code>（即 <strong>Warm Boot Image 2</strong>，十六進位 <code>57 42 49 32</code>）。平常開機時，bootloader 完全跳過正常的 Linux 初始化流程，直接將 <code>nflasha5</code> 的 LZO 壓縮快照解壓縮回 DRAM，瞬間恢復已經載入好 <code>appFw.so</code> 的執行緒狀態！</p>
+<p>這在韌體逆向工程中構成了一個極易踩中的陷阱：如果你只修改了 <code>nflasha15</code> 裡的 <code>/lib/appFw.so</code> 與 <code>nflasha8</code> 裡的 <code>cpapp-b.bin</code>，刷機重開後，相機依然會從 <code>nflasha5</code> 的 <strong>舊版 <code>WBI2</code> 休眠快照</strong> 醒來，導致 DRAM 裡跑的還是未修補的舊版 <code>appFw.so</code>，甚至因為與新版 CP 韌體狀態不一致而引發異常。</p>
+<p>解決方案卻優雅得令人會心一笑——只需要在建置管線中修改 <code>nflasha5</code> 開頭 <code>0x0</code> 偏移量的 <strong>1 個 byte</strong>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Offset 0x00000000:  57 42 49 32 (&#34;WBI2&#34;)  ➔  77 62 69 32 (&#34;wbi2&#34;)</span></span></code></pre></div>
+
+<p>把大寫 <code>W</code>（<code>0x57</code>）改為小寫 <code>w</code>（<code>0x77</code>）後，刷機完成後的 <strong>第一次開機</strong> 時，bootloader 檢查 <code>nflasha5</code> 發現 <code>WBI2</code> 魔術字元失效，便會自動放棄快速喚醒，改從 <code>nflasha3:/vmlinux.bin</code> 與 <code>nflasha15:/lib/appFw.so</code> 執行完整的冷開機（cold boot），並在開機完成後自動將包含新版修補程式的 DRAM 狀態重新寫入 <code>nflasha5</code>，產生全新的 <code>WBI2</code> 快照。從第二次開機起，相機就再次恢復 0.5 秒瞬間喚醒的速度。</p>
+<h3 id="cp-相機處理器32-位元-cortex-r5-與-toppersfmp-rtos">CP 相機處理器：32 位元 Cortex-R5 與 TOPPERS/FMP RTOS</h3>
+<p>第二顆處理器是相機處理器 <strong>CP</strong> (Camera Processor)，採用 32 位元 <strong>ARM Cortex-R5</strong> (ARMv7-R 架構)，上面運行的是由日本名古屋大學高田實驗室主導開發、符合 μITRON 規範的對稱多處理即時作業系統——<strong>TOPPERS/FMP</strong>。</p>
+<p>CP 的韌體存放於 <code>nflasha8</code>（一個 <code>24,531,968 bytes</code> 的 <code>FAT12</code> 分區）內的 <code>/CPAPP-B.BIN</code>，檔案大小為 <code>17,617,008 bytes</code>（約 16.8 MB）。它是一個無檔頭的純二進位映像（flat binary），在開機時被直接載入至 CP 記憶體空間的基底位址 <code>0x67800000</code>。</p>
+<p>CP 負責所有嚴格要求硬體即時性（hard real-time）的底層工作：控制 CMOS 感光元件讀出、驅動 BIONZ XR 硬體 ISP 管線、套用 gamma / tone 曲線與 <code>5×9×9</code> 3D HSV 色彩調整格，以及即時自動對焦（AF）、自動曝光（AE）與快門控制。</p>
+<h2 id="拆解-r5-v400-原廠-bodydatadat-與雙態-aes-加密層">拆解 R5 v4.00 原廠 <code>BODYDATA.DAT</code> 與雙態 AES 加密層</h2>
+<p>要從零建置自製韌體，第一步是從 Sony 官方釋出的 R5 v4.00 更新檔 <code>BODYDATA.DAT</code>（<code>754,525,608 bytes</code>，SHA-256 為 <code>51e1176a255a9a4b4782dfbcfa6c5f332b71173bdfe9ed2bcf4fca6bcbc6c2e2</code>）解出乾淨的原廠分區與二進位基底。</p>
+<h3 id="外層-ufu-容器格式">外層 <code>UFU</code> 容器格式</h3>
+<p><code>BODYDATA.DAT</code> 以 8-byte 魔術字元 <code>\x89UFU\r\n\x1a\n</code> 開頭（刻意仿照 PNG 檔頭的設計，可用於偵測 FTP / HTTP 文字模式傳輸造成的換行損毀），隨後是由 big-endian 的 <code>(uint32 size, char kind[4])</code> 組成的五個 chunk：</p>
+<ol>
+<li><strong><code>DATV</code> (4 bytes)</strong>：容器格式版本號（<code>0x00010000</code>）。</li>
+<li><strong><code>PROV</code> (4 bytes)</strong>：provisioning 旗標。</li>
+<li><strong><code>UDID</code> (20 bytes)</strong>：目標機種與更新識別碼。</li>
+<li><strong><code>FDAT</code> (<code>754,525,456 bytes</code>)</strong>：加密後的韌體本體，由 <strong>736,841 個 1,024-byte 加密區塊</strong>（共 <code>754,525,184 bytes</code>）加上尾端 <strong>272 bytes trailer</strong> (<code>16-byte</code> AES-CBC IV + <code>256-byte</code> RSA-2048 數位簽章) 組成。</li>
+<li><strong><code>DEND</code> (4 bytes)</strong>：big-endian <code>CRC32</code> 校驗碼，涵蓋從檔案偏移 <code>0</code> 一直到 <code>DEND</code> chunk header 之前的所有位元組。</li>
+</ol>
+<h3 id="fdat-的-1024-byte-區塊結構與雙態-aes-加密-cxd90057_k8"><code>FDAT</code> 的 1,024-Byte 區塊結構與雙態 AES 加密 (<code>CXD90057_k8</code>)</h3>
+<p><code>FDAT</code> 內部的明文串流總長度為 <code>751,577,088 bytes</code>。在打包加密時，Sony 將明文每 <strong>1,020 bytes</strong> 切為一塊，並在前面加上 4 bytes 的標頭，組成固定 <strong>1,024 bytes</strong> 的區塊：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> FdatBlock {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint16_t</span> sum16;       <span style="color:#75715e">// Little-endian: 後續 511 個 uint16_le words 的無號總和 (&amp; 0xFFFF)
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint16_t</span> sizeAndEnd;  <span style="color:#75715e">// 低 15 bits 為有效 payload 長度 (1..1020);
+</span></span></span><span style="display:flex;"><span>                          <span style="color:#75715e">// Bit 15 (0x8000) 在最後一個區塊 (#736,841) 設為 1，其餘為 0
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint8_t</span>  payload[<span style="color:#ae81ff">1020</span>]; <span style="color:#75715e">// 不足 1,020 bytes 處以 0xFF 填充
+</span></span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>接著對這 <code>736,841</code> 個區塊（<code>754,525,184 bytes</code>）進行兩階段加密：</p>
+<ul>
+<li><strong>前 512 bytes (Block 0 的前半部)</strong>：使用 Sony 外層通用金鑰（<code>constants.key_aes</code>）以 <strong>AES-128-ECB</strong> 模式加密。</li>
+<li><strong>剩餘所有位元組 (Offset <code>512 .. 754,525,184</code>)</strong>：使用 BIONZ XR 世代專屬金鑰（<code>constants.key_cxd90057_k8</code>）與存放在 <code>signature_offset - 16</code> 處的 16-byte IV，以 <strong>AES-CBC</strong> 模式加密。</li>
+</ul>
+<p>當我們解開全部 <code>736,841</code> 個區塊、驗證每個區塊的 <code>sum16</code> 並剝除 4-byte 標頭後，重組出的 <code>751,577,088 bytes</code> 明文串流（<code>original.fdat</code>）包含三個緊密相連的區段：</p>
+<ol>
+<li><strong>Bytes <code>0 .. 512</code> (<code>FdatHeader</code>)</strong>：記錄機種代號 <code>model = 0x11030080</code>、<code>region = 0</code>、版本號 <code>versionMajor = 4</code>、<code>versionMinor = 0x00</code>（自製韌體將偏移 <code>0x20..0x21</code> 改為 BCD <code>0x34, 0x04</code> 代表 <code>v4.34</code>）、<code>fs.offset = 512</code>、<code>fs.size = 1,253,376</code>、<code>firmwareOffset = 1,253,888</code>、<code>firmwareSize = 750,323,200</code>，以及位於偏移 <code>8..12</code>、涵蓋 bytes <code>12..512</code> 的標頭 <code>CRC32</code>。</li>
+<li><strong>Bytes <code>512 .. 1,253,888</code> (<code>updater.img</code>)</strong>：大小 <code>1,253,376 bytes</code> 的 SquashFS 4.0 映像檔，內含更新流程腳本 <code>/bin/startupdate.sh</code>、<code>/bin/endupdate.sh</code>、<code>/bodylib/libupdaterbody.so</code> 以及 CP 更新韌體 <code>/cp/udtrcp.bin</code>。</li>
+<li><strong>Bytes <code>1,253,888 .. 751,577,088</code> (<code>original.tar</code>)</strong>：大小 <code>750,323,200 bytes</code> 的 POSIX tar 封裝檔，內含各個 NAND 分區映像與校驗檔。</li>
+</ol>
+<p>我們從 <code>BODYDATA.DAT</code> 依序解出全部 9 個原廠輸入檔案，並與專案的 <code>firmware/r5/inputs.lock.json</code> 進行 SHA-256 比對，100% 吻合：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">輸入鍵值 (Input Key)</th>
+					<th style="text-align: left">檔案名稱</th>
+					<th style="text-align: left">大小 (Bytes)</th>
+					<th style="text-align: left">SHA-256 雜湊值</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><code>original_dat</code></td>
+					<td style="text-align: left"><code>original.DAT</code></td>
+					<td style="text-align: left"><code>754,525,608</code></td>
+					<td style="text-align: left"><code>51e1176a255a9a4b...bc6c2e2</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>original_fdat</code></td>
+					<td style="text-align: left"><code>original.fdat</code></td>
+					<td style="text-align: left"><code>751,577,088</code></td>
+					<td style="text-align: left"><code>b3af8557d6279d8b...cfcb0ff</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>original_tar</code></td>
+					<td style="text-align: left"><code>original.tar</code></td>
+					<td style="text-align: left"><code>750,323,200</code></td>
+					<td style="text-align: left"><code>8b03700edb87d293...6565813</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>updater</code></td>
+					<td style="text-align: left"><code>updater.img</code></td>
+					<td style="text-align: left"><code>1,253,376</code></td>
+					<td style="text-align: left"><code>c4b18a82eea52a50...dcce4a9</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>stock_nflasha5</code></td>
+					<td style="text-align: left"><code>nflasha5</code></td>
+					<td style="text-align: left"><code>243,789,184</code></td>
+					<td style="text-align: left"><code>15020d1afe7f1cf4...1363e8</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>stock_nflasha8</code></td>
+					<td style="text-align: left"><code>nflasha8</code></td>
+					<td style="text-align: left"><code>24,531,968</code></td>
+					<td style="text-align: left"><code>a625468fbbd6b0e0...1f8f46</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>stock_nflasha15</code></td>
+					<td style="text-align: left"><code>nflasha15</code></td>
+					<td style="text-align: left"><code>410,652,672</code></td>
+					<td style="text-align: left"><code>197fc934db37ed9b...638fa5</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>stock_ap</code></td>
+					<td style="text-align: left"><code>appFw.so</code></td>
+					<td style="text-align: left"><code>97,368,304</code></td>
+					<td style="text-align: left"><code>41bd8f4cda1f44c7...9ce7c7</code></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>stock_cp</code></td>
+					<td style="text-align: left"><code>cpapp-b.bin</code></td>
+					<td style="text-align: left"><code>17,617,008</code></td>
+					<td style="text-align: left"><code>3269bf6242633979...7ee7c8</code></td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="深入-ap-修補工程appfwso-的-406-kb-code-cave-與-17-處-branch-hooks">深入 AP 修補工程：<code>appFw.so</code> 的 40.6 KB Code Cave 與 17 處 Branch Hooks</h2>
+<p>AP 端的建置管線（<code>apply_recipe</code> + <code>build_ap_image.py</code> + <code>build_ap_module.py</code>）對 <code>nflasha15</code> 內的 <code>/lib/appFw.so</code> 執行了兩階段改造：</p>
+<h3 id="第一階段基底-fl2--fl3-配方修補-ap_baseline">第一階段：基底 <code>FL2</code> / <code>FL3</code> 配方修補 (<code>ap_baseline</code>)</h3>
+<p>首先套用 <code>baseline_recipes.json</code> 中的 42 處二進位修補，將 <code>appFw.so</code> 的檔案大小從原廠的 <code>97,368,304 bytes</code> 擴充至 <code>97,452,032 bytes</code>（在 ELF 可執行區段增加了 <code>+83,728 bytes</code>），打通原廠 Creative Look 表格中對 <code>FL2</code> 與 <code>FL3</code> 的基礎支援。</p>
+<h3 id="第二階段c--arm64-執行期模組注入-build_ap_modulepy">第二階段：C / ARM64 執行期模組注入 (<code>build_ap_module.py</code>)</h3>
+<p>接著將 3 個 C 語言原始碼檔案（<code>r5_stage413_transfer_core.c</code>、<code>r5_filter_Menu.c</code>、<code>r5_filter_renderer423.c</code>）與 2 個 ARM64 組語跳板檔（<code>r5_stage413_trampoline.S</code>、<code>r5_filter_menu_trampoline.S</code>）編譯為位置無關（PIC）的執行期 payload，並精準釘選（pin）在 <code>appFw.so</code> 的兩個 ELF 虛擬位址區段：</p>
+<ul>
+<li><strong>RX code cave (可執行程式碼區段)</strong>：位於虛擬位址 <code>vaddr = 0x03c97ef8</code>（對應檔案偏移 <code>file_offset = 0x03c97ef8</code>），模組本身佔用 <code>40,600 bytes</code>（連同第一階段基底 cave 合計為 <code>63,096</code> RX bytes）。</li>
+<li><strong>BSS state region (執行期狀態緩衝區)</strong>：位於虛擬位址 <code>vaddr = 0x05cf18c0</code>，大小為 <code>136,384 bytes</code>（<code>0x214c0 bytes</code>），用於在 RAM 中存放從 SD 卡解析出來的 <code>.BIN</code> 濾鏡包、當前啟用的 6/32 字元外觀名稱，以及準備傳送給 CP 的 IPC 傳輸緩衝區。</li>
+</ul>
+<p>為了讓原本 <code>appFw.so</code> 的生命週期與選單事件流進這塊 code cave，建置腳本在 <code>appFw.so</code> 內植入了 <strong>17 處 ARM64 <code>B</code> / <code>BL</code> call-site hooks</strong>：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">Hook 名稱</th>
+					<th style="text-align: left">檔案偏移量 (File Offset)</th>
+					<th style="text-align: left">原廠指令 (Hex)</th>
+					<th style="text-align: left">修補後跳轉指令 (Hex)</th>
+					<th style="text-align: left">攔截時機與用途</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><code>startup</code></td>
+					<td style="text-align: left"><code>25,170,660</code> (<code>0x18012a4</code>)</td>
+					<td style="text-align: left"><code>60a26e39</code></td>
+					<td style="text-align: left"><code>0544da15</code></td>
+					<td style="text-align: left">系統啟動時跳入初始化跳板</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>initial</code></td>
+					<td style="text-align: left"><code>55,422,568</code> (<code>0x34daae8</code>)</td>
+					<td style="text-align: left"><code>60c21091</code></td>
+					<td style="text-align: left"><code>69dd6615</code></td>
+					<td style="text-align: left">Creative Look 子系統初始狀態建立</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>completed</code></td>
+					<td style="text-align: left"><code>55,464,256</code> (<code>0x34e4dc0</code>)</td>
+					<td style="text-align: left"><code>60c21091</code></td>
+					<td style="text-align: left"><code>fab46615</code></td>
+					<td style="text-align: left">屬性載入完成後同步自訂濾鏡狀態</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>media</code></td>
+					<td style="text-align: left"><code>54,279,380</code> (<code>0x33c38d4</code>)</td>
+					<td style="text-align: left"><code>a003168b</code></td>
+					<td style="text-align: left"><code>5b3a6b15</code></td>
+					<td style="text-align: left">監控 SD 卡掛載狀態（<code>/mnt/sd0</code>、<code>/mnt/sd1</code>）</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>inbound</code></td>
+					<td style="text-align: left"><code>55,921,996</code> (<code>0x35549cc</code>)</td>
+					<td style="text-align: left"><code>20008052</code></td>
+					<td style="text-align: left"><code>86f66415</code></td>
+					<td style="text-align: left">攔截並注入跨核心 IPC 濾鏡資料</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>power</code></td>
+					<td style="text-align: left"><code>56,306,296</code> (<code>0x35b26f8</code>)</td>
+					<td style="text-align: left"><code>fd7bbba9</code></td>
+					<td style="text-align: left"><code>a57f6315</code></td>
+					<td style="text-align: left">電源關閉或進入休眠前保存狀態</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>menu / UI hooks (×11)</code></td>
+					<td style="text-align: left">多處 UI 分派點</td>
+					<td style="text-align: left">原生選單指令</td>
+					<td style="text-align: left">跳轉至 <code>r5_filter_Menu</code></td>
+					<td style="text-align: left">註冊 <code>Fn</code> 項目、繪製 6/32 字元名稱、查詢 v4.34 圖示 (<code>icon_query434</code>) 等 11 處選單攔截點</td>
+			</tr>
+	</tbody>
+</table>
+<h3 id="原地-ext2-區塊整合-integrate">原地 Ext2 區塊整合 (<code>integrate()</code>)</h3>
+<p>由於 <code>nflasha15</code> 是一整個 <code>410,652,672 bytes</code> 的 <code>ext2</code> 檔案系統映像，把變大後的 <code>appFw.so</code>（<code>97,452,032 bytes</code>）寫回 <code>nflasha15</code> 時不能隨便重新打包整個檔案系統（否則 inode 順序或時間戳記改變可能引發非預期行為）。</p>
+<p>建置腳本透過 <code>nflasha15_layout</code> 先為 <code>/lib/appFw.so</code> 的 inode 擴充對應的資料區塊鏈（block chain），接著 <code>integrate()</code> 直接將新版 <code>appFw.so</code> 的內容覆寫進對應的 <code>ext2</code> data blocks，並在最後執行嚴格的位元級斷言：確保 <code>nflasha15</code> 分區中除了 <code>/lib/appFw.so</code> 佔用的區塊與對應的 ext2 metadata 之外，其餘每一個 byte 都與原廠映像 <strong>100% 完全相同</strong>。</p>
+<h2 id="深入-cp-修補工程cpapp-bbin-表格重定位與-unicorn-虛擬-cpu-模擬">深入 CP 修補工程：<code>cpapp-b.bin</code> 表格重定位與 Unicorn 虛擬 CPU 模擬</h2>
+<p>看完了 AP 端，接著來看更刺激的 CP 端（<code>nflasha8:/CPAPP-B.BIN</code>，基底位址 <code>0x67800000</code>）。</p>
+<h3 id="為什麼必須重定位-12-組-look-參數表">為什麼必須重定位 12 組 Look 參數表？</h3>
+<p>在原廠 R5 v4.00 的 <code>cpapp-b.bin</code> 中，CP 將 10 組 Creative Look（<code>ST..SE</code>）的 ISP 參數存放在固定長度為 10 的連續陣列裡，主要包含三大結構：</p>
+<ul>
+<li><code>s_kelvin</code> 與 <code>s_adobekelvin</code> 色溫補償表（每組 <code>0xDC</code> bytes，<code>10 × 0xDC = 2,200 bytes</code>）。</li>
+<li>tone / gamma / 色彩矩陣結構（每組 <code>0x16B4</code> = <code>5,812 bytes</code>）。</li>
+<li><strong><code>5×9×9</code> 3D HSV 色彩調整格</strong>：每組 <code>184 bytes</code>，由 5 個明度階層 luma levels × 9 個飽和度環 saturation rings × 9 個色相扇區 hue sectors 組成。</li>
+</ul>
+<p>問題在於：在 <code>cpapp-b.bin</code> 的記憶體佈局中，這幾個 10-entry 陣列的屁股後面緊接著其他關鍵的 RTOS 全域變數！如果我們直接在原位址把陣列從 10 組硬撐到 12 組（<code>+FL2</code>, <code>+FL3</code>），多出來的 2 組資料就會直接蓋掉後面的 RTOS 全域變數，導致相機一開機就崩潰。</p>
+<p>因此，建置管線（<code>build_cp.py</code>）採取了 <strong>完整重定位 (table relocation)</strong> 策略：</p>
+<ol>
+<li>在 <code>cpapp-b.bin</code> 後段找到一塊乾淨的未使用記憶體區段 <code>0x688df740</code>（其中可執行區段位於 <code>RX = 0x68995080</code>，包含 <code>7,308 bytes</code> 的 C 執行期程式碼 <code>cp_transfer.c</code> / <code>cp_stage413_probe.c</code>，以及 <code>522,152 bytes</code> 的擴充表格與狀態空間）。</li>
+<li>將擴充為 12 組的完整 look 參數表搬移至 <code>0x688df740</code>。</li>
+<li>自動掃描整個 <code>cpapp-b.bin</code>，一舉修補了 <strong>167 處 ARM32 指令</strong>——包含將所有查表函式的 literal-pool 基底位址改指到 <code>0x688df740</code> 新表，以及將所有的陣列邊界檢查從 <code>cmp rX, #10</code> 修改為 <code>cmp rX, #12</code>。</li>
+</ol>
+<h3 id="刷機前的虛擬-cpu-守門員unicorn-engine-getter_gatespy">刷機前的虛擬 CPU 守門員：Unicorn Engine (<code>getter_gates.py</code>)</h3>
+<p>一口氣修改了裸機 RTOS 裡的 167 處 ARM32 指令，要怎麼確定沒有任何一條指令改錯、或者不小心破壞了呼叫慣例（calling convention）？</p>
+<p>這套專案設計了一道極為嚴謹的防線：<code>src/gamma/getter_gates.py</code>。在每次打包韌體前，它會使用 <strong>Unicorn Engine</strong> 建立一顆 32 位元 ARM 虛擬 CPU（<code>UC_ARCH_ARM, UC_MODE_ARM</code>），將 <code>17.6 MB</code> 的 <code>cpapp-b.bin</code> 實際映射載入至虛擬位址 <code>0x67800000</code>：</p>
+<ol>
+<li><strong>啟用硬體浮點與向量協同處理器 (VFP / NEON)</strong>：
+因為 CP 的色彩查表與插值函式內部使用了 ARM VFP 指令，模擬器在啟動時會先透過協同處理器暫存器啟用 <code>CP10</code> 與 <code>CP11</code>：
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>mrc <span style="color:#a6e22e">p15</span>, <span style="color:#960050;background-color:#1e0010">0</span>, <span style="color:#a6e22e">r0</span>, <span style="color:#a6e22e">c1</span>, <span style="color:#a6e22e">c0</span>, <span style="color:#960050;background-color:#1e0010">2</span>
+</span></span><span style="display:flex;"><span>orr <span style="color:#a6e22e">r0</span>, <span style="color:#a6e22e">r0</span>, #<span style="color:#ae81ff">0x00f00000</span>   <span style="color:#75715e">; 啟用 CP10 / CP11 (VFP/NEON 完全存取權限)
+</span></span></span><span style="display:flex;"><span>mcr <span style="color:#a6e22e">p15</span>, <span style="color:#960050;background-color:#1e0010">0</span>, <span style="color:#a6e22e">r0</span>, <span style="color:#a6e22e">c1</span>, <span style="color:#a6e22e">c0</span>, <span style="color:#960050;background-color:#1e0010">2</span>
+</span></span><span style="display:flex;"><span>mov <span style="color:#a6e22e">r0</span>, #<span style="color:#ae81ff">0x40000000</span>       <span style="color:#75715e">; EN bit in FPEXC
+</span></span></span><span style="display:flex;"><span>vmsr <span style="color:#960050;background-color:#1e0010">fpexc</span>, <span style="color:#a6e22e">r0</span></span></span></code></pre></div>
+
+</li>
+<li><strong>遍歷模擬 3 種狀態 × 12 組 look 索引</strong>：
+模擬器直接設定 <code>PC</code> 呼叫 <code>cpapp-b.bin</code> 內真實的 getter 函式（如 <code>0x684b5148</code>、<code>0x684b5220</code>、<code>0x684b527c</code> 等），針對 look 索引 <code>1..12</code> 依序測試三種執行期狀態：
+<ul>
+<li><strong>狀態 A</strong>：cold boot 未初始化預設狀態</li>
+<li><strong>狀態 B</strong>：載入內建 <code>FL2</code> / <code>FL3</code> 預設值狀態</li>
+<li><strong>狀態 C</strong>：由 SD 卡 <code>.BIN</code> 濾鏡覆寫全部 12 組槽位狀態</li>
+</ul>
+</li>
+<li><strong>位元級與暫存器完整性斷言</strong>：
+<ul>
+<li>針對索引 <code>1..10</code>（原廠 10 種外觀），比對修補後韌體回傳的結構體每一個 byte，必須與未修改的原廠 <code>cpapp-b.bin</code> <strong>100% 逐位元一致</strong>。</li>
+<li>針對索引 <code>11..12</code>（<code>FL2</code>、<code>FL3</code>），驗證回傳的指標與內容精準對應 <code>0x688df740</code> 重定位表中的資料。</li>
+<li>檢查函式返回時的 callee-saved 暫存器（<code>r4..r11</code> 與 <code>sp</code>），確保堆疊與暫存器零污染。</li>
+</ul>
+</li>
+</ol>
+
+
+  
+    <img src="/posts/2026/10-29-sony-a7r5-custom-firmware/unicorn-emulation-gate.svg" alt="unicorn-emulation-gate.svg" class="img-responsive post-image">
+  
+
+<h2 id="windows--llvm-clang-2314-本地建置調適與跨工具鏈比對">Windows + LLVM Clang 23.1.4 本地建置調適與跨工具鏈比對</h2>
+<p>上游專案原本是在 macOS 環境下使用 Apple Clang 21（<code>clang 21.1.x</code>）開發，並在腳本中寫死了 <code>/usr/bin/clang</code> 與 <code>/usr/bin/openssl</code> 等路徑。當我們將建置管線移植到 Windows 11 並使用 <strong>LLVM Clang 23.1.4</strong> 與 <code>uv</code>（<code>cpython-3.12.11</code>）執行本地編譯時，解決了三個關鍵的跨平台與編譯器差異：</p>
+<ol>
+<li><strong>Clang 23 新增的全域變數靜態分析警告</strong>：
+LLVM Clang 23 引入了更嚴格的 <code>-Wunused-but-set-global</code> 檢查，在開啟 <code>-Werror</code> 時會攔截 <code>r5_filter_renderer423.c:23</code> 中的診斷計數器 <code>static uint32_t allocation_failures</code>。我們在 <code>build_ap_module.py</code> 與 <code>build_cp.py</code> 的交叉編譯旗標中補上了 <code>-Wno-unused-but-set-variable</code> 與 <code>-Wno-unused-but-set-global</code>。</li>
+<li><strong><code>0701_part_image_sum/part_image.sum</code> 的 454-Byte CRLF 陷阱</strong>：
+在打包 <code>original.tar</code> 前，<code>build.py</code> 會重新計算 <code>dev/nflasha5</code>、<code>dev/nflasha8</code> 與 <code>dev/nflasha15</code> 的 CRC32 校驗碼並更新 <code>part_image.sum</code>。因為該建置管線採用原地覆寫 tar 成員的策略，<code>part_image.sum</code> 的檔案大小必須嚴格維持在 <code>454 bytes</code>。
+在 Windows 上，Python 的 <code>Path.write_text()</code> 預設會將換行符號 <code>\n</code> 轉換為 <code>\r\n</code>（CRLF），導致這份 6 行校驗檔瞬間膨脹為 <code>460 bytes</code> 並觸發 tar 區塊大小 <code>AssertionError</code>！將寫入方式改為 <code>sums.write_bytes(text.encode('ascii'))</code> 後，便完美保持了 UNIX <code>LF</code> 的 <code>454 bytes</code> 結構。</li>
+<li><strong>Apple Clang 21 與 LLVM Clang 23 的產出比對</strong>：
+我們將 Windows + LLVM Clang 23.1.4 編譯出的成品與原作者 macOS + Apple Clang 21 的參考輸出進行了逐檔案比對：
+<ul>
+<li>所有非編譯型資料產出（包含 <code>nflasha5</code>、12 個地區的 <code>CX8920*.bin</code> 出廠備份範本與 <code>backup.sum</code>）的 <strong>SHA-256 雜湊值 100% 相同</strong>，例如 <code>nflasha5</code> 皆為 <code>eac727efd7af2142ddd9b8ae22387614eaaaba9dc9f04ce0434bf8e7c766d693</code>。</li>
+<li>經過 C 編譯器產出的 <code>appFw.so</code>（<code>97,452,032 bytes</code>）與 <code>cpapp-b.bin</code>（<code>17,617,008 bytes</code>）不僅檔案大小完全一致，內部的 RX / BSS 區段尺寸（AP 端為 <code>40,600 B</code> / <code>136,384 B</code>；CP 端為 <code>7,308 B</code> / <code>522,152 B</code>）與 17 個 hook 跳板位址也分毫不差，僅在 C 函式內部有 Clang 21 與 Clang 23 之間的微幅指令排程與暫存器分配差異，且全數通過 <code>Unicorn</code> 模擬測試。</li>
+</ul>
+</li>
+</ol>
+<h2 id="密碼學簽章驗證partition-1-nflasha1-信任鏈與-android-fastboot">密碼學簽章驗證、Partition 1 (<code>nflasha1</code>) 信任鏈與 Android Fastboot</h2>
+<p>當我們修改完 <code>nflasha5</code>、<code>nflasha8</code> 與 <code>nflasha15</code>，並重新打包、以 <code>CXD90057_k8</code> 加密出 736,841 個 <code>FDAT</code> 區塊後，就來到了整個韌體工程最後、也最關鍵的一道安全防線：<strong>數位簽章驗證</strong>。</p>
+<h3 id="為什麼不能直接把改好的-bodydatadat-放進原廠相機更新">為什麼不能直接把改好的 <code>BODYDATA.DAT</code> 放進原廠相機更新？</h3>
+<p>在 <code>BODYDATA.DAT</code> 的 <code>FDAT</code> 區段最尾端（檔案偏移 <code>754,525,332</code>，緊接在 736,841 個加密區塊與 16-byte IV 之後），存放著一段 <strong>256 bytes 的 RSA-2048 數位簽章</strong>，採用 <code>RSASSA-PKCS1-v1_5</code> 填充與 <code>SHA-256</code> 雜湊，簽章範圍涵蓋了前面整整 <code>754,525,200 bytes</code> 的加密串流與 IV。</p>
+<p>當你在原廠未改機的 R5 上透過 SD 卡執行韌體更新時，相機其實是重新開機進入 <strong>Partition 1 (<code>nflasha1</code>)</strong> 的更新環境：</p>
+<ul>
+<li><code>nflasha1</code> 是一個 <code>25,100,288 bytes</code>（約 23.9 MB）的 <code>FAT12</code> 復原分區，裡面放著 <code>/boot/initrd.img</code>（一個以 zlib 壓縮的 SquashFS 4.0 根檔案系統）以及記錄檔案 MD5 的 <code>/p1chksum</code>。</li>
+<li>在 <code>/boot/initrd.img</code> 內部，<code>/etc/VerificationKey.pem</code>（<code>451 bytes</code>，SHA-256 為 <code>8281413b5607446939613e07d020b2c7d8ee2371349099de56bc8288f7be0a43</code>）存放著 Sony 官方的 RSA-2048 公鑰。</li>
+<li>更嚴密的是，<code>initrd.img</code> 裡負責韌體更新的四個核心共享函式庫：
+<ul>
+<li><code>/usr/lib/libupdaterapi.so</code></li>
+<li><code>/usr/lib/libsdfileinputupdaterapi.so</code></li>
+<li><code>/usr/lib/libseninputupdaterapi.so</code></li>
+<li><code>/usr/lib/libuudfileinputupdaterapi.so</code>
+在執行更新時會進行 <strong>雙層驗證</strong>：</li>
+</ul>
+<ol>
+<li><strong>第一層公鑰指紋驗證 (<code>_ZN7Updater21SignatureVerification9verifyKeyEPKc</code>)</strong>：即 <code>Updater::SignatureVerification::verifyKey(char const*)</code>，先計算 <code>/etc/VerificationKey.pem</code> 的指紋，檢查它是否等於寫死在 <code>.so</code> 裡的 Sony 官方公鑰雜湊！這意味著就算你只換掉 <code>.pem</code> 公鑰檔，第一層檢查也會直接報錯拒絕。</li>
+<li><strong>第二層密碼學簽章驗證 (<code>_ZN7Updater21SignatureVerification15VerifySignatureEPKhjS2_j</code>)</strong>：使用 <code>/etc/VerificationKey.pem</code> 對 <code>BODYDATA.DAT</code> 的 <code>FDAT</code> 區段執行標準的 RSA-2048 PKCS#1 v1.5 SHA-256 數位簽章驗證。</li>
+</ol>
+</li>
+</ul>
+<h3 id="一次性硬體引導rp2040-uart-與隱藏在相機裡的-android-fastboot-v05">一次性硬體引導：RP2040 UART 與隱藏在相機裡的 Android Fastboot v0.5</h3>
+<p>因為全世界只有 Sony 擁有對應的 RSA-2048 私鑰，任何想要透過 SD 卡刷入自簽章 <code>BODYDATA.DAT</code> 的相機，都必須先透過硬體除錯介面完成一次性的 <strong>Partition 1 (<code>nflasha1</code>) 公鑰替換</strong>。</p>
+
+
+  
+    <img src="/posts/2026/10-29-sony-a7r5-custom-firmware/fastboot-trust-chain.svg" alt="fastboot-trust-chain.svg" class="img-responsive post-image">
+  
+
+<p>這套硬體引導流程的底層機制最早由安全研究員 David Buchanan 在 <code>DavidBuchanan314/ILCE-7M4-RE</code> 中發掘，完整運作過程如下：</p>
+<ol>
+<li>
+<p><strong>透過 Sony Multi-port UART 進入暫時性 SRAM Fastboot</strong>：
+使用 Sony Multi-port 轉接板連接至一塊刷有 <code>uart_boot</code> 韌體的 RP2040（接線為 <code>GPIO28 ➔ RX</code>、<code>GPIO29 ➔ TX</code>、<code>GPIO27 ➔ Reset</code>，初始握手鮑率為非標準的 <code>48000</code> baud），同時將相機 USB-C 接上電腦。在重置瞬間，主機透過 UART 將 Sony 官方簽章過的 BootROM SRAM loader（<code>fastboot.bin</code>）串流寫入相機內部 SRAM 位址 <code>0x92028000</code>。隨後 UART 切換至 <code>115200</code> baud 並印出：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>[mira] fastboot ready</span></span></code></pre></div>
+
+</li>
+<li>
+<p><strong>Sony 的 <code>mira</code> loader 採用標準 Google Android Fastboot v0.5</strong>：
+當 <code>mira</code> 啟動 USB 控制器後，電腦端看到的 USB 裝置識別碼竟然是 <strong>Google 官方的 Android Fastboot ID</strong>：</p>
+<ul>
+<li><code>VID = 0x18d1</code> (Google Inc.)</li>
+<li><code>PID = 0x4ee0</code> (Android Fastboot)</li>
+<li><code>bInterfaceClass = 0xFF</code>、<code>bInterfaceSubClass = 0x42</code>、<code>bInterfaceProtocol = 0x03</code></li>
+</ul>
+<p>透過 USB bulk endpoint 發送 <code>getvar:version</code> 會直接回傳 <code>OKAY0.5</code>。它不僅完整支援標準 Android Fastboot 指令（<code>getvar:partition-size:nflasha1</code>、<code>download:&lt;hex_len&gt;</code>、<code>upload</code>、<code>flash:nflasha1</code>、<code>reboot</code>）與標準的 <code>OKAY</code> / <code>FAIL</code> / <code>INFO</code> / <code>DATA%08x</code> 封包協定，甚至原生支援 <strong>Android Sparse Image</strong> 格式（魔術字元 <code>0xed26ff3a</code>，v1.0，512-byte 磁區區塊，使用 <code>0xCAC1</code> <code>RAW</code> chunk 寫入有變動的磁區、以 <code>0xCAC3</code> <code>DONT_CARE</code> chunk 跳過未修改磁區）！
+此外，Sony 工程師還在 <code>mira</code> 裡實作了三個專屬的 <code>oem</code> 擴充指令：</p>
+<ul>
+<li><code>oem partition</code>：列出內部 <code>SDM2</code> eMMC 上全部 17 個分區（<code>nflasha1</code> .. <code>nflasha17</code>）。</li>
+<li><code>oem partition dump nflasha1</code>（搭配 <code>upload</code>）：將 Partition 1 讀取至 RAM 並透過 USB 完整傾印回電腦。</li>
+<li><code>oem dumpbrom</code>：傾印 <code>CXD90057</code> 的晶片內部 BootROM。</li>
+</ul>
+</li>
+</ol>
+<h3 id="原地修補-nflasha1-的-8-byte-verifykey-與-sparse-image-回寫">原地修補 <code>nflasha1</code> 的 8-Byte <code>verifyKey()</code> 與 Sparse Image 回寫</h3>
+<p>取得相機傾印出的 <code>nflasha1</code> 映像後，<code>build_r5_partition1.py</code> 與 <code>build_r5_verifykey_skip.py</code> 會在不改變分區與壓縮區塊幾何結構的前提下進行原地修補：</p>
+<ol>
+<li><strong>替換公鑰</strong>：將 <code>initrd.img</code> 內的 <code>/etc/VerificationKey.pem</code>（<code>451 bytes</code>）替換為使用者自己生成的 RSA-2048 <code>public.pem</code>（同樣為 <code>451 bytes</code>）。</li>
+<li><strong>修補 4 個 updater <code>.so</code> 的 <code>verifyKey()</code> 函式入口</strong>：
+將 <code>_ZN7Updater21SignatureVerification9verifyKeyEPKc</code> 開頭的 8 bytes（兩條 ARM64 指令）替換掉：
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span><span style="color:#75715e">; 修補前 (Before): fd 7b b2 a9  e0 03 01 aa
+</span></span></span><span style="display:flex;"><span>stp <span style="color:#a6e22e">x29</span>, <span style="color:#a6e22e">x30</span>, <span style="color:#960050;background-color:#1e0010">[sp</span>, #<span style="color:#960050;background-color:#1e0010">-</span><span style="color:#ae81ff">0x50</span><span style="color:#960050;background-color:#1e0010">]!</span>
+</span></span><span style="display:flex;"><span>mov <span style="color:#a6e22e">x0</span>, <span style="color:#a6e22e">x1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">; 修補後 (After):  00 00 80 52  c0 03 5f d6
+</span></span></span><span style="display:flex;"><span>mov <span style="color:#a6e22e">w0</span>, #<span style="color:#ae81ff">0</span>    <span style="color:#75715e">; 永遠回傳 0 (代表自訂公鑰指紋合法)
+</span></span></span><span style="display:flex;"><span>ret</span></span></code></pre></div>
+
+這個 8-byte 修補讓 <code>verifyKey()</code> 認可我們放入的自訂 <code>public.pem</code>，同時 <strong>完整保留了</strong> <code>VerifySignature()</code> 的所有密碼學檢查，因此相機在透過 SD 卡刷機時，依然會嚴格驗證 <code>BODYDATA.DAT</code> 的 RSA-2048 數位簽章。</li>
+<li><strong>等長重壓縮與 233 磁區 Sparse Image 刷寫</strong>：
+腳本只重新壓縮 <code>initrd.img</code> 中受影響的 zlib SquashFS fragments，並精確控制壓縮參數使其與原始 fragment 的 byte 長度完全相同；接著更新 <code>/p1chksum</code> 裡的 <code>initrd.img</code> MD5，最後將 <code>25.1 MB</code> 的 <code>nflasha1</code> 中實際發生變動的 <strong>233 個 512-byte 磁區</strong>封裝成一個不到 <strong>125 KB</strong> 的 Android Sparse Image，透過 <code>flash:nflasha1</code> 瞬間寫回相機。</li>
+</ol>
+<h2 id="本地生成自簽章-bodydatadat-與-100-解密驗證">本地生成自簽章 <code>BODYDATA.DAT</code> 與 100% 解密驗證</h2>
+<p>在完成所有分析與工具鏈調適後，我們在本地生成了一組全新的 2048-bit RSA 金鑰對（<code>e = 65537</code>）：</p>
+<ul>
+<li>私鑰 <code>private.pem</code>（<code>1,679 bytes</code>），用於簽署自製 <code>BODYDATA.DAT</code>。</li>
+<li>公鑰 <code>public.pem</code> / <code>VerificationKey.pem</code>（<code>451 bytes</code>，SHA-256 為 <code>9b2ab38babd06c8aea18a4064ddc7bbd4dd9014ed14c16db369df8363fc229c8</code>），用於注入 <code>nflasha1</code>。</li>
+</ul>
+<p>接著我們執行完整的 <code>--stage all</code> 自動化建置與簽章管線：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-powershell" data-lang="powershell"><span style="display:flex;"><span>uv run python firmware/r5/build.py --inputs firmware/r5/inputs.local.json --output D:/code/r5-build-all --stage all</span></span></code></pre></div>
+
+<p>整條管線依序完成了以下工作並產出完整驗證報告（<code>D:\code\r5-build-all\verification.json</code>）：</p>
+<ol>
+<li><strong>編譯並整合雙處理器映像</strong>：產出修補後的 <code>appFw.so</code>、<code>cpapp-b.bin</code>、<code>nflasha5</code>（<code>WBI2</code> ➔ <code>wbi2</code>）、<code>nflasha8</code>、<code>nflasha15</code>、<code>part_image.sum</code>（精確 <code>454 bytes</code>）以及 12 個地區的 <code>CX8920*.bin</code> 備份檔與 <code>backup.sum</code>，並全數通過 <code>Unicorn Engine</code> 虛擬 CPU 模擬閘門。</li>
+<li><strong>封裝明文 <code>FDAT</code> 串流</strong>：組裝出 <code>751,577,088 bytes</code> 的明文 <code>FDAT</code> 映像（SHA-256 為 <code>a46c6bb0811064cec9dce08b47deee40116ea5d51f255faf26d8814684361635</code>）。</li>
+<li><strong>雙態 AES 區塊加密與 RSA-2048 簽章</strong>：將明文切分為 <code>736,841</code> 個 1,024-byte 區塊（<code>754,525,184 bytes</code>），以 <code>AES-ECB</code> + <code>AES-CBC(CXD90057_k8, iv)</code> 加密，使用 <code>private.pem</code> 對加密內容與 IV 產生 256-byte <code>RSASSA-PKCS1-v1_5 / SHA-256</code> 簽章，最後計算最外層 <code>DEND</code> 的 <code>CRC32</code>，產出最終的 <code>BODYDATA.DAT</code>（<code>754,525,608 bytes</code>，SHA-256 為 <code>b267a02ba29a7c8f84cbd38fa11413c903772f73d64ffd34e2a61129533cd0f6</code>）。</li>
+<li><strong>雙向密碼學與解密完整性驗證</strong>：
+<ul>
+<li>同時透過 <code>PyCryptodome</code> 與獨立的 <code>openssl pkeyutl -verify</code> 驗證 <code>BODYDATA.DAT</code> 尾端的 256-byte RSA-2048 簽章，確認回傳 <code>Signature Verified Successfully</code>，並測試竄改簽章後能被正確拒絕（<code>tampered_signature_rejected: true</code>、<code>outer_crc_valid: true</code>）。</li>
+<li>將產出的 <code>BODYDATA.DAT</code> 重新丟回解密器，獨立解開全部 <code>736,841</code> 個區塊，確認解出的每一顆 byte 都與打包前的明文分區 100% 吻合。</li>
+</ul>
+</li>
+</ol>
+<h2 id="結語">結語</h2>
+<p>回頭看這次對 Sony A7R V 第三方韌體 v4.34 的拆解與本地建置，最讓我著迷的不只是最終在相機上多出了 <code>FL2</code>、<code>FL3</code> 與 12 組 Fujifilm 軟片模擬，而是得以深入現代高階數位相機內部的系統工程設計：</p>
+<ul>
+<li>一顆 <code>CXD90057</code> SoC 同時跑著四核 64 位元 SCEL Linux（負責 97.3 MB 的 <code>/lib/appFw.so</code> 單體應用）與 32 位元 Cortex-R5 TOPPERS/FMP RTOS（在 <code>0x67800000</code> 負責硬體即時 ISP 管線），並透過 <code>nflasha5</code> 的 <code>WBI2</code> LZO 記憶體休眠快照達成 0.5 秒瞬間開機。</li>
+<li>面對高風險的雙架構二進位修改，透過原地 ext2 區塊替換、重定位 12 組 ISP 參數表至 <code>0x688df740</code>，並結合啟用 VFP/NEON 的 <code>Unicorn Engine</code> 虛擬 CPU 模擬閘門，將傳統嵌入式修改「刷上去才知道會不會磚」的不確定性，轉化為刷機前就能 100% 自動化驗證的工程管線。</li>
+<li>而在底層 BootROM 的 <code>mira</code> SRAM loader（<code>0x92028000</code>）中遇見熟悉的 Google Android Fastboot v0.5（<code>0x18d1:0x4ee0</code>）與 Sparse Image 協定，並只用 8 bytes（<code>mov w0, #0; ret</code>）優雅地將自己的 RSA-2048 金鑰對接入 <code>nflasha1</code> 信任鏈，更是跨領域逆向工程中那種「原來底層都是相通的」最大樂趣。</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+graph TD
+    subgraph 影像處理分支
+        Image["輸入圖片"] --> ViT["視覺編碼器 (ViT)"]
+        ViT --> VisualTokens["視覺 Patch 向量 (Dimension: d_vision)"]
+        VisualTokens --> Projector["投影層 (MLP)"]
+        Projector --> ProjectedVisual["對齊後的視覺向量 (Dimension: d_model)"]
+    end
+
+    subgraph 文字處理分支
+        Text["輸入文字: 這張圖裡有什麼?"] --> Tokenizer["分詞器"]
+        Tokenizer --> TokenIDs["Token IDs"]
+        TokenIDs --> EmbedLookup["嵌入表 Lookup"]
+        EmbedLookup --> TextEmbed["文字 Token 向量 (Dimension: d_model)"]
+    end
+
+    ProjectedVisual --> Concat["向量拼接 (Concatenate)"]
+    TextEmbed --> Concat
+    
+    Concat --> Transformer["Transformer 解碼器堆疊"]
+    Transformer --> LMHead["LM Head"]
+    LMHead --> Output["生成文字答案"]

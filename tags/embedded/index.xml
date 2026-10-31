@@ -1,0 +1,985 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/embedded/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-10-29 00:00:00 -0700 -0700</updated>
+    
+    <item>
+      <title>Sony A7R V 第三方韌體逆向與本地編譯實戰</title>
+      <link>https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/</link>
+      <pubDate>Thu, 29 Oct 2026 00:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;Sony Alpha 7R V（&lt;code&gt;ILCE-7RM5&lt;/code&gt;，機種代碼 &lt;code&gt;0x11030080&lt;/code&gt;，內部代號 &lt;code&gt;R5&lt;/code&gt;）憑藉 6,100 萬畫素的感光元件與獨立 AI 處理單元，在畫質細節與自動對焦表現上幾乎無可挑剔；但只要聊到機身直出（SOOC）的色彩選擇，許多 R5 用戶心裡多少都有個小遺憾：明明與隨後推出的 A7C II、ZV-E1、FX3 採用同世代的 BIONZ XR 影像處理器，Sony 卻在後續機型上新增了廣受好評的 &lt;code&gt;FL2&lt;/code&gt; 與 &lt;code&gt;FL3&lt;/code&gt; 兩種風格外觀（Creative Look），而身為高階機身的 R5 即使升級到官方 v4.00 韌體，依然停留在原本的 10 種預設外觀。&lt;/p&gt;
+&lt;p&gt;更進一步來說，許多攝影師希望能將 Fujifilm 經典的軟片模擬（如 Classic Chrome、Classic Neg、Nostalgic Neg、Astia、Velvia、Acros、Reala Ace）直接寫入相機的硬體 ISP 管線，在電子觀景窗（EVF）取景與直出 JPEG / HEIF 時即時套用，而不必每次都進 Lightroom 從 RAW 檔慢慢調色。&lt;/p&gt;
+&lt;p&gt;近期開源社群出現了針對 R5 v4.00 韌體的逆向工程專案（&lt;code&gt;sony-a7r5-custom-firmware&lt;/code&gt; v4.34，韌體標頭版本號編碼為 BCD &lt;code&gt;0x34, 0x04&lt;/code&gt;）。出於對嵌入式系統架構與相機底層運作的好奇，我花了一段時間將整套專案與 Sony 官方 v4.00 的 &lt;code&gt;BODYDATA.DAT&lt;/code&gt;（&lt;code&gt;754,525,608 bytes&lt;/code&gt;）徹底拆解開來，在 Windows 環境下搭配 LLVM Clang 23.1.4 與 &lt;code&gt;uv&lt;/code&gt; 從頭走完解包、雙目標交叉編譯、Unicorn 虛擬 CPU 模擬測試與 RSA-2048 重簽章封裝。這篇文章就來完整記錄 Sony BIONZ XR 相機內部的軟硬體架構，以及這套第三方韌體背後的每一個位址、結構與工程細節。&lt;/p&gt;
+&lt;h2 id=&#34;這套自製韌體做了什麼&#34;&gt;這套自製韌體做了什麼？&lt;/h2&gt;
+&lt;p&gt;在進入記憶體位址與組語之前，先看看這套 R5 v4.34 第三方韌體在功能層面完成了哪些擴充：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;開啟隱藏的 &lt;code&gt;FL2&lt;/code&gt; 與 &lt;code&gt;FL3&lt;/code&gt; 風格外觀&lt;/strong&gt;：
+原廠 R5 內建 10 組風格外觀（&lt;code&gt;ST&lt;/code&gt;、&lt;code&gt;PT&lt;/code&gt;、&lt;code&gt;NT&lt;/code&gt;、&lt;code&gt;VV&lt;/code&gt;、&lt;code&gt;VV2&lt;/code&gt;、&lt;code&gt;FL&lt;/code&gt;、&lt;code&gt;IN&lt;/code&gt;、&lt;code&gt;SH&lt;/code&gt;、&lt;code&gt;BW&lt;/code&gt;、&lt;code&gt;SE&lt;/code&gt;）。這套韌體將新世代 BIONZ XR 機型（A7C II v2.00、ZV-E1 v2.00、FX3 v6.00）原生的 &lt;code&gt;FL2&lt;/code&gt;（沉穩柔和的底片感）與 &lt;code&gt;FL3&lt;/code&gt;（通透高光與清亮色調）完整移植回 R5，將機身內的 Creative Look 槽位從 10 組擴充為 12 組。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;支援從 SD 卡動態匯入自訂濾鏡與 3D LUT&lt;/strong&gt;：
+使用者只要在插槽 1 或插槽 2（&lt;code&gt;/mnt/sd0&lt;/code&gt; 或 &lt;code&gt;/mnt/sd1&lt;/code&gt;）根目錄放置一個 &lt;code&gt;29,552 bytes&lt;/code&gt; 的 &lt;code&gt;CUSTOM_F.BIN&lt;/code&gt; 或 &lt;code&gt;SONY_LUT.BIN&lt;/code&gt;（採用 &lt;code&gt;BIN v4&lt;/code&gt; 格式，4-byte 魔術字元為 &lt;code&gt;R5F4&lt;/code&gt;，版本號 &lt;code&gt;4&lt;/code&gt;），就能在選單中一鍵觸發匯入，直接覆寫全部 12 組 Creative Look 在 RAM 與硬體 ISP 中的底層色彩結構。專案隨附了經過實機 ISP 校準的 12 組 Fujifilm 軟片模擬組合：
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;PROVIA&lt;/code&gt;（標準）、&lt;code&gt;VELVIA&lt;/code&gt;（高飽和風景）、&lt;code&gt;ASTIA&lt;/code&gt;（柔和人像）、&lt;code&gt;CC&lt;/code&gt;（Classic Chrome 經典正片）&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;PRO_NG&lt;/code&gt;（PRO Neg.Hi）、&lt;code&gt;PRO_NS&lt;/code&gt;（PRO Neg.Std）、&lt;code&gt;CL_NEG&lt;/code&gt;（Classic Neg. 經典負片）、&lt;code&gt;NOSTAL&lt;/code&gt;（Nostalgic Neg. 懷舊負片）&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;ETERNA&lt;/code&gt;（電影感）、&lt;code&gt;ET_BLC&lt;/code&gt;（Eterna Bleach Bypass 跳漂）、&lt;code&gt;ACROS&lt;/code&gt;（高質感黑白）、&lt;code&gt;REALA&lt;/code&gt;（Reala Ace）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;完整的原生 UI、動態圖示與 Fn 選單整合&lt;/strong&gt;：
+不同於早期單純替換常數表的硬改做法，v4.34 會在拍攝資訊畫面（HUD）與轉盤上顯示自訂的 &lt;strong&gt;6 字元簡稱&lt;/strong&gt;，例如 &lt;code&gt;CL_NEG&lt;/code&gt;、&lt;code&gt;NOSTAL&lt;/code&gt;，並在 Creative Look 選單列表中顯示 &lt;strong&gt;32 字元完整名稱&lt;/strong&gt;，同時支援動態解析選單圖示（修正了早期 v4.33 誤將部分槽位索引至說明文字資源的問題，確保 &lt;code&gt;ST&lt;/code&gt; 顯示原生 &lt;code&gt;ST&lt;/code&gt; 圖示且其餘槽位動態對應正確圖示）。此外，它將「匯入自訂濾鏡」直接註冊為可指派的 &lt;code&gt;Fn&lt;/code&gt; 快捷選單項目（項目 ID &lt;code&gt;0x26e&lt;/code&gt; / &lt;code&gt;0x1f8&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;出廠備份範本與自動白平衡微調&lt;/strong&gt;：
+一併修補了 &lt;code&gt;original.tar&lt;/code&gt; 內全部 12 個地區的出廠設定備份範本（&lt;code&gt;0110_backup/SYSIPSX-DSLR/GL/CX89200_*.bin&lt;/code&gt; 與 &lt;code&gt;CX89201_*.bin&lt;/code&gt;）：將 Creative Look 啟用位元遮罩（bitmask）從 10-bit（&lt;code&gt;0x03ff&lt;/code&gt;）擴充為 12-bit（&lt;code&gt;0x0fff&lt;/code&gt;），在偏移量 &lt;code&gt;0x76c5d&lt;/code&gt; 填入 &lt;code&gt;FL2&lt;/code&gt; 與 &lt;code&gt;FL3&lt;/code&gt; 的 43-byte 預設參數紀錄，並將自動白平衡（AWB）調整為 &lt;code&gt;White Priority = 97&lt;/code&gt;（&lt;code&gt;0x61&lt;/code&gt;）與 &lt;code&gt;Ambience Priority = -1&lt;/code&gt;（&lt;code&gt;0xff&lt;/code&gt;），改善 Sony 原廠在室內暖光下容易偏冷或偏綠的傾向。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;bionz-xr-cxd90057-的雙處理器與雙作業系統架構&#34;&gt;BIONZ XR (&lt;code&gt;CXD90057&lt;/code&gt;) 的雙處理器與雙作業系統架構&lt;/h2&gt;
+&lt;p&gt;要理解為什麼在相機裡「多加兩個濾鏡槽位」需要動到兩套截然不同的編譯器與修補管線，我們必須先看懂 Sony BIONZ XR（晶片代號 &lt;code&gt;CXD90057&lt;/code&gt;）內部的異質雙處理器架構。&lt;/p&gt;
+&lt;p&gt;檢視從韌體解出的 Device Tree Blob（&lt;code&gt;0800_appli/setting/cxd90057.dtb&lt;/code&gt;）、Linux 核心映像（&lt;code&gt;0700_part_image/dev/nflasha3:/vmlinux.bin&lt;/code&gt;）以及開源授權清單（&lt;code&gt;0650_prfile/PMBP/LICENSE/CP_TOPRS.txt&lt;/code&gt;），可以清楚看見 Sony 的「雙腦分工（split-brain）」設計——將「使用者介面與檔案管理」以及「硬體 ISP 即時影像管線」嚴格切分在兩顆不同架構的處理器與兩套作業系統上：&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/bionz-xr-architecture.svg&#34; alt=&#34;bionz-xr-architecture.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h3 id=&#34;ap-應用處理器64-位元-scel-linux-與-973-mb-的-appfwso&#34;&gt;AP 應用處理器：64 位元 SCEL Linux 與 97.3 MB 的 &lt;code&gt;appFw.so&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;第一顆處理器是應用處理器 &lt;strong&gt;AP&lt;/strong&gt; (Application Processor)，在 Device Tree 中宣告為 &lt;code&gt;sony,cxd90057&lt;/code&gt;，內部搭載四核心 64 位元 &lt;strong&gt;ARM Cortex-A35&lt;/strong&gt; (&lt;code&gt;arm,cortex-a35&lt;/code&gt;，ARMv8-A 架構) 叢集，並配備 &lt;code&gt;arm,gic-400&lt;/code&gt; 中斷控制器、&lt;code&gt;arm,pl011&lt;/code&gt; UART、&lt;code&gt;arm,pl022&lt;/code&gt; SPI 與 &lt;code&gt;arm,pl330&lt;/code&gt; DMA 控制器。&lt;/p&gt;
+&lt;p&gt;從 &lt;code&gt;nflasha3&lt;/code&gt; 分區內的 &lt;code&gt;/vmlinux.bin&lt;/code&gt; 提取出的核心版本字串如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Linux version 4.9.337-scel (jp10239@dic-build-scm-u20-006)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;(gcc version 6.4.0 (20201211 (Sony CE Linux 14.0.1.0)) )
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;#1 SMP PREEMPT Fri Oct 31 13:51:16 JST 2025&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;AP 運行的是簡稱 SCEL 的 &lt;strong&gt;Sony CE Linux 14.0.1.0&lt;/strong&gt;。最令人印象深刻的是它的應用程式架構：在 &lt;code&gt;nflasha15&lt;/code&gt;（一個大小為 &lt;code&gt;410,652,672 bytes&lt;/code&gt;、約 391.6 MB 的 &lt;code&gt;ext2&lt;/code&gt; 檔案系統分區）中，幾乎整台相機的 GUI 選單樹、轉盤與 &lt;code&gt;Fn&lt;/code&gt; 事件派發、組態屬性儲存（對應 &lt;code&gt;nflasha2&lt;/code&gt; / &lt;code&gt;nflasha6&lt;/code&gt;）、記憶卡 I/O 以及與底層硬體的 IPC 通訊，全部被編譯進單一一個高達 &lt;code&gt;97,368,304 bytes&lt;/code&gt;（97.3 MB）的 64 位元 ARM64 ELF 共享函式庫——&lt;code&gt;/lib/appFw.so&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;05-秒瞬間開機的秘密nflasha5-與-wbi2-休眠快照陷阱&#34;&gt;0.5 秒瞬間開機的秘密：&lt;code&gt;nflasha5&lt;/code&gt; 與 &lt;code&gt;WBI2&lt;/code&gt; 休眠快照陷阱&lt;/h4&gt;
+&lt;p&gt;拆解分區時，我們注意到一個非常關鍵的機制：如果讓一顆 Cortex-A35 從頭冷啟動 Linux 4.9 kernel、掛載 &lt;code&gt;nflasha15&lt;/code&gt; 並動態連結載入 97.3 MB 的 &lt;code&gt;/lib/appFw.so&lt;/code&gt;，開機時間至少需要好幾秒鐘，這對抓拍優先的專業相機來說是不可接受的。&lt;/p&gt;
+&lt;p&gt;為了達成撥開電源開關後「0.5 秒內進入可拍攝狀態」，Sony 在 &lt;code&gt;nflasha5&lt;/code&gt; 分區（&lt;code&gt;243,789,184 bytes&lt;/code&gt;，約 232.5 MB）中存放了一份預先壓縮好的記憶體休眠快照，開頭 8 bytes 為魔術字元 &lt;code&gt;WBI2\x00\x00\x00\x00&lt;/code&gt;（即 &lt;strong&gt;Warm Boot Image 2&lt;/strong&gt;，十六進位 &lt;code&gt;57 42 49 32&lt;/code&gt;）。平常開機時，bootloader 完全跳過正常的 Linux 初始化流程，直接將 &lt;code&gt;nflasha5&lt;/code&gt; 的 LZO 壓縮快照解壓縮回 DRAM，瞬間恢復已經載入好 &lt;code&gt;appFw.so&lt;/code&gt; 的執行緒狀態！&lt;/p&gt;
+&lt;p&gt;這在韌體逆向工程中構成了一個極易踩中的陷阱：如果你只修改了 &lt;code&gt;nflasha15&lt;/code&gt; 裡的 &lt;code&gt;/lib/appFw.so&lt;/code&gt; 與 &lt;code&gt;nflasha8&lt;/code&gt; 裡的 &lt;code&gt;cpapp-b.bin&lt;/code&gt;，刷機重開後，相機依然會從 &lt;code&gt;nflasha5&lt;/code&gt; 的 &lt;strong&gt;舊版 &lt;code&gt;WBI2&lt;/code&gt; 休眠快照&lt;/strong&gt; 醒來，導致 DRAM 裡跑的還是未修補的舊版 &lt;code&gt;appFw.so&lt;/code&gt;，甚至因為與新版 CP 韌體狀態不一致而引發異常。&lt;/p&gt;
+&lt;p&gt;解決方案卻優雅得令人會心一笑——只需要在建置管線中修改 &lt;code&gt;nflasha5&lt;/code&gt; 開頭 &lt;code&gt;0x0&lt;/code&gt; 偏移量的 &lt;strong&gt;1 個 byte&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;Offset 0x00000000:  57 42 49 32 (&amp;#34;WBI2&amp;#34;)  ➔  77 62 69 32 (&amp;#34;wbi2&amp;#34;)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;把大寫 &lt;code&gt;W&lt;/code&gt;（&lt;code&gt;0x57&lt;/code&gt;）改為小寫 &lt;code&gt;w&lt;/code&gt;（&lt;code&gt;0x77&lt;/code&gt;）後，刷機完成後的 &lt;strong&gt;第一次開機&lt;/strong&gt; 時，bootloader 檢查 &lt;code&gt;nflasha5&lt;/code&gt; 發現 &lt;code&gt;WBI2&lt;/code&gt; 魔術字元失效，便會自動放棄快速喚醒，改從 &lt;code&gt;nflasha3:/vmlinux.bin&lt;/code&gt; 與 &lt;code&gt;nflasha15:/lib/appFw.so&lt;/code&gt; 執行完整的冷開機（cold boot），並在開機完成後自動將包含新版修補程式的 DRAM 狀態重新寫入 &lt;code&gt;nflasha5&lt;/code&gt;，產生全新的 &lt;code&gt;WBI2&lt;/code&gt; 快照。從第二次開機起，相機就再次恢復 0.5 秒瞬間喚醒的速度。&lt;/p&gt;
+&lt;h3 id=&#34;cp-相機處理器32-位元-cortex-r5-與-toppersfmp-rtos&#34;&gt;CP 相機處理器：32 位元 Cortex-R5 與 TOPPERS/FMP RTOS&lt;/h3&gt;
+&lt;p&gt;第二顆處理器是相機處理器 &lt;strong&gt;CP&lt;/strong&gt; (Camera Processor)，採用 32 位元 &lt;strong&gt;ARM Cortex-R5&lt;/strong&gt; (ARMv7-R 架構)，上面運行的是由日本名古屋大學高田實驗室主導開發、符合 μITRON 規範的對稱多處理即時作業系統——&lt;strong&gt;TOPPERS/FMP&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;CP 的韌體存放於 &lt;code&gt;nflasha8&lt;/code&gt;（一個 &lt;code&gt;24,531,968 bytes&lt;/code&gt; 的 &lt;code&gt;FAT12&lt;/code&gt; 分區）內的 &lt;code&gt;/CPAPP-B.BIN&lt;/code&gt;，檔案大小為 &lt;code&gt;17,617,008 bytes&lt;/code&gt;（約 16.8 MB）。它是一個無檔頭的純二進位映像（flat binary），在開機時被直接載入至 CP 記憶體空間的基底位址 &lt;code&gt;0x67800000&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;CP 負責所有嚴格要求硬體即時性（hard real-time）的底層工作：控制 CMOS 感光元件讀出、驅動 BIONZ XR 硬體 ISP 管線、套用 gamma / tone 曲線與 &lt;code&gt;5×9×9&lt;/code&gt; 3D HSV 色彩調整格，以及即時自動對焦（AF）、自動曝光（AE）與快門控制。&lt;/p&gt;
+&lt;h2 id=&#34;拆解-r5-v400-原廠-bodydatadat-與雙態-aes-加密層&#34;&gt;拆解 R5 v4.00 原廠 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 與雙態 AES 加密層&lt;/h2&gt;
+&lt;p&gt;要從零建置自製韌體，第一步是從 Sony 官方釋出的 R5 v4.00 更新檔 &lt;code&gt;BODYDATA.DAT&lt;/code&gt;（&lt;code&gt;754,525,608 bytes&lt;/code&gt;，SHA-256 為 &lt;code&gt;51e1176a255a9a4b4782dfbcfa6c5f332b71173bdfe9ed2bcf4fca6bcbc6c2e2&lt;/code&gt;）解出乾淨的原廠分區與二進位基底。&lt;/p&gt;
+&lt;h3 id=&#34;外層-ufu-容器格式&#34;&gt;外層 &lt;code&gt;UFU&lt;/code&gt; 容器格式&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;BODYDATA.DAT&lt;/code&gt; 以 8-byte 魔術字元 &lt;code&gt;\x89UFU\r\n\x1a\n&lt;/code&gt; 開頭（刻意仿照 PNG 檔頭的設計，可用於偵測 FTP / HTTP 文字模式傳輸造成的換行損毀），隨後是由 big-endian 的 &lt;code&gt;(uint32 size, char kind[4])&lt;/code&gt; 組成的五個 chunk：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;DATV&lt;/code&gt; (4 bytes)&lt;/strong&gt;：容器格式版本號（&lt;code&gt;0x00010000&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;PROV&lt;/code&gt; (4 bytes)&lt;/strong&gt;：provisioning 旗標。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;UDID&lt;/code&gt; (20 bytes)&lt;/strong&gt;：目標機種與更新識別碼。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;FDAT&lt;/code&gt; (&lt;code&gt;754,525,456 bytes&lt;/code&gt;)&lt;/strong&gt;：加密後的韌體本體，由 &lt;strong&gt;736,841 個 1,024-byte 加密區塊&lt;/strong&gt;（共 &lt;code&gt;754,525,184 bytes&lt;/code&gt;）加上尾端 &lt;strong&gt;272 bytes trailer&lt;/strong&gt; (&lt;code&gt;16-byte&lt;/code&gt; AES-CBC IV + &lt;code&gt;256-byte&lt;/code&gt; RSA-2048 數位簽章) 組成。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;DEND&lt;/code&gt; (4 bytes)&lt;/strong&gt;：big-endian &lt;code&gt;CRC32&lt;/code&gt; 校驗碼，涵蓋從檔案偏移 &lt;code&gt;0&lt;/code&gt; 一直到 &lt;code&gt;DEND&lt;/code&gt; chunk header 之前的所有位元組。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;fdat-的-1024-byte-區塊結構與雙態-aes-加密-cxd90057_k8&#34;&gt;&lt;code&gt;FDAT&lt;/code&gt; 的 1,024-Byte 區塊結構與雙態 AES 加密 (&lt;code&gt;CXD90057_k8&lt;/code&gt;)&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;FDAT&lt;/code&gt; 內部的明文串流總長度為 &lt;code&gt;751,577,088 bytes&lt;/code&gt;。在打包加密時，Sony 將明文每 &lt;strong&gt;1,020 bytes&lt;/strong&gt; 切為一塊，並在前面加上 4 bytes 的標頭，組成固定 &lt;strong&gt;1,024 bytes&lt;/strong&gt; 的區塊：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; FdatBlock {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;uint16_t&lt;/span&gt; sum16;       &lt;span style=&#34;color:#75715e&#34;&gt;// Little-endian: 後續 511 個 uint16_le words 的無號總和 (&amp;amp; 0xFFFF)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;uint16_t&lt;/span&gt; sizeAndEnd;  &lt;span style=&#34;color:#75715e&#34;&gt;// 低 15 bits 為有效 payload 長度 (1..1020);
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#75715e&#34;&gt;// Bit 15 (0x8000) 在最後一個區塊 (#736,841) 設為 1，其餘為 0
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt;  payload[&lt;span style=&#34;color:#ae81ff&#34;&gt;1020&lt;/span&gt;]; &lt;span style=&#34;color:#75715e&#34;&gt;// 不足 1,020 bytes 處以 0xFF 填充
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;接著對這 &lt;code&gt;736,841&lt;/code&gt; 個區塊（&lt;code&gt;754,525,184 bytes&lt;/code&gt;）進行兩階段加密：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;前 512 bytes (Block 0 的前半部)&lt;/strong&gt;：使用 Sony 外層通用金鑰（&lt;code&gt;constants.key_aes&lt;/code&gt;）以 &lt;strong&gt;AES-128-ECB&lt;/strong&gt; 模式加密。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;剩餘所有位元組 (Offset &lt;code&gt;512 .. 754,525,184&lt;/code&gt;)&lt;/strong&gt;：使用 BIONZ XR 世代專屬金鑰（&lt;code&gt;constants.key_cxd90057_k8&lt;/code&gt;）與存放在 &lt;code&gt;signature_offset - 16&lt;/code&gt; 處的 16-byte IV，以 &lt;strong&gt;AES-CBC&lt;/strong&gt; 模式加密。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;當我們解開全部 &lt;code&gt;736,841&lt;/code&gt; 個區塊、驗證每個區塊的 &lt;code&gt;sum16&lt;/code&gt; 並剝除 4-byte 標頭後，重組出的 &lt;code&gt;751,577,088 bytes&lt;/code&gt; 明文串流（&lt;code&gt;original.fdat&lt;/code&gt;）包含三個緊密相連的區段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Bytes &lt;code&gt;0 .. 512&lt;/code&gt; (&lt;code&gt;FdatHeader&lt;/code&gt;)&lt;/strong&gt;：記錄機種代號 &lt;code&gt;model = 0x11030080&lt;/code&gt;、&lt;code&gt;region = 0&lt;/code&gt;、版本號 &lt;code&gt;versionMajor = 4&lt;/code&gt;、&lt;code&gt;versionMinor = 0x00&lt;/code&gt;（自製韌體將偏移 &lt;code&gt;0x20..0x21&lt;/code&gt; 改為 BCD &lt;code&gt;0x34, 0x04&lt;/code&gt; 代表 &lt;code&gt;v4.34&lt;/code&gt;）、&lt;code&gt;fs.offset = 512&lt;/code&gt;、&lt;code&gt;fs.size = 1,253,376&lt;/code&gt;、&lt;code&gt;firmwareOffset = 1,253,888&lt;/code&gt;、&lt;code&gt;firmwareSize = 750,323,200&lt;/code&gt;，以及位於偏移 &lt;code&gt;8..12&lt;/code&gt;、涵蓋 bytes &lt;code&gt;12..512&lt;/code&gt; 的標頭 &lt;code&gt;CRC32&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bytes &lt;code&gt;512 .. 1,253,888&lt;/code&gt; (&lt;code&gt;updater.img&lt;/code&gt;)&lt;/strong&gt;：大小 &lt;code&gt;1,253,376 bytes&lt;/code&gt; 的 SquashFS 4.0 映像檔，內含更新流程腳本 &lt;code&gt;/bin/startupdate.sh&lt;/code&gt;、&lt;code&gt;/bin/endupdate.sh&lt;/code&gt;、&lt;code&gt;/bodylib/libupdaterbody.so&lt;/code&gt; 以及 CP 更新韌體 &lt;code&gt;/cp/udtrcp.bin&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Bytes &lt;code&gt;1,253,888 .. 751,577,088&lt;/code&gt; (&lt;code&gt;original.tar&lt;/code&gt;)&lt;/strong&gt;：大小 &lt;code&gt;750,323,200 bytes&lt;/code&gt; 的 POSIX tar 封裝檔，內含各個 NAND 分區映像與校驗檔。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;我們從 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 依序解出全部 9 個原廠輸入檔案，並與專案的 &lt;code&gt;firmware/r5/inputs.lock.json&lt;/code&gt; 進行 SHA-256 比對，100% 吻合：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;輸入鍵值 (Input Key)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;檔案名稱&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;大小 (Bytes)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;SHA-256 雜湊值&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original_dat&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original.DAT&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;754,525,608&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;51e1176a255a9a4b...bc6c2e2&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original_fdat&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original.fdat&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;751,577,088&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;b3af8557d6279d8b...cfcb0ff&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original_tar&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;original.tar&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;750,323,200&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;8b03700edb87d293...6565813&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;updater&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;updater.img&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;1,253,376&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;c4b18a82eea52a50...dcce4a9&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;stock_nflasha5&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;nflasha5&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;243,789,184&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;15020d1afe7f1cf4...1363e8&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;stock_nflasha8&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;nflasha8&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;24,531,968&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;a625468fbbd6b0e0...1f8f46&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;stock_nflasha15&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;nflasha15&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;410,652,672&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;197fc934db37ed9b...638fa5&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;stock_ap&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;appFw.so&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;97,368,304&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;41bd8f4cda1f44c7...9ce7c7&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;stock_cp&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;cpapp-b.bin&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;17,617,008&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;3269bf6242633979...7ee7c8&lt;/code&gt;&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;深入-ap-修補工程appfwso-的-406-kb-code-cave-與-17-處-branch-hooks&#34;&gt;深入 AP 修補工程：&lt;code&gt;appFw.so&lt;/code&gt; 的 40.6 KB Code Cave 與 17 處 Branch Hooks&lt;/h2&gt;
+&lt;p&gt;AP 端的建置管線（&lt;code&gt;apply_recipe&lt;/code&gt; + &lt;code&gt;build_ap_image.py&lt;/code&gt; + &lt;code&gt;build_ap_module.py&lt;/code&gt;）對 &lt;code&gt;nflasha15&lt;/code&gt; 內的 &lt;code&gt;/lib/appFw.so&lt;/code&gt; 執行了兩階段改造：&lt;/p&gt;
+&lt;h3 id=&#34;第一階段基底-fl2--fl3-配方修補-ap_baseline&#34;&gt;第一階段：基底 &lt;code&gt;FL2&lt;/code&gt; / &lt;code&gt;FL3&lt;/code&gt; 配方修補 (&lt;code&gt;ap_baseline&lt;/code&gt;)&lt;/h3&gt;
+&lt;p&gt;首先套用 &lt;code&gt;baseline_recipes.json&lt;/code&gt; 中的 42 處二進位修補，將 &lt;code&gt;appFw.so&lt;/code&gt; 的檔案大小從原廠的 &lt;code&gt;97,368,304 bytes&lt;/code&gt; 擴充至 &lt;code&gt;97,452,032 bytes&lt;/code&gt;（在 ELF 可執行區段增加了 &lt;code&gt;+83,728 bytes&lt;/code&gt;），打通原廠 Creative Look 表格中對 &lt;code&gt;FL2&lt;/code&gt; 與 &lt;code&gt;FL3&lt;/code&gt; 的基礎支援。&lt;/p&gt;
+&lt;h3 id=&#34;第二階段c--arm64-執行期模組注入-build_ap_modulepy&#34;&gt;第二階段：C / ARM64 執行期模組注入 (&lt;code&gt;build_ap_module.py&lt;/code&gt;)&lt;/h3&gt;
+&lt;p&gt;接著將 3 個 C 語言原始碼檔案（&lt;code&gt;r5_stage413_transfer_core.c&lt;/code&gt;、&lt;code&gt;r5_filter_Menu.c&lt;/code&gt;、&lt;code&gt;r5_filter_renderer423.c&lt;/code&gt;）與 2 個 ARM64 組語跳板檔（&lt;code&gt;r5_stage413_trampoline.S&lt;/code&gt;、&lt;code&gt;r5_filter_menu_trampoline.S&lt;/code&gt;）編譯為位置無關（PIC）的執行期 payload，並精準釘選（pin）在 &lt;code&gt;appFw.so&lt;/code&gt; 的兩個 ELF 虛擬位址區段：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;RX code cave (可執行程式碼區段)&lt;/strong&gt;：位於虛擬位址 &lt;code&gt;vaddr = 0x03c97ef8&lt;/code&gt;（對應檔案偏移 &lt;code&gt;file_offset = 0x03c97ef8&lt;/code&gt;），模組本身佔用 &lt;code&gt;40,600 bytes&lt;/code&gt;（連同第一階段基底 cave 合計為 &lt;code&gt;63,096&lt;/code&gt; RX bytes）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;BSS state region (執行期狀態緩衝區)&lt;/strong&gt;：位於虛擬位址 &lt;code&gt;vaddr = 0x05cf18c0&lt;/code&gt;，大小為 &lt;code&gt;136,384 bytes&lt;/code&gt;（&lt;code&gt;0x214c0 bytes&lt;/code&gt;），用於在 RAM 中存放從 SD 卡解析出來的 &lt;code&gt;.BIN&lt;/code&gt; 濾鏡包、當前啟用的 6/32 字元外觀名稱，以及準備傳送給 CP 的 IPC 傳輸緩衝區。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;為了讓原本 &lt;code&gt;appFw.so&lt;/code&gt; 的生命週期與選單事件流進這塊 code cave，建置腳本在 &lt;code&gt;appFw.so&lt;/code&gt; 內植入了 &lt;strong&gt;17 處 ARM64 &lt;code&gt;B&lt;/code&gt; / &lt;code&gt;BL&lt;/code&gt; call-site hooks&lt;/strong&gt;：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;Hook 名稱&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;檔案偏移量 (File Offset)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;原廠指令 (Hex)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;修補後跳轉指令 (Hex)&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;攔截時機與用途&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;startup&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;25,170,660&lt;/code&gt; (&lt;code&gt;0x18012a4&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;60a26e39&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;0544da15&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;系統啟動時跳入初始化跳板&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;initial&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;55,422,568&lt;/code&gt; (&lt;code&gt;0x34daae8&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;60c21091&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;69dd6615&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;Creative Look 子系統初始狀態建立&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;completed&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;55,464,256&lt;/code&gt; (&lt;code&gt;0x34e4dc0&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;60c21091&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;fab46615&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;屬性載入完成後同步自訂濾鏡狀態&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;media&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;54,279,380&lt;/code&gt; (&lt;code&gt;0x33c38d4&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;a003168b&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;5b3a6b15&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;監控 SD 卡掛載狀態（&lt;code&gt;/mnt/sd0&lt;/code&gt;、&lt;code&gt;/mnt/sd1&lt;/code&gt;）&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;inbound&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;55,921,996&lt;/code&gt; (&lt;code&gt;0x35549cc&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;20008052&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;86f66415&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;攔截並注入跨核心 IPC 濾鏡資料&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;power&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;56,306,296&lt;/code&gt; (&lt;code&gt;0x35b26f8&lt;/code&gt;)&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;fd7bbba9&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;a57f6315&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;電源關閉或進入休眠前保存狀態&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;menu / UI hooks (×11)&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;多處 UI 分派點&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;原生選單指令&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;跳轉至 &lt;code&gt;r5_filter_Menu&lt;/code&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;註冊 &lt;code&gt;Fn&lt;/code&gt; 項目、繪製 6/32 字元名稱、查詢 v4.34 圖示 (&lt;code&gt;icon_query434&lt;/code&gt;) 等 11 處選單攔截點&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;原地-ext2-區塊整合-integrate&#34;&gt;原地 Ext2 區塊整合 (&lt;code&gt;integrate()&lt;/code&gt;)&lt;/h3&gt;
+&lt;p&gt;由於 &lt;code&gt;nflasha15&lt;/code&gt; 是一整個 &lt;code&gt;410,652,672 bytes&lt;/code&gt; 的 &lt;code&gt;ext2&lt;/code&gt; 檔案系統映像，把變大後的 &lt;code&gt;appFw.so&lt;/code&gt;（&lt;code&gt;97,452,032 bytes&lt;/code&gt;）寫回 &lt;code&gt;nflasha15&lt;/code&gt; 時不能隨便重新打包整個檔案系統（否則 inode 順序或時間戳記改變可能引發非預期行為）。&lt;/p&gt;
+&lt;p&gt;建置腳本透過 &lt;code&gt;nflasha15_layout&lt;/code&gt; 先為 &lt;code&gt;/lib/appFw.so&lt;/code&gt; 的 inode 擴充對應的資料區塊鏈（block chain），接著 &lt;code&gt;integrate()&lt;/code&gt; 直接將新版 &lt;code&gt;appFw.so&lt;/code&gt; 的內容覆寫進對應的 &lt;code&gt;ext2&lt;/code&gt; data blocks，並在最後執行嚴格的位元級斷言：確保 &lt;code&gt;nflasha15&lt;/code&gt; 分區中除了 &lt;code&gt;/lib/appFw.so&lt;/code&gt; 佔用的區塊與對應的 ext2 metadata 之外，其餘每一個 byte 都與原廠映像 &lt;strong&gt;100% 完全相同&lt;/strong&gt;。&lt;/p&gt;
+&lt;h2 id=&#34;深入-cp-修補工程cpapp-bbin-表格重定位與-unicorn-虛擬-cpu-模擬&#34;&gt;深入 CP 修補工程：&lt;code&gt;cpapp-b.bin&lt;/code&gt; 表格重定位與 Unicorn 虛擬 CPU 模擬&lt;/h2&gt;
+&lt;p&gt;看完了 AP 端，接著來看更刺激的 CP 端（&lt;code&gt;nflasha8:/CPAPP-B.BIN&lt;/code&gt;，基底位址 &lt;code&gt;0x67800000&lt;/code&gt;）。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼必須重定位-12-組-look-參數表&#34;&gt;為什麼必須重定位 12 組 Look 參數表？&lt;/h3&gt;
+&lt;p&gt;在原廠 R5 v4.00 的 &lt;code&gt;cpapp-b.bin&lt;/code&gt; 中，CP 將 10 組 Creative Look（&lt;code&gt;ST..SE&lt;/code&gt;）的 ISP 參數存放在固定長度為 10 的連續陣列裡，主要包含三大結構：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;s_kelvin&lt;/code&gt; 與 &lt;code&gt;s_adobekelvin&lt;/code&gt; 色溫補償表（每組 &lt;code&gt;0xDC&lt;/code&gt; bytes，&lt;code&gt;10 × 0xDC = 2,200 bytes&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;tone / gamma / 色彩矩陣結構（每組 &lt;code&gt;0x16B4&lt;/code&gt; = &lt;code&gt;5,812 bytes&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;5×9×9&lt;/code&gt; 3D HSV 色彩調整格&lt;/strong&gt;：每組 &lt;code&gt;184 bytes&lt;/code&gt;，由 5 個明度階層 luma levels × 9 個飽和度環 saturation rings × 9 個色相扇區 hue sectors 組成。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;問題在於：在 &lt;code&gt;cpapp-b.bin&lt;/code&gt; 的記憶體佈局中，這幾個 10-entry 陣列的屁股後面緊接著其他關鍵的 RTOS 全域變數！如果我們直接在原位址把陣列從 10 組硬撐到 12 組（&lt;code&gt;+FL2&lt;/code&gt;, &lt;code&gt;+FL3&lt;/code&gt;），多出來的 2 組資料就會直接蓋掉後面的 RTOS 全域變數，導致相機一開機就崩潰。&lt;/p&gt;
+&lt;p&gt;因此，建置管線（&lt;code&gt;build_cp.py&lt;/code&gt;）採取了 &lt;strong&gt;完整重定位 (table relocation)&lt;/strong&gt; 策略：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;在 &lt;code&gt;cpapp-b.bin&lt;/code&gt; 後段找到一塊乾淨的未使用記憶體區段 &lt;code&gt;0x688df740&lt;/code&gt;（其中可執行區段位於 &lt;code&gt;RX = 0x68995080&lt;/code&gt;，包含 &lt;code&gt;7,308 bytes&lt;/code&gt; 的 C 執行期程式碼 &lt;code&gt;cp_transfer.c&lt;/code&gt; / &lt;code&gt;cp_stage413_probe.c&lt;/code&gt;，以及 &lt;code&gt;522,152 bytes&lt;/code&gt; 的擴充表格與狀態空間）。&lt;/li&gt;
+&lt;li&gt;將擴充為 12 組的完整 look 參數表搬移至 &lt;code&gt;0x688df740&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;自動掃描整個 &lt;code&gt;cpapp-b.bin&lt;/code&gt;，一舉修補了 &lt;strong&gt;167 處 ARM32 指令&lt;/strong&gt;——包含將所有查表函式的 literal-pool 基底位址改指到 &lt;code&gt;0x688df740&lt;/code&gt; 新表，以及將所有的陣列邊界檢查從 &lt;code&gt;cmp rX, #10&lt;/code&gt; 修改為 &lt;code&gt;cmp rX, #12&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;刷機前的虛擬-cpu-守門員unicorn-engine-getter_gatespy&#34;&gt;刷機前的虛擬 CPU 守門員：Unicorn Engine (&lt;code&gt;getter_gates.py&lt;/code&gt;)&lt;/h3&gt;
+&lt;p&gt;一口氣修改了裸機 RTOS 裡的 167 處 ARM32 指令，要怎麼確定沒有任何一條指令改錯、或者不小心破壞了呼叫慣例（calling convention）？&lt;/p&gt;
+&lt;p&gt;這套專案設計了一道極為嚴謹的防線：&lt;code&gt;src/gamma/getter_gates.py&lt;/code&gt;。在每次打包韌體前，它會使用 &lt;strong&gt;Unicorn Engine&lt;/strong&gt; 建立一顆 32 位元 ARM 虛擬 CPU（&lt;code&gt;UC_ARCH_ARM, UC_MODE_ARM&lt;/code&gt;），將 &lt;code&gt;17.6 MB&lt;/code&gt; 的 &lt;code&gt;cpapp-b.bin&lt;/code&gt; 實際映射載入至虛擬位址 &lt;code&gt;0x67800000&lt;/code&gt;：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;啟用硬體浮點與向量協同處理器 (VFP / NEON)&lt;/strong&gt;：
+因為 CP 的色彩查表與插值函式內部使用了 ARM VFP 指令，模擬器在啟動時會先透過協同處理器暫存器啟用 &lt;code&gt;CP10&lt;/code&gt; 與 &lt;code&gt;CP11&lt;/code&gt;：
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-armasm&#34; data-lang=&#34;armasm&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;mrc &lt;span style=&#34;color:#a6e22e&#34;&gt;p15&lt;/span&gt;, &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;c1&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;c0&lt;/span&gt;, &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;orr &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;, #&lt;span style=&#34;color:#ae81ff&#34;&gt;0x00f00000&lt;/span&gt;   &lt;span style=&#34;color:#75715e&#34;&gt;; 啟用 CP10 / CP11 (VFP/NEON 完全存取權限)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;mcr &lt;span style=&#34;color:#a6e22e&#34;&gt;p15&lt;/span&gt;, &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;c1&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;c0&lt;/span&gt;, &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;mov &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;, #&lt;span style=&#34;color:#ae81ff&#34;&gt;0x40000000&lt;/span&gt;       &lt;span style=&#34;color:#75715e&#34;&gt;; EN bit in FPEXC
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;vmsr &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;fpexc&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;r0&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;遍歷模擬 3 種狀態 × 12 組 look 索引&lt;/strong&gt;：
+模擬器直接設定 &lt;code&gt;PC&lt;/code&gt; 呼叫 &lt;code&gt;cpapp-b.bin&lt;/code&gt; 內真實的 getter 函式（如 &lt;code&gt;0x684b5148&lt;/code&gt;、&lt;code&gt;0x684b5220&lt;/code&gt;、&lt;code&gt;0x684b527c&lt;/code&gt; 等），針對 look 索引 &lt;code&gt;1..12&lt;/code&gt; 依序測試三種執行期狀態：
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;狀態 A&lt;/strong&gt;：cold boot 未初始化預設狀態&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態 B&lt;/strong&gt;：載入內建 &lt;code&gt;FL2&lt;/code&gt; / &lt;code&gt;FL3&lt;/code&gt; 預設值狀態&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態 C&lt;/strong&gt;：由 SD 卡 &lt;code&gt;.BIN&lt;/code&gt; 濾鏡覆寫全部 12 組槽位狀態&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;位元級與暫存器完整性斷言&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;針對索引 &lt;code&gt;1..10&lt;/code&gt;（原廠 10 種外觀），比對修補後韌體回傳的結構體每一個 byte，必須與未修改的原廠 &lt;code&gt;cpapp-b.bin&lt;/code&gt; &lt;strong&gt;100% 逐位元一致&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;針對索引 &lt;code&gt;11..12&lt;/code&gt;（&lt;code&gt;FL2&lt;/code&gt;、&lt;code&gt;FL3&lt;/code&gt;），驗證回傳的指標與內容精準對應 &lt;code&gt;0x688df740&lt;/code&gt; 重定位表中的資料。&lt;/li&gt;
+&lt;li&gt;檢查函式返回時的 callee-saved 暫存器（&lt;code&gt;r4..r11&lt;/code&gt; 與 &lt;code&gt;sp&lt;/code&gt;），確保堆疊與暫存器零污染。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/unicorn-emulation-gate.svg&#34; alt=&#34;unicorn-emulation-gate.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h2 id=&#34;windows--llvm-clang-2314-本地建置調適與跨工具鏈比對&#34;&gt;Windows + LLVM Clang 23.1.4 本地建置調適與跨工具鏈比對&lt;/h2&gt;
+&lt;p&gt;上游專案原本是在 macOS 環境下使用 Apple Clang 21（&lt;code&gt;clang 21.1.x&lt;/code&gt;）開發，並在腳本中寫死了 &lt;code&gt;/usr/bin/clang&lt;/code&gt; 與 &lt;code&gt;/usr/bin/openssl&lt;/code&gt; 等路徑。當我們將建置管線移植到 Windows 11 並使用 &lt;strong&gt;LLVM Clang 23.1.4&lt;/strong&gt; 與 &lt;code&gt;uv&lt;/code&gt;（&lt;code&gt;cpython-3.12.11&lt;/code&gt;）執行本地編譯時，解決了三個關鍵的跨平台與編譯器差異：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Clang 23 新增的全域變數靜態分析警告&lt;/strong&gt;：
+LLVM Clang 23 引入了更嚴格的 &lt;code&gt;-Wunused-but-set-global&lt;/code&gt; 檢查，在開啟 &lt;code&gt;-Werror&lt;/code&gt; 時會攔截 &lt;code&gt;r5_filter_renderer423.c:23&lt;/code&gt; 中的診斷計數器 &lt;code&gt;static uint32_t allocation_failures&lt;/code&gt;。我們在 &lt;code&gt;build_ap_module.py&lt;/code&gt; 與 &lt;code&gt;build_cp.py&lt;/code&gt; 的交叉編譯旗標中補上了 &lt;code&gt;-Wno-unused-but-set-variable&lt;/code&gt; 與 &lt;code&gt;-Wno-unused-but-set-global&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;0701_part_image_sum/part_image.sum&lt;/code&gt; 的 454-Byte CRLF 陷阱&lt;/strong&gt;：
+在打包 &lt;code&gt;original.tar&lt;/code&gt; 前，&lt;code&gt;build.py&lt;/code&gt; 會重新計算 &lt;code&gt;dev/nflasha5&lt;/code&gt;、&lt;code&gt;dev/nflasha8&lt;/code&gt; 與 &lt;code&gt;dev/nflasha15&lt;/code&gt; 的 CRC32 校驗碼並更新 &lt;code&gt;part_image.sum&lt;/code&gt;。因為該建置管線採用原地覆寫 tar 成員的策略，&lt;code&gt;part_image.sum&lt;/code&gt; 的檔案大小必須嚴格維持在 &lt;code&gt;454 bytes&lt;/code&gt;。
+在 Windows 上，Python 的 &lt;code&gt;Path.write_text()&lt;/code&gt; 預設會將換行符號 &lt;code&gt;\n&lt;/code&gt; 轉換為 &lt;code&gt;\r\n&lt;/code&gt;（CRLF），導致這份 6 行校驗檔瞬間膨脹為 &lt;code&gt;460 bytes&lt;/code&gt; 並觸發 tar 區塊大小 &lt;code&gt;AssertionError&lt;/code&gt;！將寫入方式改為 &lt;code&gt;sums.write_bytes(text.encode(&#39;ascii&#39;))&lt;/code&gt; 後，便完美保持了 UNIX &lt;code&gt;LF&lt;/code&gt; 的 &lt;code&gt;454 bytes&lt;/code&gt; 結構。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Apple Clang 21 與 LLVM Clang 23 的產出比對&lt;/strong&gt;：
+我們將 Windows + LLVM Clang 23.1.4 編譯出的成品與原作者 macOS + Apple Clang 21 的參考輸出進行了逐檔案比對：
+&lt;ul&gt;
+&lt;li&gt;所有非編譯型資料產出（包含 &lt;code&gt;nflasha5&lt;/code&gt;、12 個地區的 &lt;code&gt;CX8920*.bin&lt;/code&gt; 出廠備份範本與 &lt;code&gt;backup.sum&lt;/code&gt;）的 &lt;strong&gt;SHA-256 雜湊值 100% 相同&lt;/strong&gt;，例如 &lt;code&gt;nflasha5&lt;/code&gt; 皆為 &lt;code&gt;eac727efd7af2142ddd9b8ae22387614eaaaba9dc9f04ce0434bf8e7c766d693&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;經過 C 編譯器產出的 &lt;code&gt;appFw.so&lt;/code&gt;（&lt;code&gt;97,452,032 bytes&lt;/code&gt;）與 &lt;code&gt;cpapp-b.bin&lt;/code&gt;（&lt;code&gt;17,617,008 bytes&lt;/code&gt;）不僅檔案大小完全一致，內部的 RX / BSS 區段尺寸（AP 端為 &lt;code&gt;40,600 B&lt;/code&gt; / &lt;code&gt;136,384 B&lt;/code&gt;；CP 端為 &lt;code&gt;7,308 B&lt;/code&gt; / &lt;code&gt;522,152 B&lt;/code&gt;）與 17 個 hook 跳板位址也分毫不差，僅在 C 函式內部有 Clang 21 與 Clang 23 之間的微幅指令排程與暫存器分配差異，且全數通過 &lt;code&gt;Unicorn&lt;/code&gt; 模擬測試。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;密碼學簽章驗證partition-1-nflasha1-信任鏈與-android-fastboot&#34;&gt;密碼學簽章驗證、Partition 1 (&lt;code&gt;nflasha1&lt;/code&gt;) 信任鏈與 Android Fastboot&lt;/h2&gt;
+&lt;p&gt;當我們修改完 &lt;code&gt;nflasha5&lt;/code&gt;、&lt;code&gt;nflasha8&lt;/code&gt; 與 &lt;code&gt;nflasha15&lt;/code&gt;，並重新打包、以 &lt;code&gt;CXD90057_k8&lt;/code&gt; 加密出 736,841 個 &lt;code&gt;FDAT&lt;/code&gt; 區塊後，就來到了整個韌體工程最後、也最關鍵的一道安全防線：&lt;strong&gt;數位簽章驗證&lt;/strong&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼不能直接把改好的-bodydatadat-放進原廠相機更新&#34;&gt;為什麼不能直接把改好的 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 放進原廠相機更新？&lt;/h3&gt;
+&lt;p&gt;在 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 的 &lt;code&gt;FDAT&lt;/code&gt; 區段最尾端（檔案偏移 &lt;code&gt;754,525,332&lt;/code&gt;，緊接在 736,841 個加密區塊與 16-byte IV 之後），存放著一段 &lt;strong&gt;256 bytes 的 RSA-2048 數位簽章&lt;/strong&gt;，採用 &lt;code&gt;RSASSA-PKCS1-v1_5&lt;/code&gt; 填充與 &lt;code&gt;SHA-256&lt;/code&gt; 雜湊，簽章範圍涵蓋了前面整整 &lt;code&gt;754,525,200 bytes&lt;/code&gt; 的加密串流與 IV。&lt;/p&gt;
+&lt;p&gt;當你在原廠未改機的 R5 上透過 SD 卡執行韌體更新時，相機其實是重新開機進入 &lt;strong&gt;Partition 1 (&lt;code&gt;nflasha1&lt;/code&gt;)&lt;/strong&gt; 的更新環境：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;nflasha1&lt;/code&gt; 是一個 &lt;code&gt;25,100,288 bytes&lt;/code&gt;（約 23.9 MB）的 &lt;code&gt;FAT12&lt;/code&gt; 復原分區，裡面放著 &lt;code&gt;/boot/initrd.img&lt;/code&gt;（一個以 zlib 壓縮的 SquashFS 4.0 根檔案系統）以及記錄檔案 MD5 的 &lt;code&gt;/p1chksum&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;在 &lt;code&gt;/boot/initrd.img&lt;/code&gt; 內部，&lt;code&gt;/etc/VerificationKey.pem&lt;/code&gt;（&lt;code&gt;451 bytes&lt;/code&gt;，SHA-256 為 &lt;code&gt;8281413b5607446939613e07d020b2c7d8ee2371349099de56bc8288f7be0a43&lt;/code&gt;）存放著 Sony 官方的 RSA-2048 公鑰。&lt;/li&gt;
+&lt;li&gt;更嚴密的是，&lt;code&gt;initrd.img&lt;/code&gt; 裡負責韌體更新的四個核心共享函式庫：
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/usr/lib/libupdaterapi.so&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/usr/lib/libsdfileinputupdaterapi.so&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/usr/lib/libseninputupdaterapi.so&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/usr/lib/libuudfileinputupdaterapi.so&lt;/code&gt;
+在執行更新時會進行 &lt;strong&gt;雙層驗證&lt;/strong&gt;：&lt;/li&gt;
+&lt;/ul&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;第一層公鑰指紋驗證 (&lt;code&gt;_ZN7Updater21SignatureVerification9verifyKeyEPKc&lt;/code&gt;)&lt;/strong&gt;：即 &lt;code&gt;Updater::SignatureVerification::verifyKey(char const*)&lt;/code&gt;，先計算 &lt;code&gt;/etc/VerificationKey.pem&lt;/code&gt; 的指紋，檢查它是否等於寫死在 &lt;code&gt;.so&lt;/code&gt; 裡的 Sony 官方公鑰雜湊！這意味著就算你只換掉 &lt;code&gt;.pem&lt;/code&gt; 公鑰檔，第一層檢查也會直接報錯拒絕。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;第二層密碼學簽章驗證 (&lt;code&gt;_ZN7Updater21SignatureVerification15VerifySignatureEPKhjS2_j&lt;/code&gt;)&lt;/strong&gt;：使用 &lt;code&gt;/etc/VerificationKey.pem&lt;/code&gt; 對 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 的 &lt;code&gt;FDAT&lt;/code&gt; 區段執行標準的 RSA-2048 PKCS#1 v1.5 SHA-256 數位簽章驗證。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;一次性硬體引導rp2040-uart-與隱藏在相機裡的-android-fastboot-v05&#34;&gt;一次性硬體引導：RP2040 UART 與隱藏在相機裡的 Android Fastboot v0.5&lt;/h3&gt;
+&lt;p&gt;因為全世界只有 Sony 擁有對應的 RSA-2048 私鑰，任何想要透過 SD 卡刷入自簽章 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 的相機，都必須先透過硬體除錯介面完成一次性的 &lt;strong&gt;Partition 1 (&lt;code&gt;nflasha1&lt;/code&gt;) 公鑰替換&lt;/strong&gt;。&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-29-sony-a7r5-custom-firmware/fastboot-trust-chain.svg&#34; alt=&#34;fastboot-trust-chain.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;這套硬體引導流程的底層機制最早由安全研究員 David Buchanan 在 &lt;code&gt;DavidBuchanan314/ILCE-7M4-RE&lt;/code&gt; 中發掘，完整運作過程如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;透過 Sony Multi-port UART 進入暫時性 SRAM Fastboot&lt;/strong&gt;：
+使用 Sony Multi-port 轉接板連接至一塊刷有 &lt;code&gt;uart_boot&lt;/code&gt; 韌體的 RP2040（接線為 &lt;code&gt;GPIO28 ➔ RX&lt;/code&gt;、&lt;code&gt;GPIO29 ➔ TX&lt;/code&gt;、&lt;code&gt;GPIO27 ➔ Reset&lt;/code&gt;，初始握手鮑率為非標準的 &lt;code&gt;48000&lt;/code&gt; baud），同時將相機 USB-C 接上電腦。在重置瞬間，主機透過 UART 將 Sony 官方簽章過的 BootROM SRAM loader（&lt;code&gt;fastboot.bin&lt;/code&gt;）串流寫入相機內部 SRAM 位址 &lt;code&gt;0x92028000&lt;/code&gt;。隨後 UART 切換至 &lt;code&gt;115200&lt;/code&gt; baud 並印出：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[mira] fastboot ready&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Sony 的 &lt;code&gt;mira&lt;/code&gt; loader 採用標準 Google Android Fastboot v0.5&lt;/strong&gt;：
+當 &lt;code&gt;mira&lt;/code&gt; 啟動 USB 控制器後，電腦端看到的 USB 裝置識別碼竟然是 &lt;strong&gt;Google 官方的 Android Fastboot ID&lt;/strong&gt;：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;VID = 0x18d1&lt;/code&gt; (Google Inc.)&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;PID = 0x4ee0&lt;/code&gt; (Android Fastboot)&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;bInterfaceClass = 0xFF&lt;/code&gt;、&lt;code&gt;bInterfaceSubClass = 0x42&lt;/code&gt;、&lt;code&gt;bInterfaceProtocol = 0x03&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;透過 USB bulk endpoint 發送 &lt;code&gt;getvar:version&lt;/code&gt; 會直接回傳 &lt;code&gt;OKAY0.5&lt;/code&gt;。它不僅完整支援標準 Android Fastboot 指令（&lt;code&gt;getvar:partition-size:nflasha1&lt;/code&gt;、&lt;code&gt;download:&amp;lt;hex_len&amp;gt;&lt;/code&gt;、&lt;code&gt;upload&lt;/code&gt;、&lt;code&gt;flash:nflasha1&lt;/code&gt;、&lt;code&gt;reboot&lt;/code&gt;）與標準的 &lt;code&gt;OKAY&lt;/code&gt; / &lt;code&gt;FAIL&lt;/code&gt; / &lt;code&gt;INFO&lt;/code&gt; / &lt;code&gt;DATA%08x&lt;/code&gt; 封包協定，甚至原生支援 &lt;strong&gt;Android Sparse Image&lt;/strong&gt; 格式（魔術字元 &lt;code&gt;0xed26ff3a&lt;/code&gt;，v1.0，512-byte 磁區區塊，使用 &lt;code&gt;0xCAC1&lt;/code&gt; &lt;code&gt;RAW&lt;/code&gt; chunk 寫入有變動的磁區、以 &lt;code&gt;0xCAC3&lt;/code&gt; &lt;code&gt;DONT_CARE&lt;/code&gt; chunk 跳過未修改磁區）！
+此外，Sony 工程師還在 &lt;code&gt;mira&lt;/code&gt; 裡實作了三個專屬的 &lt;code&gt;oem&lt;/code&gt; 擴充指令：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;oem partition&lt;/code&gt;：列出內部 &lt;code&gt;SDM2&lt;/code&gt; eMMC 上全部 17 個分區（&lt;code&gt;nflasha1&lt;/code&gt; .. &lt;code&gt;nflasha17&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;oem partition dump nflasha1&lt;/code&gt;（搭配 &lt;code&gt;upload&lt;/code&gt;）：將 Partition 1 讀取至 RAM 並透過 USB 完整傾印回電腦。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;oem dumpbrom&lt;/code&gt;：傾印 &lt;code&gt;CXD90057&lt;/code&gt; 的晶片內部 BootROM。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;原地修補-nflasha1-的-8-byte-verifykey-與-sparse-image-回寫&#34;&gt;原地修補 &lt;code&gt;nflasha1&lt;/code&gt; 的 8-Byte &lt;code&gt;verifyKey()&lt;/code&gt; 與 Sparse Image 回寫&lt;/h3&gt;
+&lt;p&gt;取得相機傾印出的 &lt;code&gt;nflasha1&lt;/code&gt; 映像後，&lt;code&gt;build_r5_partition1.py&lt;/code&gt; 與 &lt;code&gt;build_r5_verifykey_skip.py&lt;/code&gt; 會在不改變分區與壓縮區塊幾何結構的前提下進行原地修補：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;替換公鑰&lt;/strong&gt;：將 &lt;code&gt;initrd.img&lt;/code&gt; 內的 &lt;code&gt;/etc/VerificationKey.pem&lt;/code&gt;（&lt;code&gt;451 bytes&lt;/code&gt;）替換為使用者自己生成的 RSA-2048 &lt;code&gt;public.pem&lt;/code&gt;（同樣為 &lt;code&gt;451 bytes&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;修補 4 個 updater &lt;code&gt;.so&lt;/code&gt; 的 &lt;code&gt;verifyKey()&lt;/code&gt; 函式入口&lt;/strong&gt;：
+將 &lt;code&gt;_ZN7Updater21SignatureVerification9verifyKeyEPKc&lt;/code&gt; 開頭的 8 bytes（兩條 ARM64 指令）替換掉：
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-armasm&#34; data-lang=&#34;armasm&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; 修補前 (Before): fd 7b b2 a9  e0 03 01 aa
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;stp &lt;span style=&#34;color:#a6e22e&#34;&gt;x29&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;x30&lt;/span&gt;, &lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;[sp&lt;/span&gt;, #&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0x50&lt;/span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;]!&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;mov &lt;span style=&#34;color:#a6e22e&#34;&gt;x0&lt;/span&gt;, &lt;span style=&#34;color:#a6e22e&#34;&gt;x1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; 修補後 (After):  00 00 80 52  c0 03 5f d6
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;mov &lt;span style=&#34;color:#a6e22e&#34;&gt;w0&lt;/span&gt;, #&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;; 永遠回傳 0 (代表自訂公鑰指紋合法)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ret&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+這個 8-byte 修補讓 &lt;code&gt;verifyKey()&lt;/code&gt; 認可我們放入的自訂 &lt;code&gt;public.pem&lt;/code&gt;，同時 &lt;strong&gt;完整保留了&lt;/strong&gt; &lt;code&gt;VerifySignature()&lt;/code&gt; 的所有密碼學檢查，因此相機在透過 SD 卡刷機時，依然會嚴格驗證 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 的 RSA-2048 數位簽章。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;等長重壓縮與 233 磁區 Sparse Image 刷寫&lt;/strong&gt;：
+腳本只重新壓縮 &lt;code&gt;initrd.img&lt;/code&gt; 中受影響的 zlib SquashFS fragments，並精確控制壓縮參數使其與原始 fragment 的 byte 長度完全相同；接著更新 &lt;code&gt;/p1chksum&lt;/code&gt; 裡的 &lt;code&gt;initrd.img&lt;/code&gt; MD5，最後將 &lt;code&gt;25.1 MB&lt;/code&gt; 的 &lt;code&gt;nflasha1&lt;/code&gt; 中實際發生變動的 &lt;strong&gt;233 個 512-byte 磁區&lt;/strong&gt;封裝成一個不到 &lt;strong&gt;125 KB&lt;/strong&gt; 的 Android Sparse Image，透過 &lt;code&gt;flash:nflasha1&lt;/code&gt; 瞬間寫回相機。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;本地生成自簽章-bodydatadat-與-100-解密驗證&#34;&gt;本地生成自簽章 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 與 100% 解密驗證&lt;/h2&gt;
+&lt;p&gt;在完成所有分析與工具鏈調適後，我們在本地生成了一組全新的 2048-bit RSA 金鑰對（&lt;code&gt;e = 65537&lt;/code&gt;）：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;私鑰 &lt;code&gt;private.pem&lt;/code&gt;（&lt;code&gt;1,679 bytes&lt;/code&gt;），用於簽署自製 &lt;code&gt;BODYDATA.DAT&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;公鑰 &lt;code&gt;public.pem&lt;/code&gt; / &lt;code&gt;VerificationKey.pem&lt;/code&gt;（&lt;code&gt;451 bytes&lt;/code&gt;，SHA-256 為 &lt;code&gt;9b2ab38babd06c8aea18a4064ddc7bbd4dd9014ed14c16db369df8363fc229c8&lt;/code&gt;），用於注入 &lt;code&gt;nflasha1&lt;/code&gt;。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;接著我們執行完整的 &lt;code&gt;--stage all&lt;/code&gt; 自動化建置與簽章管線：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-powershell&#34; data-lang=&#34;powershell&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;uv run python firmware/r5/build.py --inputs firmware/r5/inputs.local.json --output D:/code/r5-build-all --stage all&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;整條管線依序完成了以下工作並產出完整驗證報告（&lt;code&gt;D:\code\r5-build-all\verification.json&lt;/code&gt;）：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;編譯並整合雙處理器映像&lt;/strong&gt;：產出修補後的 &lt;code&gt;appFw.so&lt;/code&gt;、&lt;code&gt;cpapp-b.bin&lt;/code&gt;、&lt;code&gt;nflasha5&lt;/code&gt;（&lt;code&gt;WBI2&lt;/code&gt; ➔ &lt;code&gt;wbi2&lt;/code&gt;）、&lt;code&gt;nflasha8&lt;/code&gt;、&lt;code&gt;nflasha15&lt;/code&gt;、&lt;code&gt;part_image.sum&lt;/code&gt;（精確 &lt;code&gt;454 bytes&lt;/code&gt;）以及 12 個地區的 &lt;code&gt;CX8920*.bin&lt;/code&gt; 備份檔與 &lt;code&gt;backup.sum&lt;/code&gt;，並全數通過 &lt;code&gt;Unicorn Engine&lt;/code&gt; 虛擬 CPU 模擬閘門。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;封裝明文 &lt;code&gt;FDAT&lt;/code&gt; 串流&lt;/strong&gt;：組裝出 &lt;code&gt;751,577,088 bytes&lt;/code&gt; 的明文 &lt;code&gt;FDAT&lt;/code&gt; 映像（SHA-256 為 &lt;code&gt;a46c6bb0811064cec9dce08b47deee40116ea5d51f255faf26d8814684361635&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;雙態 AES 區塊加密與 RSA-2048 簽章&lt;/strong&gt;：將明文切分為 &lt;code&gt;736,841&lt;/code&gt; 個 1,024-byte 區塊（&lt;code&gt;754,525,184 bytes&lt;/code&gt;），以 &lt;code&gt;AES-ECB&lt;/code&gt; + &lt;code&gt;AES-CBC(CXD90057_k8, iv)&lt;/code&gt; 加密，使用 &lt;code&gt;private.pem&lt;/code&gt; 對加密內容與 IV 產生 256-byte &lt;code&gt;RSASSA-PKCS1-v1_5 / SHA-256&lt;/code&gt; 簽章，最後計算最外層 &lt;code&gt;DEND&lt;/code&gt; 的 &lt;code&gt;CRC32&lt;/code&gt;，產出最終的 &lt;code&gt;BODYDATA.DAT&lt;/code&gt;（&lt;code&gt;754,525,608 bytes&lt;/code&gt;，SHA-256 為 &lt;code&gt;b267a02ba29a7c8f84cbd38fa11413c903772f73d64ffd34e2a61129533cd0f6&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;雙向密碼學與解密完整性驗證&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;同時透過 &lt;code&gt;PyCryptodome&lt;/code&gt; 與獨立的 &lt;code&gt;openssl pkeyutl -verify&lt;/code&gt; 驗證 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 尾端的 256-byte RSA-2048 簽章，確認回傳 &lt;code&gt;Signature Verified Successfully&lt;/code&gt;，並測試竄改簽章後能被正確拒絕（&lt;code&gt;tampered_signature_rejected: true&lt;/code&gt;、&lt;code&gt;outer_crc_valid: true&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;將產出的 &lt;code&gt;BODYDATA.DAT&lt;/code&gt; 重新丟回解密器，獨立解開全部 &lt;code&gt;736,841&lt;/code&gt; 個區塊，確認解出的每一顆 byte 都與打包前的明文分區 100% 吻合。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;結語&#34;&gt;結語&lt;/h2&gt;
+&lt;p&gt;回頭看這次對 Sony A7R V 第三方韌體 v4.34 的拆解與本地建置，最讓我著迷的不只是最終在相機上多出了 &lt;code&gt;FL2&lt;/code&gt;、&lt;code&gt;FL3&lt;/code&gt; 與 12 組 Fujifilm 軟片模擬，而是得以深入現代高階數位相機內部的系統工程設計：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;一顆 &lt;code&gt;CXD90057&lt;/code&gt; SoC 同時跑著四核 64 位元 SCEL Linux（負責 97.3 MB 的 &lt;code&gt;/lib/appFw.so&lt;/code&gt; 單體應用）與 32 位元 Cortex-R5 TOPPERS/FMP RTOS（在 &lt;code&gt;0x67800000&lt;/code&gt; 負責硬體即時 ISP 管線），並透過 &lt;code&gt;nflasha5&lt;/code&gt; 的 &lt;code&gt;WBI2&lt;/code&gt; LZO 記憶體休眠快照達成 0.5 秒瞬間開機。&lt;/li&gt;
+&lt;li&gt;面對高風險的雙架構二進位修改，透過原地 ext2 區塊替換、重定位 12 組 ISP 參數表至 &lt;code&gt;0x688df740&lt;/code&gt;，並結合啟用 VFP/NEON 的 &lt;code&gt;Unicorn Engine&lt;/code&gt; 虛擬 CPU 模擬閘門，將傳統嵌入式修改「刷上去才知道會不會磚」的不確定性，轉化為刷機前就能 100% 自動化驗證的工程管線。&lt;/li&gt;
+&lt;li&gt;而在底層 BootROM 的 &lt;code&gt;mira&lt;/code&gt; SRAM loader（&lt;code&gt;0x92028000&lt;/code&gt;）中遇見熟悉的 Google Android Fastboot v0.5（&lt;code&gt;0x18d1:0x4ee0&lt;/code&gt;）與 Sparse Image 協定，並只用 8 bytes（&lt;code&gt;mov w0, #0; ret&lt;/code&gt;）優雅地將自己的 RSA-2048 金鑰對接入 &lt;code&gt;nflasha1&lt;/code&gt; 信任鏈，更是跨領域逆向工程中那種「原來底層都是相通的」最大樂趣。&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>用 Rust 把 2D 相片變成 3D 列印浮雕</title>
+      <link>https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/</link>
+      <pubDate>Fri, 07 Aug 2026 00:00:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;你有沒有想過把一張普通的平面相片，變成立體、伸手就能摸到的 3D 浮雕（Bas-Relief）？&lt;/p&gt;
+&lt;p&gt;在傳統雕刻中，製作浮雕需要極高的工藝技術；而在 3D 列印領域，大家常玩的 Lithophane（光影透光相片）雖然漂亮，但必須背後有光源才能看清細節。如果我們想要的是一個&lt;strong&gt;真正的 3D 幾何實體&lt;/strong&gt;——有凸起的面貌、有起伏的山脈細節、可以直接拿在手上，甚至放到 OpenSCAD 裡面加上外框和掛鉤，該怎麼做？&lt;/p&gt;
+&lt;p&gt;這就是 &lt;strong&gt;&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/depth-relief&#34;&gt;depth-relief&lt;/a&gt;&lt;/strong&gt; 這個專案的起點。身為 &lt;em&gt;Rust 52 Projects&lt;/em&gt; 挑戰的一部分，我用 Rust + OpenCV 寫了一個命令列工具。它能將單張平面照片（透過 MiDaS 深度學習模型）或左右雙眼立體對（透過 StereoBM 塊匹配）轉換為 2D 深度圖（Depth Map），接著透過**高頻照片細節融合與後處理管線（High-Pass Detail Fusion &amp;amp; Post-Processing Pipeline）&lt;strong&gt;刻印出銳利的五官，最後自動三角化生成&lt;/strong&gt;完全封閉、無拓撲瑕疵（Watertight/Manifold）**的 3D STL 網格檔案，可以直接匯入 PrusaSlicer 或 Bambu Studio 進行 3D 列印！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;實戰成果展示-the-patrick-22-showcase&#34;&gt;實戰成果展示 (The &lt;code&gt;patrick-22&lt;/code&gt; Showcase)&lt;/h3&gt;
+&lt;p&gt;在深入技術細節之前，我們先來看看這套系統在真實照片上的轉換效果。以下是我使用自己的個人照 &lt;code&gt;patrick-22.jpg&lt;/code&gt; 進行 3D 浮雕生成的完整過程：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;1. 原始 2D 輸入照片 (&lt;code&gt;patrick-22.jpg&lt;/code&gt;)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;2. 後處理管線生成的深度圖 (&lt;code&gt;patrick-22-depth.png&lt;/code&gt;)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22.jpg&#34; alt=&#34;patrick-22.jpg&#34; width=&#34;288&#34; height=&#34;288&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-depth.png&#34; alt=&#34;patrick-22-depth.png&#34; width=&#34;256&#34; height=&#34;256&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;經由 &lt;code&gt;depth-relief&lt;/code&gt; 生成的 &lt;strong&gt;3D STL 模型 (&lt;code&gt;patrick-22.stl&lt;/code&gt;)&lt;/strong&gt; 與 3D 旋轉預覽效果：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;3D 浮雕 STL 靜態渲染圖 (&lt;code&gt;patrick-22-3d-render.png&lt;/code&gt;)&lt;/th&gt;
+					&lt;th style=&#34;text-align: center&#34;&gt;3D 浮雕光影動態旋轉展示 (&lt;code&gt;patrick-22-3d.gif&lt;/code&gt;)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-3d-render.png&#34; alt=&#34;patrick-22-3d-render.png&#34; width=&#34;1150&#34; height=&#34;1102&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+					&lt;td style=&#34;text-align: center&#34;&gt;
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/patrick-22-3d.gif&#34; alt=&#34;patrick-22-3d.gif&#34; width=&#34;500&#34; height=&#34;479&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;可以看到，即便原始深度模型（MiDaS）只給出了大致的大頭形狀，但透過我們設計的 &lt;strong&gt;High-Pass Detail Fusion&lt;/strong&gt;，五官線條（眼睛、眉毛、鼻翼、嘴唇）、頭髮輪廓與五官立體感都被精準地刻印到了 3D 浮雕表面上！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;系統架構與處理流程&#34;&gt;系統架構與處理流程&lt;/h3&gt;
+&lt;p&gt;把一張 2D 圖片變成可 3D 列印的 STL 檔案，中間跨越了電腦視覺、圖像訊號處理與 3D 幾何建模三個領域。整個 &lt;code&gt;depth-relief&lt;/code&gt; 的處理管線如下：&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/08-07-depth-relief/depth-relief-pipeline.svg&#34; alt=&#34;depth-relief-pipeline.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;整個架構主要分為三大核心模組：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;depth.rs&lt;/code&gt;&lt;/strong&gt;：負責 OpenCV 影像處理、ONNX 神經網路推理、雙眼立體匹配，以及全新設計的 &lt;code&gt;DepthPostProcessOptions&lt;/code&gt; 深度後處理管線。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;stl.rs&lt;/code&gt;&lt;/strong&gt;：負責幾何運算、頂點生成、表面與側牆三角化，以及二進位 STL 格式寫入。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;main.rs&lt;/code&gt;&lt;/strong&gt;：CLI 命令列解析（Clap）、模型自動下載與各種後處理參數調控。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術一單圖深度估計-midas-onnx&#34;&gt;核心技術一：單圖深度估計 (MiDaS ONNX)&lt;/h3&gt;
+&lt;p&gt;在沒有深度相機（如 LiDaR 或 RealSense）的情況下，要從單張普通照片推算像素的遠近，傳統演算法幾乎做不到。但 AI 深度學習模型可以做到。&lt;/p&gt;
+&lt;p&gt;我們選用 Intel ISL 開源的 &lt;strong&gt;MiDaS v2.1 Small&lt;/strong&gt; 模型。這個模型非常輕量（約 58MB），既能在 CPU 上快速執行，又能預測出相當不錯的整體空間相對深度。&lt;/p&gt;
+&lt;h4 id=&#34;自動模型下載機制&#34;&gt;自動模型下載機制&lt;/h4&gt;
+&lt;p&gt;為了提升 DX（開發者體驗），使用者不需要手動尋找並下載 ONNX 模型。如果程式偵測到本地缺少 &lt;code&gt;model-small.onnx&lt;/code&gt;，會自動啟動 subprocess 透過 &lt;code&gt;curl&lt;/code&gt;（若失敗則切換至 PowerShell &lt;code&gt;Invoke-WebRequest&lt;/code&gt;）從 Intel ISL 官方 GitHub Release 下載：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;check_and_download_model&lt;/span&gt;(model_path: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Path&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;()&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; model_path.exists() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; Ok(());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;MiDaS model file &amp;#39;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;{}&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39; not found.&amp;#34;&lt;/span&gt;, model_path.display());
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;println!&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Downloading model-small.onnx (approx. 58MB)...&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; url &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;https://github.com/intel-isl/MiDaS/releases/download/v2_1/model-small.onnx&amp;#34;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; status &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; std::process::Command::new(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;curl&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .arg(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-L&amp;#34;&lt;/span&gt;).arg(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-o&amp;#34;&lt;/span&gt;).arg(model_path).arg(url)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        .status();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 支援 Windows 預設環境的 PowerShell 備援機制
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; status.is_err() &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;status.unwrap().success() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// Invoke-WebRequest 備援...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(())
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;opencv-5-dnn-推理與-imagenet-標準化&#34;&gt;OpenCV 5 DNN 推理與 ImageNet 標準化&lt;/h4&gt;
+&lt;p&gt;在 OpenCV 5 中，&lt;code&gt;read_net_from_onnx&lt;/code&gt; 的 API 略有調整。MiDaS Small 模型要求輸入尺寸為 $256 \times 256$，且 RGB 像素值必須經過 ImageNet 的均值（Mean）與標準差（Std）歸一化：&lt;/p&gt;
+$$R_{norm} = \frac{R - 0.485}{0.229}, \quad G_{norm} = \frac{G - 0.456}{0.224}, \quad B_{norm} = \frac{B - 0.406}{0.225}$$&lt;p&gt;在 Rust 中的處理邏輯：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;estimate_depth_single&lt;/span&gt;(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    img: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Mat&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    model_path: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;str&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    options: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;DepthPostProcessOptions&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Mat&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; net &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; dnn::read_net_from_onnx_def(model_path)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 1. Resize 至 256x256
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; target_size &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;256&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;256&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::resize(img, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized, target_size, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;INTER_CUBIC&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 2. BGR 轉 RGB 並進行 ImageNet Normalization
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; preprocessed &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        target_size.height, target_size.width, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32FC3&lt;/span&gt;, Scalar::default()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    )&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.height {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.width {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bgr: &lt;span style=&#34;color:#a6e22e&#34;&gt;opencv&lt;/span&gt;::core::Vec3b &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;resized.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;opencv::core::Vec3b&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; g &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; b &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (bgr[&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;] &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; r_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (r &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.485&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.229&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; g_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (g &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.456&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.224&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; b_norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (b &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.406&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.225&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;preprocessed.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;opencv::core::Vec3f&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                opencv::core::Vec3f::from([r_norm, g_norm, b_norm]);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 轉為 4D Blob 並執行 Forward 推理
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; blob &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; dnn::blob_from_image(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;preprocessed, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;, target_size, Scalar::default(), &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;false&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    net.set_input(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;blob, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; output &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; out_blob_names &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; opencv::core::Vector::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;String&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;::new();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    net.forward(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; output, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;out_blob_names)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 4. 提取原始 Raw Depth 矩陣
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// ...
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 5. 進入深度圖後處理管線
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    post_process_depth_map(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;raw_depth, Some(img), options)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術二高頻照片細節融合與-3d-人臉後處理管線-high-pass-detail-fusion&#34;&gt;核心技術二：高頻照片細節融合與 3D 人臉後處理管線 (High-Pass Detail Fusion)&lt;/h3&gt;
+&lt;p&gt;在專案的第一個版本中，直接將 MiDaS 輸出的原始深度圖做全域線性歸一化並轉成 STL。然而實測後發現一個重大問題：&lt;strong&gt;MiDaS 這類深度學習模型擅長預測「巨觀空間輪廓」（例如鼻子比耳朵突出、人頭在背景前面），但完全無法預測「微觀高頻細節」（例如眼睛、雙眼皮、鼻翼線條、唇線、頭髮紋理與五官邊線）。&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;如果直接列印，出來的 3D 浮雕看起來會像一個&lt;strong&gt;平滑無表情的塑膠假人面具&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;為了徹底解決這個問題，我設計了全新的五階段深度後處理管線 &lt;code&gt;post_process_depth_map&lt;/code&gt;：&lt;/p&gt;
+&lt;h4 id=&#34;分位數極值裁切-quantile-outlier-clipping&#34;&gt;分位數極值裁切 (Quantile Outlier Clipping)&lt;/h4&gt;
+&lt;p&gt;背景極深處或前景極近處的離群值（Outliers）常會拉大深度值的全域範圍，導致主體人臉的 $Z$ 軸起伏壓縮在很窄的區間。透過統計分位數（如 $1\%$ 至 $99\%$）：&lt;/p&gt;
+$$\text{clip\_min} = \text{Quantile}(0.01), \quad \text{clip\_max} = \text{Quantile}(0.99)$$&lt;p&gt;強行將邊緣極值裁切掉後再歸一化至 $[0.0, 1.0]$，能讓 $100\%$ 的浮雕高度振幅（$Z_{\text{relief}}$）完全貢獻給主體！&lt;/p&gt;
+&lt;p&gt;在 Rust 中的分位數排序與極值計算範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 1. 收集有效深度像素值
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; valid_vals: Vec&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Vec::with_capacity(total_pixels);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;raw_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; val.is_finite() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0.5&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            valid_vals.push(val);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 2. 分位數排序並計算 1% 與 99% 陣列索引
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;valid_vals.sort_by(&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt;a, b&lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; num_valid &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals.len();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; min_idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ((num_valid &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; options.clip_min_quantile) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; max_idx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ((num_valid &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; options.clip_max_quantile) &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; v_min &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals[min_idx];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; v_max &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; valid_vals[max_idx];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; range &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (v_max &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min).abs() &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1e-6&lt;/span&gt; { v_max &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; { &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; };&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;gamma-非線性對比擴充-gamma-expansion&#34;&gt;Gamma 非線性對比擴充 (Gamma Expansion)&lt;/h4&gt;
+&lt;p&gt;人臉五官（如眼窩、鼻樑、面頰）的中間調變化非常微妙。透過套用 Gamma 曲線：&lt;/p&gt;
+$$Z_{\text{gamma}} = (Z_{\text{norm}})^\gamma \quad (\text{預設 } \gamma = 0.7)$$&lt;p&gt;當 $\gamma &lt; 1.0$ 時，曲線會在低中間調區間產生陡峭的斜率，非線性地拉開五官的中間調高度差，使原本平坦的面部立體感大幅躍升。&lt;/p&gt;
+&lt;p&gt;在 Rust 中的裁切 (Clamp)、歸一化與 Gamma 轉換範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; norm_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(h, w, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;raw_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; val &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0.5&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; clamped &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; val.clamp(v_min, v_max);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; norm &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (clamped &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v_min) &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; range;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#75715e&#34;&gt;// 套用 powf 進行 Gamma 對比擴充
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; final_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; norm.powf(options.gamma);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; final_val;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;高頻照片細節融合-high-pass-detail-fusion&#34;&gt;高頻照片細節融合 (High-Pass Detail Fusion)&lt;/h4&gt;
+&lt;p&gt;這是我覺得整個改善中最關鍵的一步。我們從小照片的原始灰階影像中，透過高通濾波（High-Pass Filter）提取出邊緣與紋理資訊：&lt;/p&gt;
+$$\text{HighPass}(x, y) = \text{Photo}_{\text{gray}}(x, y) - \text{GaussianBlur}(\text{Photo}_{\text{gray}}, \text{ksize}=15)$$&lt;p&gt;然後以加權參數 $\text{detail\_weight}$（預設 $0.4$）將這個高頻信號直接疊加回 3D 深度圖上：&lt;/p&gt;
+$$Z_{\text{final}}(x, y) = \text{Clamp}\left(Z_{\text{gamma}}(x, y) + w \cdot \text{HighPass}(x, y), \, 0.0, \, 1.0\right)$$&lt;p&gt;這樣一來，原始照片中眼神的輪廓、嘴唇的紋理、頭髮的髮絲甚至衣領褶痕，都會被直接**刻印（Engrave）**到 3D 浮雕網格表面！&lt;/p&gt;
+&lt;p&gt;在 Rust 中的高通殘差計算與細節疊加範例：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 高通細節提取函式
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;extract_high_pass_detail&lt;/span&gt;(img: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;Mat&lt;/span&gt;, target_size: &lt;span style=&#34;color:#a6e22e&#34;&gt;Size&lt;/span&gt;) -&amp;gt; Result&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;Mat&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::cvt_color(img, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; gray, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;COLOR_BGR2GRAY&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, AlgorithmHint::&lt;span style=&#34;color:#66d9ef&#34;&gt;ALGO_HINT_DEFAULT&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized_gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::resize(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;gray, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; resized_gray, target_size, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, imgproc::&lt;span style=&#34;color:#66d9ef&#34;&gt;INTER_CUBIC&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_gray &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    resized_gray.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_gray, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 低頻模糊層
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; blurred &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::gaussian_blur(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;f32_gray, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; blurred, Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;15&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;15&lt;/span&gt;), &lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;BORDER_DEFAULT&lt;/span&gt;, AlgorithmHint::&lt;span style=&#34;color:#66d9ef&#34;&gt;ALGO_HINT_DEFAULT&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 計算高通殘差：原圖 - 低頻模糊 = 高頻細節
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; detail_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::new_rows_cols_with_default(target_size.height, target_size.width, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, Scalar::default())&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.height {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;target_size.width {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;f32_gray.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;blurred.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;detail_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; hp;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    Ok(detail_map)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 融合高頻細節至深度圖
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; Some(src_img) &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; opt_source_img {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.detail_weight &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp_detail &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; extract_high_pass_detail(src_img, Size::new(w, h))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; weight &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; options.detail_weight;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; y &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;h {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; x &lt;span style=&#34;color:#66d9ef&#34;&gt;in&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;..&lt;/span&gt;w {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; base_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; hp_val &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;hp_detail.at_2d::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; blended &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (base_val &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; weight &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; hp_val).clamp(&lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;norm_map.at_2d_mut::&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f32&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt;(y, x)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; blended;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;雙邊濾波保邊平滑-bilateral-filtering&#34;&gt;雙邊濾波保邊平滑 (Bilateral Filtering)&lt;/h4&gt;
+&lt;p&gt;最後，為了避免照片噪點導致 3D 浮雕表面過於粗糙，我們套用 OpenCV 的 &lt;code&gt;bilateral_filter&lt;/code&gt;（雙邊濾波器）。雙邊濾波能在平滑微小噪點的同時，完全保留高頻融合進來的銳利邊緣：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; smooth_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.smooth_radius &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; dst &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; d &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; options.smooth_radius &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    imgproc::bilateral_filter(
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;norm_map,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; dst,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        d,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#ae81ff&#34;&gt;0.1&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt;,                       &lt;span style=&#34;color:#75715e&#34;&gt;// sigmaColor: 色彩/深度差異容許度
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        options.smooth_radius &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;f64&lt;/span&gt;, &lt;span style=&#34;color:#75715e&#34;&gt;// sigmaSpace: 空間濾波半徑
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;BORDER_DEFAULT&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    )&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    dst
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;} &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    norm_map
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;自適應直方圖等化-clahe-enhancement&#34;&gt;自適應直方圖等化 (CLAHE Enhancement)&lt;/h4&gt;
+&lt;p&gt;若開啟 &lt;code&gt;--clahe&lt;/code&gt; 選項，程式會對深度圖進行 Contrast Limited Adaptive Histogram Equalization，提升局部區域的深度動態範圍：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; options.enable_clahe {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; u8_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    smooth_map.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; u8_map, opencv::core::&lt;span style=&#34;color:#66d9ef&#34;&gt;CV_8U&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_obj &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; imgproc::create_clahe_def()&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.set_clip_limit(&lt;span style=&#34;color:#ae81ff&#34;&gt;3.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.set_tiles_grid_size(Size::new(&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;))&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_out &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_obj.apply(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;u8_map, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; clahe_out)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_clahe &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; Mat::default();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    clahe_out.convert_to(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; f32_clahe, &lt;span style=&#34;color:#66d9ef&#34;&gt;CV_32F&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.0&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;255.0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;)&lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    smooth_map &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; f32_clahe;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術三雙眼立體對比-stereo-photo-mode&#34;&gt;核心技術三：雙眼立體對比 (Stereo Photo Mode)&lt;/h3&gt;
+&lt;p&gt;除了 AI 估算，如果我們手上有校正過的左右雙眼照片（Stereo Pair），也可以使用經典的視差演算法 &lt;strong&gt;StereoBM（Block Matching）&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;人眼看世界之所以有立體感，是因為左右眼位置不同造成的「視差」（Disparity）。物件離越近，視差越大；物件離越遠，視差越小。同樣地，StereoBM 計算完視差圖後，也會通過同一個 &lt;code&gt;post_process_depth_map&lt;/code&gt; 後處理管線增強細節。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術四建構-watertight-3d-stl-實體網格&#34;&gt;核心技術四：建構 Watertight 3D STL 實體網格&lt;/h3&gt;
+&lt;p&gt;這整個專案最硬核、也最有成就感的部分，就是&lt;strong&gt;如何把這張 2D 的深度灰階圖轉成真正的 3D Watertight 實體模型&lt;/strong&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;為什麼-watertight-封閉實體-這麼重要&#34;&gt;為什麼 Watertight (封閉實體) 這麼重要？&lt;/h4&gt;
+&lt;p&gt;3D 列印切片軟體（Slicer）把 3D 模型切成一層層 G-code 時，必須明確知道這個模型哪裡是「內部（Solid inside）」，哪裡是「外部（Outside）」。&lt;/p&gt;
+&lt;p&gt;如果只是把 2D 深度圖畫成一片薄薄的 3D 地形曲面（Heightfield Surface），它是一張沒有厚度的「紙」。Slicer 看到這張紙會無法計算體積，甚至直接報錯或印出空心碎片。&lt;/p&gt;
+&lt;p&gt;因此，我們必須像做豆腐塊一樣，幫這片頂層曲面加上&lt;strong&gt;封閉底座（Flat Base）&lt;strong&gt;與&lt;/strong&gt;四周四面側牆（Side Walls）&lt;/strong&gt;！&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;     頂層高度曲面 (Top Surface Z = base + depth * relief)
+         /\__/\/\__
+        /          \
+       |            |   &amp;lt;--- 四周側牆 (Side Walls)
+       +------------+
+     平整底面 (Bottom Base Z = 0)&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;頂點與座標軸變換&#34;&gt;頂點與座標軸變換&lt;/h4&gt;
+&lt;p&gt;在影像座標系中，$Y$ 軸是向下延伸的（原點在左上角）；而在 3D 列印座標系中，$Z$ 軸朝上，$Y$ 軸朝後。為了讓印出來的照片頂部朝向印床後方，我們需要翻轉 $Y$ 軸：&lt;/p&gt;
+$$p_x = x \cdot s_x, \quad p_y = (H - 1 - y) \cdot s_y, \quad p_z = Z_{base} + \text{depth}(x, y) \cdot Z_{relief}$$&lt;h4 id=&#34;三角化與法向量-winding-order--normal-calculation&#34;&gt;三角化與法向量 (Winding Order &amp;amp; Normal Calculation)&lt;/h4&gt;
+&lt;p&gt;STL 檔案由一個個三角面組成。每個三角面都必須遵守&lt;strong&gt;右手定則（Counter-Clockwise Winding Rule）&lt;/strong&gt;，確保法向量（Normal Vector）精準指向模型外側：&lt;/p&gt;
+&lt;p&gt;法向量透過向量外積計算：&lt;/p&gt;
+$$\vec{N} = \frac{(V_2 - V_1) \times (V_3 - V_1)}{\|(V_2 - V_1) \times (V_3 - V_1)\|}$$
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;calculate_normal&lt;/span&gt;(v1: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;, v2: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;, v3: &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Vertex&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.x &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.x; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.y &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.y; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v2.z &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.z;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.x &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.x; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; by &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.y &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.y; &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; bz &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v3.z &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; v1.z;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; nx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bz &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; by;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; az &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bx &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bz;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; nz &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; ax &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; by &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; ay &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; bx;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; len &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (nx &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; nx &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; ny &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; nz &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; nz).sqrt();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; len &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1e-6&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Vertex { x: &lt;span style=&#34;color:#a6e22e&#34;&gt;nx&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len, y: &lt;span style=&#34;color:#a6e22e&#34;&gt;ny&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len, z: &lt;span style=&#34;color:#a6e22e&#34;&gt;nz&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;/&lt;/span&gt; len }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        Vertex { x: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, y: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt;, z: &lt;span style=&#34;color:#ae81ff&#34;&gt;0.0&lt;/span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;對於網格中的每個方格，我們切成兩個三角形。特別注意的是：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;頂面（Top Surface）&lt;/strong&gt;：頂點順序採用逆時針（CCW），法向量朝上。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;底面（Bottom Base）&lt;/strong&gt;：頂點順序採用順時針（CW），法向量朝下（指向 $Z = 0$ 外部）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;側邊牆面（Side Walls）&lt;/strong&gt;：對左、右、前、後四個邊緣，將頂面的邊界頂點與底面的邊界頂點組合成 Rectangle Quad，再切成兩個三角形，法向量分別朝向 $-X, +X, -Y, +Y$ 外側。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這樣產生的 STL 檔案 100% 保證水密（Watertight），完全不需要在 Blender 或 MeshLab 裡面修理破面。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;核心技術五純-rust-手寫-binary-stl-導出&#34;&gt;核心技術五：純 Rust 手寫 Binary STL 導出&lt;/h3&gt;
+&lt;p&gt;雖然 Rust 生態系中有一些 3D 繪圖 crate，但 STL 檔案的二進位規格其實非常簡單精巧：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Header (80 bytes)&lt;/strong&gt;：任意標頭文字。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Number of Triangles (4 bytes u32, Little-Endian)&lt;/strong&gt;：三角形總數。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Triangles Data (每個三角形 50 bytes)&lt;/strong&gt;：
+&lt;ul&gt;
+&lt;li&gt;Normal Vector ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 1 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 2 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Vertex 3 ($3 \times \text{f32} = 12 \text{ bytes}$)&lt;/li&gt;
+&lt;li&gt;Attribute Byte Count ($\text{u16} = 2 \text{ bytes}$)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;完全不依赖大型 3D 引擎，只需利用 Rust 標準庫的 &lt;code&gt;std::io::BufWriter&lt;/code&gt; 和 &lt;code&gt;.to_le_bytes()&lt;/code&gt; 即可快速寫出高檔位的二進位 STL。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;命令行實戰與-3mf-切片專案&#34;&gt;命令行實戰與 3MF 切片專案&lt;/h3&gt;
+&lt;p&gt;你可以直接使用這行命令對自己的照片生成 STL 檔案：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cargo run --release -- --mode single --input patrick-22.jpg --output-stl patrick-22.stl --width &lt;span style=&#34;color:#ae81ff&#34;&gt;100&lt;/span&gt; --detail-weight 0.4 --gamma 0.7&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;產生出 &lt;code&gt;patrick-22.stl&lt;/code&gt; 之後，專案中也附帶了預先設定好的 &lt;strong&gt;&lt;code&gt;patrick-22.3mf&lt;/code&gt;&lt;/strong&gt; 3D 列印切片專案檔！&lt;/p&gt;
+&lt;h4 id=&#34;3d-列印切片設定建議&#34;&gt;3D 列印切片設定建議&lt;/h4&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;列印方向&lt;/strong&gt;：匯入 PrusaSlicer 或 Bambu Studio 後，模型的平整底面會自動貼合在列印鋼板上（$Z = 0$）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;層高（Layer Height）&lt;/strong&gt;：建議設定 &lt;strong&gt;0.12 mm&lt;/strong&gt; 或 &lt;strong&gt;0.16 mm&lt;/strong&gt;。極力推薦開啟 &lt;strong&gt;可變層高（Variable Layer Height）&lt;/strong&gt;——讓平整的底座用 0.28 mm 快速印完，頂層細緻的浮雕起伏用 0.08 mm 精細堆疊。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;填充（Infill）&lt;/strong&gt;：10% ~ 15% 的 &lt;strong&gt;Gyroid（陀螺儀）&lt;/strong&gt; 填充即可提供極佳強度。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;耗材選擇&lt;/strong&gt;：啞光（Matte）單色 PLA 能呈現出最棒的光影輪廓；若使用半透明 PLA，還能兼具 Lithophane 光影透光效果！&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h4 id=&#34;openscad-整合範例&#34;&gt;OpenSCAD 整合範例&lt;/h4&gt;
+&lt;p&gt;因為輸出的 STL 座標精確且原點位於左下角底面，你可以輕鬆將它匯入 OpenSCAD 進行 CSG 布林運算，例如幫浮雕加上相框與掛牆螺絲孔：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-openscad&#34; data-lang=&#34;openscad&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// OpenSCAD 浮雕加框與掛鉤腳本
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;difference() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    union() {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 1. 外圍相框底座
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cube([&lt;span style=&#34;color:#ae81ff&#34;&gt;110&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;110&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;], center &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;true&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 2. 匯入 depth-relief 產生的 STL 並置中
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        translate([&lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;1.5&lt;/span&gt;]) 
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            import(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;patrick-22.stl&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 3. 挖出後方壁掛螺絲孔
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    translate([&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;50&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;])
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cylinder(h &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;20&lt;/span&gt;, r &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2.5&lt;/span&gt;, center &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;true&lt;/span&gt;, $fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;32&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;hr&gt;
+&lt;h3 id=&#34;兩種模式對比總結&#34;&gt;兩種模式對比總結&lt;/h3&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th&gt;特性&lt;/th&gt;
+					&lt;th&gt;單圖模式 (MiDaS ONNX)&lt;/th&gt;
+					&lt;th&gt;立體對模式 (StereoBM)&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;輸入需求&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;單張普通照片/手機照片 (&lt;code&gt;patrick-22.jpg&lt;/code&gt;)&lt;/td&gt;
+					&lt;td&gt;校正過的左右雙眼照片對&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;技術原理&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;深度學習神經網路推理&lt;/td&gt;
+					&lt;td&gt;傳統視差塊匹配 (Block Matching)&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;微觀細節&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;透過 High-Pass Photo Fusion 刻印高頻五官線條&lt;/td&gt;
+					&lt;td&gt;依賴視差匹配精度與高頻融合&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;硬體需求&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;需載入 58MB ONNX 模型&lt;/td&gt;
+					&lt;td&gt;純幾何運算，極輕量&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td&gt;&lt;strong&gt;適用場景&lt;/strong&gt;&lt;/td&gt;
+					&lt;td&gt;人像、風景、隨手拍生活照&lt;/td&gt;
+					&lt;td&gt;雙鏡頭相機、立體繪圖、工業檢測&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;結語與學習心得&#34;&gt;結語與學習心得&lt;/h3&gt;
+&lt;p&gt;從最初只用 MiDaS 生成平滑但略顯呆板的 3D 地形，到引入 &lt;strong&gt;分位數裁切、Gamma 中間調擴充、高頻照片細節融合&lt;/strong&gt; 的後處理管線，再到實際用 &lt;code&gt;patrick-22.jpg&lt;/code&gt; 驗證生成 &lt;code&gt;patrick-22.stl&lt;/code&gt; 和 &lt;code&gt;patrick-22.3mf&lt;/code&gt;，&lt;code&gt;depth-relief&lt;/code&gt; 實現了質的飛躍。&lt;/p&gt;
+&lt;p&gt;這個改善過程展現了工程設計中「結合多種技術」的力量：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;AI 深度學習（MiDaS）&lt;/strong&gt; 負責給出宏觀、正確的整體空間 depth 骨架；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;古典數位影像處理（High-Pass Filter &amp;amp; Gamma Curve）&lt;/strong&gt; 負責補足微觀、銳利的細節紋理；&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;計算機幾何（Triangulation &amp;amp; Normals）&lt;/strong&gt; 負責構建無瑕疵的 Watertight 實體。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;三者結合，才讓一張平淡無奇的平面照片，真正蛻變成 3D 列印床上充滿細節、令人驚豔的實體浮雕作品！&lt;/p&gt;
+&lt;hr&gt;
+&lt;h3 id=&#34;參考資源&#34;&gt;參考資源&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/p47t/rust-52-projects/tree/master/depth-relief&#34;&gt;depth-relief 專案原始碼&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/intel-isl/MiDaS&#34;&gt;Intel ISL MiDaS 深度估計模型&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://docs.opencv.org/master/dd/ffc/group__stereo.html&#34;&gt;OpenCV Stereo Block Matching 官方文件&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;https://github.com/twistedfall/opencv-rust&#34;&gt;opencv-rust Crate&lt;/a&gt;&lt;/strong&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ARM Architecture for Mobile Developers</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/</link>
+      <pubDate>Sat, 24 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/</guid>
+      <description>&lt;p&gt;目前幾乎市場上所有的 mobile device 用的 processor 都是基於 &lt;a href=&#34;http://en.wikipedia.org/wiki/ARM_architecture&#34;&gt;ARM Architecture&lt;/a&gt; 的，而做為一位 Android 或是 iOS 平台的應用程序開發人員對於 ARM 有一定的認識雖非必要，但多了解一點對優化程序及偵錯問題是有很大幫助的。關於 ARM 的基本介紹，可以參考 Pierre Lebeaupin 的 &lt;a href=&#34;http://wanderingcoder.net/2010/07/19/ought-arm/&#34;&gt;A few things iOS developers ought to know about the ARM architecture&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;最基本要知道的是 ARM Architecture 是有分版本的:&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/ARM-Architecture-Evolution.png&#34; alt=&#34;ARM Revision History&#34;&gt;&lt;/p&gt;
+&lt;p&gt;目前主流的 Smartphone 都是採用 ARMv7a 的架構。&lt;/p&gt;
+&lt;p&gt;而另一個需要了解的觀念是 &lt;a href=&#34;http://en.wikipedia.org/wiki/Application_binary_interface&#34;&gt;ABI&lt;/a&gt; (Application Binary Interface)，要了解 ARM 的 ABI 最快的就是參考 &lt;a href=&#34;http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.subset.swdev.abi/index.html&#34;&gt;Application Binary Interface for the ARM Architecture&lt;/a&gt; 裡的這張圖：&lt;/p&gt;
+&lt;p&gt;&lt;img src=&#34;https://blog.simplypatrick.com/posts/2011/12-24-arm-architecture-for-mobile-developers/2011-12-25-8.49.34.png&#34; alt=&#34;ABI 地圖&#34;&gt;&lt;/p&gt;
+&lt;p&gt;從圖上可以看到在 ABI for the ARM Architecure 實際涵蓋了許多範圍，各個平台的 ABI 通常就是參考標準的 ARM ABI 然後把不明確的地方或是有差異的部份定義清楚。&lt;/p&gt;
+&lt;p&gt;Android 開發人員可以參考 &lt;a href=&#34;http://www.google.com.tw/codesearch#cZwlSNS7aEw/ndk/docs/CPU-ARCH-ABIS.html&amp;amp;q=CPU-ARCH-ABIS.html&amp;amp;type=cs&#34;&gt;docs/CPU-ARCH-ABIS.html&lt;/a&gt;，使用 Android NDK 開發的話，目前就有分 armeabi 及 armeabi-v7a。iOS 的話除了第一代 iPhone 外目前都是 ARMv7 架構，但目前似乎只找的到這份 &lt;a href=&#34;http://developer.apple.com/library/ios/#documentation/Xcode/Conceptual/iPhoneOSABIReference/Introduction/Introduction.html&#34;&gt;iOS ABI Function Call Guide&lt;/a&gt; 可以一窺 iOS上的一些實作細節。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Michael Barr </title>
+      <link>https://blog.simplypatrick.com/posts/2007/2007-09-03-399/</link>
+      <pubDate>Mon, 03 Sep 2007 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2007/2007-09-03-399/</guid>
+      <description>&lt;p&gt;初次知道 &lt;a href=&#34;http://en.wikipedia.org/wiki/Michael_Barr_%28software_engineer%29&#34;&gt;Michael Barr&lt;/a&gt; 是因為讀了他寫的 &lt;a href=&#34;http://books.google.com.tw/books?id=eYU9xcWktRoC&amp;amp;dq=&amp;amp;pg=PP1&amp;amp;ots=zbMg6dMd9D&amp;amp;sig=Yx6S4spi5V6FFuiZR84RlpeVUPA&amp;amp;prev=http://www.google.com.tw/search%3Fsourceid%3Dnavclient%26ie%3DUTF-8%26rls%3DGGLJ,GGLJ:2006-38,GGLJ:en%26q%3D%2522Programming%2BEmbedded%2BSystems%2Bin%2BC%2Band%2BC%252B%252B%2522&amp;amp;sa=X&amp;amp;oi=print&amp;amp;ct=title&#34;&gt;Programming Embedded Systems in C and C++&lt;/a&gt; 這本關於 embedded system programming 的書。後來陸陸續續在網路上找到蠻多他寫的技術文章，才發現他是 &lt;a href=&#34;http://www.embedded.com/mag.htm&#34;&gt;Embedded Systems Programming magazine&lt;/a&gt; (現已改名叫 Embedded Systems Design) 的前總編輯，難怪文筆相當不錯。我還蠻喜歡看他寫的東西，主要是他的文章都有假設讀者的程度，因此不會有一堆太基本的內容，或是過於複雜難懂的技術細節。&lt;/p&gt;
+&lt;p&gt;現在任職於顧問公司的 Michael 將他以前的一些文章&lt;a href=&#34;http://www.netrino.com/Articles/index.php&#34;&gt;集結整理起來在這裡&lt;/a&gt;，裡面內容對於從事 embedded system programming 的技術人員應該都頗有幫助。尤其是今天看完這篇 &lt;a href=&#34;http://www.netrino.com/Articles/RTOSAlternatives/index.php&#34;&gt;The Perils of Preemption&lt;/a&gt;配合下面這張圖，雖然內容都是已經熟悉的東西，經由 Michael 這樣的整理與講解，還是讓整個人有打通任督二脈的感覺：&lt;/p&gt;
+&lt;img border=&#34;0&#34; width=&#34;425&#34; src=&#34;preemption-figure1.jpg&#34; height=&#34;284&#34; /&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ARM&#39;s way</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-09-24-341/</link>
+      <pubDate>Sun, 24 Sep 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-09-24-341/</guid>
+      <description>&lt;p&gt;ARM 除了產品的設計優異之外，主要的成功之道大家都曉得是在於他們只提供 IP core 的授權，而不從事實體 chip 的製造。這篇刊登於  &lt;a href=&#34;http://www.electronicsweekly.co.uk/&#34;&gt;Electronics Weekly&lt;/a&gt; 1998 四月號的文章描述了 ARM 的起源：&lt;a href=&#34;http://www.atterer.net/acorn/arm.html&#34; title=&#34;About Advanced RISC Machines (ARM)&#34;&gt;ARM&amp;rsquo;s way&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Embedded Programming with Eclipse</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-09-24-340/</link>
+      <pubDate>Sun, 24 Sep 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-09-24-340/</guid>
+      <description>&lt;p&gt;James P. Lynch 寫了一本圖文並茂、詳細到不行的 ARM 與 Eclipse 開發指南：&lt;a href=&#34;http://www.olimex.com/dev/pdf/ARM%20Cross%20Development%20with%20Eclipse%20version%203.pdf&#34;&gt;ARM Cross Development with Eclipse&lt;/a&gt;，主要著重在開發環境的安裝、設置、與使用。由於 Eclipse 具有免費、跨平台、開放的架構、強大的開發社群，embedded system 的開發環境慢慢移至 Eclipse 平台相信將會是大勢所趨。&lt;/p&gt;
+&lt;p&gt;不管你是從事甚麼樣的軟體開發工作，精通手頭上的開發工具絕對是做好事情的必要條件，而 Eclipse 就是個值得投資時間去熟習的工具，強力推薦這篇文章給有興趣於 embedded programming 的初學者。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Books on Embedding System Programming</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-04-01-329/</link>
+      <pubDate>Sat, 01 Apr 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-04-01-329/</guid>
+      <description>&lt;img class=&#34;photo&#34; src=&#34;//images.amazon.com/images/P/1578201039.01._BO2,204,203,200_PIsitb-dp-500-arrow,TopRight,45,-64_AA240_SH20_SCLZZZZZZZ_.jpg&#34; border=&#34;0&#34;/&gt;
+&lt;p&gt;在辭掉工作短暫休息的這段時間，我讀完了這本《&lt;a href=&#34;http://www.amazon.com/gp/product/1578201039/ref=sr_11_1/103-2664401-8916640?%5Fencoding=UTF8&#34;&gt;MicroC OS II: The Real Time Kernel &lt;/a&gt;》。會想要去讀它的原因是因為既然要做嵌入式系統的開發，那就必須對 RTOS 的特性有相當程度的掌握，而最快的方式莫過於直接去深入了解一個 RTOS 的實作，而短小精幹的 MicroC/OS-II 因為有原作者的詳細解說，當然是最適合學習的目標。老實說，讀這本書前，自己對於即時系統的一些概念是似懂非懂，但是看完這本書之後卻是豁然開朗。我覺得這本書更適合作為一般學校基礎 OS 的教材，之前大學上的 OS 課程都太理論性了，有點後悔當時沒有去修即時系統的課。強力推薦這本給想要自修學習 RTOS 的人。&lt;/p&gt;
+&lt;img class=&#34;photo&#34; src=&#34;//ec1.images-amazon.com/images/P/020161569X.01._BO2,204,203,200_PIlitb-dp-500-arrow,TopRight,32,-59_AA240_SH20_SCLZZZZZZZ_.jpg&#34; border=&#34;0&#34;/&gt;
+&lt;p&gt;另外一本的入門好書則是 David E. Simon 寫的《&lt;a href=&#34;http://www.amazon.com/gp/product/020161569X/qid=1144321641/sr=11-1/ref=sr_11_1/103-2664401-8916640?n=283155&#34;&gt;An Embedded Software Primer&lt;/a&gt;》。這本書關於 RTOS 的部分我是覺得沒有前一本講的清楚，但是可讀性倒是高了些，畢竟這本書就是要給入門者看的。後面關於 embedded software design, development, 及 debugging 的觀念我覺得寫的相當不錯，一樣推薦給想要了解 embedded system programming 的人。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Pragmatic Starter Kit</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-12-26-111/</link>
+      <pubDate>Fri, 26 Dec 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-12-26-111/</guid>
+      <description>&lt;p&gt;驚喜地發現 Andy 跟 Dave 出新書了，不需要多考慮，掏錢買就對了。&lt;/p&gt;
+&lt;p&gt;看《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/vc/&#34;&gt;Pragmatic Version Control using CVS&lt;/a&gt;》的目錄感覺內容有點單薄，當成入門書籍還說的過去。我個人比較期待《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/ut/index.html&#34;&gt;Pragmatic Unit Testing&lt;/a&gt;》及《&lt;a href=&#34;http://www.pragmaticprogrammer.com/starter_kit/au/index.html&#34;&gt;Pragmatic Project Automation&lt;/a&gt; 》。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;Software development is difficult enough; if you try to build on a shaky foundation it can make development almost impossible; (which might account for the fact that about 50% of software projects fail).&lt;br&gt;&lt;br&gt;The Starter Kit fixes that. It&#39;s a set of three books covering basic practices that are applicable in all software development situations. It doesn&#39;t matter if you&#39;re using Extreme Programming or RUP, developing web services or code embedded in a cell phone. The practices of version control, unit testing, and project automation are crucial to your success!&lt;br&gt;
+&lt;/blockquote&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Programming Embedded Systems</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-11-24-94/</link>
+      <pubDate>Mon, 24 Nov 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-11-24-94/</guid>
+      <description>&lt;p&gt;最近剛讀完《&lt;a title=&#34;Amazon.com: Books: Programming Embedded Systems in C and C++&#34; href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/1565923545/002-1545132-4855230?v=glance&#34;&gt;Programming Embedded Systems in C and C++&lt;/a&gt;》，讓完全不懂 embedded system 的我很快地就對嵌入式系統有了一定程度的了解。推薦給任何對 embedded system programming 有興趣的人。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Hardware breakpoints</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-10-46/</link>
+      <pubDate>Tue, 10 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-10-46/</guid>
+      <description>&lt;p&gt;嗯，VC++ 的確有提供 data breakpoint，但是使用起來卻不大方便，原因是你必須知道資料的位址然後填入例如 *((DWORD*)0x12345678) 的表示式才行。&lt;/p&gt;
+&lt;p&gt;現在，試試 &lt;a href=&#34;mailto:mike@morearty.com&#34;&gt;Mike Morearty&lt;/a&gt; 的 &lt;a href=&#34;http://www.morearty.com/code/breakpoint/&#34;&gt;CBreakpoint&lt;/a&gt;，你可以這樣做：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c++&#34; data-lang=&#34;c++&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;DWORD x &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; CBreakpoint bp; bp.Set(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;x, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(x), CBreakpoint&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;Write);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;相當地酷！&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

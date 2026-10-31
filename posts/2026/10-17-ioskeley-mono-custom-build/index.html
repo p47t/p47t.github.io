@@ -1,0 +1,859 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>從原始碼編譯與客製化 Ioskeley Mono - 解剖 Iosevka 參數化造字管線、Patel 幾何引擎與 Nerd Font 封裝實戰</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-17-ioskeley-mono-custom-build/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-17-ioskeley-mono-custom-build/"/>
+  <meta property="og:title" content="從原始碼編譯與客製化 Ioskeley Mono - 解剖 Iosevka 參數化造字管線、Patel 幾何引擎與 Nerd Font 封裝實戰"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-10-17 01:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="tools"/>
+  
+  <meta property="og:article:tag" content="cli"/>
+  
+  <meta property="og:article:tag" content="linux"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">260</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/10-17-jpeg-xl-and-rust/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            JPEG XL 與 Rust 影像生態解析
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/10-29-sony-a7r5-custom-firmware/">
+            Sony A7R V 第三方韌體逆向與本地編譯實戰
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">從原始碼編譯與客製化 Ioskeley Mono</h1>
+      
+      <div class="post-subtitle">解剖 Iosevka 參數化造字管線、Patel 幾何引擎與 Nerd Font 封裝實戰</div>
+      
+      <div class="post-meta">
+        <span class="post-date">October 17, 2026</span>
+        
+        <a href="/categories/development"><span class="label label-info">development</span></a>
+        
+        
+        <a href="/tags/tools"><span class="label label-primary">tools</span></a>
+        
+        <a href="/tags/cli"><span class="label label-primary">cli</span></a>
+        
+        <a href="/tags/linux"><span class="label label-primary">linux</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/10-17-ioskeley-mono-custom-build/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在上一篇〈<a href="/posts/2026/10-16-berkeley-mono-and-ioskeley-mono/">Berkeley Mono 與 Ioskeley Mono</a>〉中，我們深入比較了 U.S. Graphics Company 的商業字體 <strong>Berkeley Mono (TX-02)</strong> 與開源社群基於 <strong>Iosevka</strong> 打造的 <strong>Ioskeley Mono</strong>，並透過線上互動實驗室對照了兩者在點狀 <code>0</code>、單層 <code>g</code>、平弧括號 <code>()</code> 以及 <code>Normal</code> / <code>SemiCondensed</code> 字寬上的細節表現。</p>
+<p>然而，當我把 Ioskeley Mono 換成日常主力字體、在編輯器與 terminal 裡寫了一整天程式碼後，心裡突然冒出一個小小的念頭：<strong>如果我想讓數字 <code>7</code> 的斜桿正中央多加一道水平橫槓（crossbar），就像歐洲手寫體或老式工程圖紙上的 <code>7</code> 那樣，有沒有辦法自己動手改？</strong></p>
+<p>如果今天面對的是一般用 FontForge 或 Glyphs 手工繪製的傳統字體，這個念頭大概會在五分鐘內被打消——因為一個完整的現代程式字體家族包含 10 種字重（<code>Thin 100</code> 到 <code>Black 900</code>）、2 種字寬（<code>Normal</code> 與 <code>SemiCondensed</code>）以及正體與斜體，光是一個家族就有 <strong>40 個 <code>.ttf</code> 字型檔</strong>。手動去改 40 個檔案的貝茲曲線，不僅筆畫粗細與斜率難以對齊，還會破壞原有的 TrueType hinting 與連字表。</p>
+<p>但 Ioskeley Mono 最迷人的地方就在這裡：<strong>它不是一套靜態的向量圖檔，而是一座由程式碼驅動的參數化造字工廠。</strong> 昨晚我在 <code>herdr</code> 的 <code>ioskeley-mono</code> workspace 裡，直接從零複製儲存庫、修改一行設定、一路追蹤到底層的 <strong>Patel (<code>.ptl</code>)</strong> 幾何語言，並寫腳本用 8 個平行 worker 打上完整的 <strong>Nerd Font</strong> 圖示補丁。這篇文章就來完整紀錄這趟從原始碼編譯與客製化字體的實戰過程，以及途中踩到的兩個精彩陷阱。</p>
+<h2 id="為什麼從原始碼編譯字體比想像中更有趣">為什麼從原始碼編譯字體比想像中更有趣？</h2>
+<p>打開 <a href="https://github.com/ahatem/IoskeleyMono"><code>ahatem/IoskeleyMono</code></a> 的儲存庫會發現，它本身並不儲存成千上萬個字元的曲線座標，核心只有一份不到 400 行的 <a href="https://github.com/ahatem/IoskeleyMono/blob/main/private-build-plans.toml"><code>private-build-plans.toml</code></a> 藍圖檔，搭配上游的 <strong><a href="https://github.com/be5invis/Iosevka">Iosevka</a></strong> 造字引擎（固定於 <code>v34.4.0</code>）。</p>
+<p>當我們從原始碼建置時，整個流程其實是一條橫跨編譯器、計算幾何與二進位封裝的八階段管線：</p>
+
+
+  
+    <img src="/posts/2026/10-17-ioskeley-mono-custom-build/ioskeley-build-pipeline.svg" alt="ioskeley-build-pipeline.svg" class="img-responsive post-image">
+  
+
+<h3 id="藍圖結構四個繼承自同一核心的字體家族">藍圖結構：四個繼承自同一核心的字體家族</h3>
+<p>在 <code>private-build-plans.toml</code> 中，作者透過 Iosevka 的繼承機制（<code>inherits = &quot;buildPlans.IoskeleyMono&quot;</code>）定義了四個編譯目標（build plans）：</p>
+<ol>
+<li><strong>標準版 <code>IoskeleyMono</code></strong>：設定 <code>spacing = &quot;normal&quot;</code>、<code>serifs = &quot;sans&quot;</code> 與 <code>noCvSs = true</code>，包含完整的程式碼連字規則（<code>calt</code>）、10 種字重、2 種字寬（<code>Normal = 600</code>、<code>SemiCondensed = 540</code>）與 <code>11.8°</code> 斜體。</li>
+<li><strong>終端機版 <code>IoskeleyMonoTerm</code></strong>：繼承自標準版，唯一關鍵差異是設定 <code>spacing = &quot;term&quot;</code>。這會強制將所有箭頭、幾何方塊與 box-drawing 符號嚴格限制在單一 terminal 字元格（character cell）寬度內，避免在 Ghostty、Kitty 或 Alacritty 中破格。</li>
+<li><strong>無連字版 <code>IoskeleyMonoNL</code></strong>：設定 <code>noLigation = true</code>，供無法單獨關閉連字的編輯器（如舊版 Xcode）使用。</li>
+<li><strong>網頁子集版 <code>IoskeleyMonoWeb</code></strong>：透過 <code>[buildPlans.IoskeleyMonoWeb.subset.include]</code> 僅保留拉丁字母、標點、箭頭、數學運算子與框線符號的 Unicode 區間，將原本完整版每個約 480–550 KB 的 <code>.woff2</code> 透過字元集子集化（subsetting）大幅縮減至約 94 KB。</li>
+</ol>
+<p>此外，所有家族都共享一組精心調校的度量參數（<code>private-build-plans.toml</code> 第 201 至 223 行）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">buildPlans</span>.<span style="color:#a6e22e">IoskeleyMono</span>.<span style="color:#a6e22e">metricOverride</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">xHeight</span> = <span style="color:#ae81ff">520</span>               <span style="color:#75715e"># 小寫字母高度</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">cap</span> = <span style="color:#ae81ff">690</span>                   <span style="color:#75715e"># 大寫字母與數字高度 (CAP)</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">ascender</span> = <span style="color:#ae81ff">740</span>              <span style="color:#75715e"># 上伸部高度</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">sb</span> = <span style="color:#ae81ff">85</span>                     <span style="color:#75715e"># 左右邊距 (Sidebearing)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">accentWidth</span> = <span style="color:#ae81ff">182</span>           <span style="color:#75715e"># 變音符號寬度與間距參數</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">accentClearance</span> = <span style="color:#ae81ff">76</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">accentHeight</span> = <span style="color:#ae81ff">162</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">accentStackOffset</span> = <span style="color:#ae81ff">208</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">leading</span> = <span style="color:#ae81ff">1250</span>              <span style="color:#75715e"># 預設行距</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">parenSize</span> = <span style="color:#ae81ff">860</span>             <span style="color:#75715e"># 括號垂直跨度</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">dotSize</span> = <span style="color:#e6db74">&#39;blend(weight, [100, 110], [400, 125], [900, 150])&#39;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">periodSize</span> = <span style="color:#ae81ff">140</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">essRatio</span> = <span style="color:#ae81ff">1.03</span>             <span style="color:#75715e"># 微調 S / s 與問號中央轉折處的水平加寬比例</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">essRatioUpper</span> = <span style="color:#ae81ff">1.03</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">essRatioLower</span> = <span style="color:#ae81ff">1.03</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">essRatioQuestion</span> = <span style="color:#ae81ff">1.03</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">archDepth</span> = <span style="color:#ae81ff">152</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">smallArchDepth</span> = <span style="color:#ae81ff">157</span></span></span></code></pre></div>
+
+<p>注意看 <code>dotSize</code> 那行：<code>blend(weight, [100, 110], [400, 125], [900, 150])</code> 是一個隨字重動態插值的函數，確保在極細體（<code>Thin 100</code>）時標點與 <code>i</code> 的方點不會太小而消失，而在極粗體（<code>Black 900</code>）時又不會過度膨脹糊成一團。</p>
+<h3 id="本地端建置環境準備">本地端建置環境準備</h3>
+<p>要在 Linux 本地端從頭編譯 Ioskeley Mono，只需要準備 <strong>Node.js 20+</strong>（上游 <code>package.json</code> 最低需求為 <code>&gt;=16.0.0</code>，官方 CI 採用 Node.js 20）與 <strong><code>ttfautohint</code></strong>（用於產生標準解析度螢幕所需的 TrueType hinting 指令）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 1. 複製 Ioskeley Mono 儲存庫</span>
+</span></span><span style="display:flex;"><span>git clone git@github.com:ahatem/IoskeleyMono.git ioskeley-mono
+</span></span><span style="display:flex;"><span>cd ioskeley-mono
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 複製上游 Iosevka 引擎（鎖定 v34.4.0 確保變體名稱與度量完全一致）</span>
+</span></span><span style="display:flex;"><span>git clone --depth <span style="color:#ae81ff">1</span> --branch v34.4.0 https://github.com/be5invis/Iosevka.git iosevka-src
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 確認系統已安裝 ttfautohint 與 fontforge（後續打 Nerd Font 補丁需要）</span>
+</span></span><span style="display:flex;"><span>sudo pacman -S --needed ttfautohint fontforge python-fonttools</span></span></code></pre></div>
+
+<p>為什麼一定要鎖定 Iosevka <code>v34.4.0</code>？因為上游 Iosevka 的 <code>main</code> 分支演進速度極快，有時會重新命名部分字形變體或調整內部幾何常數；固定在 <code>v34.4.0</code> 可以確保我們編譯出來的結果與官方發行版完全一致。</p>
+<h2 id="一行設定的魔法為數字-7-加上水平橫槓">一行設定的魔法：為數字 7 加上水平橫槓</h2>
+<p>現在回到我們最初的目標：把數字 <code>7</code> 改成中間帶有水平橫槓的版本。</p>
+<p>打開 <code>private-build-plans.toml</code> 的第 15 行，在 <code>[buildPlans.IoskeleyMono.variants.design]</code> 區塊中可以看到上游預設使用的是無襯線直桿 <code>7</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span>[<span style="color:#a6e22e">buildPlans</span>.<span style="color:#a6e22e">IoskeleyMono</span>.<span style="color:#a6e22e">variants</span>.<span style="color:#a6e22e">design</span>]
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">one</span> = <span style="color:#e6db74">&#34;no-base&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">two</span> = <span style="color:#e6db74">&#34;straight-neck-serifless&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">three</span> = <span style="color:#e6db74">&#34;flat-top-serifless&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">four</span> = <span style="color:#e6db74">&#34;semi-open-serifless&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">five</span> = <span style="color:#e6db74">&#34;oblique-flat-serifless&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">six</span> = <span style="color:#e6db74">&#34;open-contour&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">seven</span> = <span style="color:#e6db74">&#34;straight-serifless&#34;</span>             <span style="color:#75715e"># &lt;-- 上游預設：無橫槓的俐落直桿 7</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">eight</span> = <span style="color:#e6db74">&#34;two-circles&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">nine</span> = <span style="color:#e6db74">&#34;open-contour&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">zero</span> = <span style="color:#e6db74">&#34;dotted&#34;</span></span></span></code></pre></div>
+
+<p>在 Iosevka 的命名系統中，數字 <code>7</code> 的變體名稱是由三個正交維度組合而成的：<code>[主幹形狀 body]-[左上角襯線 serif]-[中段橫槓 overlay]</code>：</p>
+<table>
+	<thead>
+			<tr>
+					<th style="text-align: left">變體名稱 (<code>seven = ...</code>)</th>
+					<th style="text-align: center">主幹形狀 (<code>body</code>)</th>
+					<th style="text-align: center">左上角垂直短襯線 (<code>serif</code>)</th>
+					<th style="text-align: center">中段水平橫槓 (<code>crossbar</code>)</th>
+					<th style="text-align: left">視覺風格建議</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td style="text-align: left"><code>straight-serifless</code>（預設）</td>
+					<td style="text-align: center">直線斜桿</td>
+					<td style="text-align: center">無</td>
+					<td style="text-align: center">無</td>
+					<td style="text-align: left">極簡現代，貼近 TX-02 原生設定</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><strong><code>straight-serifless-crossbar</code></strong></td>
+					<td style="text-align: center"><strong>直線斜桿</strong></td>
+					<td style="text-align: center"><strong>無</strong></td>
+					<td style="text-align: center"><strong>有</strong></td>
+					<td style="text-align: left"><strong>最推薦：保留幾何直桿，同時強化 <code>7</code> 與 <code>1</code>/<code>T</code> 的辨識度</strong></td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>straight-serifed-crossbar</code></td>
+					<td style="text-align: center">直線斜桿</td>
+					<td style="text-align: center">有</td>
+					<td style="text-align: center">有</td>
+					<td style="text-align: left">帶有濃厚打字機與古典印刷感</td>
+			</tr>
+			<tr>
+					<td style="text-align: left"><code>bend-serifless-crossbar</code></td>
+					<td style="text-align: center">微彎弧形斜桿</td>
+					<td style="text-align: center">無</td>
+					<td style="text-align: center">有</td>
+					<td style="text-align: left">偏柔和手寫風格，較不適合方正的 TX-02 家族</td>
+			</tr>
+	</tbody>
+</table>
+<p>因為 <code>IoskeleyMonoTerm</code>、<code>IoskeleyMonoNL</code> 與 <code>IoskeleyMonoWeb</code> 全部都透過 <code>inherits = &quot;buildPlans.IoskeleyMono&quot;</code> 繼承字形設定，我們只需要改動 <code>private-build-plans.toml</code> 的第 15 行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-toml" data-lang="toml"><span style="display:flex;"><span><span style="color:#a6e22e">seven</span> = <span style="color:#e6db74">&#34;straight-serifless-crossbar&#34;</span></span></span></code></pre></div>
+
+<p>接著把修改後的設定檔複製進 <code>iosevka-src/</code>，啟動 <strong>Verda</strong> 建置系統：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cp private-build-plans.toml iosevka-src/
+</span></span><span style="display:flex;"><span>cd iosevka-src
+</span></span><span style="display:flex;"><span>npm install
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 同時編譯標準版 (IDE 用) 與 Term 版 (終端機用)</span>
+</span></span><span style="display:flex;"><span>npm run build -- contents::IoskeleyMono contents::IoskeleyMonoTerm</span></span></code></pre></div>
+
+<p>Verda 是 Iosevka 作者 Belleve Invis 專門開發的增量平行建置引擎（定義於 <code>iosevka-src/verdafile.mjs</code>）。當我們修改 <code>private-build-plans.toml</code> 並針對單一家族執行建置時，Verda 會自動解析相依圖、調動多核心 CPU 平行更新 <strong>614 個建置目標</strong>（終端機印出 <code>Finished with 614 targets updated.</code>），短短幾分鐘內就在 <code>iosevka-src/dist/</code> 下產出全部 40 種樣式的 <code>TTF/</code>（Hinted）、<code>TTF-Unhinted/</code>、<code>WOFF2/</code> 與 <code>WOFF2-Unhinted/</code>。</p>
+<h2 id="深入造字引擎patel-ptl-如何將一行字串編譯成-truetype-輪廓">深入造字引擎：Patel (.ptl) 如何將一行字串編譯成 TrueType 輪廓？</h2>
+<p>改一行 TOML 就能讓 40 個字型檔同步長出比例完美的水平橫槓，這背後到底發生了什麼事？我在 <code>ioskeley-mono</code> workspace 中一路追進了 <code>iosevka-src/packages/font-glyphs/src/number/7.ptl</code>，發現 Iosevka 內部的幾何編譯管線設計得極為精妙。</p>
+<p>讓我們結合實際從編譯後的 <code>IoskeleyMono-Regular.ttf</code> 抽取出來的 TrueType 頂點座標，一步步拆解 <code>&quot;straight-serifless-crossbar&quot;</code> 是如何變成字型檔裡的二進位曲線（下圖與後文的頂點追蹤圖皆直接擷取自編譯後 TTF 的真實 <code>glyf</code> 輪廓座標）：</p>
+
+
+  
+    <img src="/posts/2026/10-17-ioskeley-mono-custom-build/seven-anatomy.svg" alt="seven-anatomy.svg" class="img-responsive post-image">
+  
+
+<h3 id="patel-語法編譯與-suffixcfgweave-變體編織">Patel 語法編譯與 <code>SuffixCfg.weave</code> 變體編織</h3>
+<p>Iosevka 所有的字形都不是手畫的，而是用一種名為 <strong>Patel</strong>（<code>.ptl</code>）的領域特定語言（Lisp 方言，採用縮排語法）撰寫的程式。由於 Node.js 無法直接執行 <code>.ptl</code>，建置系統第一步會呼叫 <code>patel-c</code> 編譯器，將 <code>7.ptl</code> 轉譯為標準的 JavaScript ES Module（<code>lib/number/7.mjs</code>）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>patel-c --strict --esm packages/font-glyphs/src/number/7.ptl -o packages/font-glyphs/lib/number/7.mjs</span></span></code></pre></div>
+
+<p>打開 <code>packages/font-glyphs/src/number/7.ptl</code> 的第 65 至 93 行，可以看到 <code>SuffixCfg.weave</code> 如何動態編織出所有合法的 <code>7</code> 變體組合：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-clojure" data-lang="clojure"><span style="display:flex;"><span>local SevenConfig <span style="color:#960050;background-color:#1e0010">:</span> SuffixCfg.weave
+</span></span><span style="display:flex;"><span>    object <span style="color:#f92672">#</span> body
+</span></span><span style="display:flex;"><span>        straight              StraightBody
+</span></span><span style="display:flex;"><span>        bend                  BendBody
+</span></span><span style="display:flex;"><span>        curly                 CurlyBody
+</span></span><span style="display:flex;"><span>    object <span style="color:#f92672">#</span> serif
+</span></span><span style="display:flex;"><span>        serifless             nothing
+</span></span><span style="display:flex;"><span>        serifed               StartSerif
+</span></span><span style="display:flex;"><span>    function [body] <span style="color:#960050;background-color:#1e0010">:</span> object <span style="color:#f92672">#</span> crossbar
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;&#34;</span>                    nothing
+</span></span><span style="display:flex;"><span>        crossbar <span style="color:#960050;background-color:#1e0010">:</span> match body
+</span></span><span style="display:flex;"><span>            [Just <span style="color:#e6db74">&#34;straight&#34;</span>] Crossbar
+</span></span><span style="display:flex;"><span>            [Just <span style="color:#e6db74">&#34;bend&#34;</span>]     BendCrossbar
+</span></span><span style="display:flex;"><span>            [Just <span style="color:#e6db74">&#34;curly&#34;</span>]    CurlyCrossbar
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>foreach { suffix { Body Serif Crossbar } } [Object.entries SevenConfig] <span style="color:#960050;background-color:#1e0010">:</span> do
+</span></span><span style="display:flex;"><span>    create-glyph <span style="color:#e6db74">&#34;seven.lnum.\(suffix)&#34;</span> <span style="color:#960050;background-color:#1e0010">:</span> glyph-proc
+</span></span><span style="display:flex;"><span>        include <span style="color:#960050;background-color:#1e0010">:</span> MarkSet.capital
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if </span>Body <span style="color:#960050;background-color:#1e0010">:</span> include <span style="color:#960050;background-color:#1e0010">:</span> Body CAP
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if </span>Serif <span style="color:#960050;background-color:#1e0010">:</span> include <span style="color:#960050;background-color:#1e0010">:</span> Serif CAP
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if </span>Crossbar <span style="color:#960050;background-color:#1e0010">:</span> include <span style="color:#960050;background-color:#1e0010">:</span> Crossbar CAP
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    create-glyph <span style="color:#e6db74">&#34;seven.onum.\(suffix)&#34;</span> <span style="color:#960050;background-color:#1e0010">:</span> glyph-proc
+</span></span><span style="display:flex;"><span>        include <span style="color:#960050;background-color:#1e0010">:</span> OnumMarks.p
+</span></span><span style="display:flex;"><span>        include <span style="color:#960050;background-color:#1e0010">:</span> refer-glyph <span style="color:#e6db74">&#34;seven.lnum.\(suffix)&#34;</span>
+</span></span><span style="display:flex;"><span>        include <span style="color:#960050;background-color:#1e0010">:</span> ShiftDown
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>select-variant <span style="color:#e6db74">&#39;seven.lnum</span><span style="color:#f92672">&#39;</span> [CodeLnum <span style="color:#e6db74">&#39;7</span><span style="color:#f92672">&#39;</span>] (<span style="color:#a6e22e">follow</span> -- <span style="color:#e6db74">&#39;seven</span><span style="color:#f92672">&#39;</span>)
+</span></span><span style="display:flex;"><span>select-variant <span style="color:#e6db74">&#39;seven.onum</span><span style="color:#f92672">&#39;</span> [CodeOnum <span style="color:#e6db74">&#39;7</span><span style="color:#f92672">&#39;</span>] (<span style="color:#a6e22e">follow</span> -- <span style="color:#e6db74">&#39;seven</span><span style="color:#f92672">&#39;</span>)</span></span></code></pre></div>
+
+<p>當我們在 TOML 中指定 <code>seven = &quot;straight-serifless-crossbar&quot;</code> 時：</p>
+<ul>
+<li><code>Body</code> 對映到 <code>StraightBody</code> 幾何程序；</li>
+<li><code>Serif</code> 對映到 <code>nothing</code>（不畫左上角垂直襯線）；</li>
+<li><code>Crossbar</code> 根據 <code>body == &quot;straight&quot;</code> 自動匹配到 <code>Crossbar</code> 程序；</li>
+<li>最後 <code>select-variant</code> 將產生的 <code>seven.lnum.straight-serifless-crossbar</code> 綁定到等高數字（Lining Figures）的 Unicode 碼位 <strong><code>U+0037</code> (<code>'7'</code>)</strong>（同時也透過 <code>seven.onum</code> 衍生出供 OpenType <code>onum</code> 特徵使用的老式高低數字版本）。</li>
+</ul>
+<h3 id="參數化座標求值straightbody-與-crossbar">參數化座標求值：<code>StraightBody</code> 與 <code>Crossbar</code></h3>
+<p>當 Node.js 在編譯某個特定字重與字寬（例如 <code>Regular 400</code>，字寬 <code>600</code>、大寫高度 <code>CAP = 690</code>、筆畫粗細 <code>Stroke = 73</code>、左右邊距 <code>SB = 85</code>、右邊界 <code>RightSB = 600 - 85 = 515</code>）時，它會把這些度量常數代入 <code>7.ptl</code> 第 13 至 20 行與第 44 至 49 行的幾何公式中：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-clojure" data-lang="clojure"><span style="display:flex;"><span>define SevenXLeft <span style="color:#960050;background-color:#1e0010">:</span> mix SB RightSB <span style="color:#ae81ff">0.28</span>
+</span></span><span style="display:flex;"><span>define [StraightBody top] <span style="color:#960050;background-color:#1e0010">:</span> union [HBar.t SB RightSB top] <span style="color:#960050;background-color:#1e0010">:</span> intersection
+</span></span><span style="display:flex;"><span>    Rect (<span style="color:#a6e22e">top</span> - Stroke) <span style="color:#ae81ff">0</span> SB RightSB
+</span></span><span style="display:flex;"><span>    dispiro
+</span></span><span style="display:flex;"><span>        widths.rhs
+</span></span><span style="display:flex;"><span>        corner RightSB (<span style="color:#a6e22e">top</span> - Stroke)
+</span></span><span style="display:flex;"><span>        corner [mix RightSB (<span style="color:#a6e22e">SevenXLeft</span> + [HSwToV <span style="color:#960050;background-color:#1e0010">:</span> <span style="color:#ae81ff">0.75</span> * Stroke]) <span style="color:#ae81ff">2</span>] [mix (<span style="color:#a6e22e">top</span> - Stroke) <span style="color:#ae81ff">0</span> <span style="color:#ae81ff">2</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">#</span> ... (<span style="color:#a6e22e">第</span> <span style="color:#ae81ff">21</span><span style="color:#960050;background-color:#1e0010">–</span><span style="color:#ae81ff">43</span> 行定義 BendBody<span style="color:#960050;background-color:#1e0010">、</span>CurlyBody 與 StartSerif)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>define [Crossbar top] <span style="color:#960050;background-color:#1e0010">:</span> glyph-proc
+</span></span><span style="display:flex;"><span>    local m <span style="color:#960050;background-color:#1e0010">:</span> mix SevenXLeft (<span style="color:#a6e22e">RightSB</span> - [HSwToV HalfStroke]) <span style="color:#ae81ff">0.5</span>
+</span></span><span style="display:flex;"><span>    include <span style="color:#960050;background-color:#1e0010">:</span> HBar.m
+</span></span><span style="display:flex;"><span>        m - [HSwToV QuarterStroke] - LongJut * <span style="color:#ae81ff">0.8</span>
+</span></span><span style="display:flex;"><span>        m + [HSwToV QuarterStroke] + LongJut * <span style="color:#ae81ff">0.7</span>
+</span></span><span style="display:flex;"><span>        mix <span style="color:#ae81ff">0</span> (<span style="color:#a6e22e">top</span> - QuarterStroke) <span style="color:#ae81ff">0.5</span></span></span></code></pre></div>
+
+<p>這幾行 Patel 程式碼藏著字體設計師滿滿的視覺補償細節：</p>
+<ol>
+<li><strong>頂部橫樑 (<code>HBar.t SB RightSB top</code>)</strong>：在 <code>X = 85..515</code>、<code>Y = 617..690</code> 畫出一道頂部切齊 <code>CAP (690)</code>、厚度為 <code>Stroke (73)</code> 的水平橫樑。</li>
+<li><strong>斜向主幹 (<code>dispiro</code> + <code>Rect</code> 交集裁切)</strong>：
+如果直接畫一條斜線段，斜線的上下兩端切口會垂直於斜線本身（呈現斜角突出）。因此 Iosevka 故意用 <code>mix ... 2</code> 把 <code>dispiro</code> 斜桿往外延伸兩倍長，再用一個 <code>Rect (top - Stroke) 0 SB RightSB</code>（即 <code>Y = 0..617</code> 的矩形遮罩）做<strong>布林交集</strong>（<code>intersection</code>）！這樣斜桿頂端就會完美貼合在 <code>Y = 617</code>（頂部橫樑下緣），底端則在 <code>Y = 0</code> 基線上切出俐落的水平平頭（<code>X = 180..267</code>）。</li>
+<li><strong>水平橫槓 (<code>Crossbar</code>) 的不對稱視覺平衡</strong>：
+<ul>
+<li><strong>垂直位置</strong>：不是單純取 <code>CAP / 2 = 345</code>，而是 <code>mix 0 (top - QuarterStroke) 0.5 = 336</code>（扣除頂部橫樑視覺重量後的幾何中心，落在 <code>Y = 299..373</code>）。</li>
+<li><strong>水平位置 (<code>m</code>)</strong>：計算斜桿在半高處的水平中心點 <code>m</code>。</li>
+<li><strong>左右突出的視覺微調</strong>：注意橫槓往左延伸了 <code>0.8 * LongJut</code>（到 <code>X = 158</code>），往右卻只延伸 <code>0.7 * LongJut</code>（到 <code>X = 501</code>）！為什麼左邊比右邊多出 <code>0.1 * LongJut</code>？因為 <code>7</code> 的斜桿是從右上往左下傾斜，左上方的字懷空間比右下方開闊；左端稍微多探出一點，在人眼看來才會覺得橫槓「正好位在斜桿正中央」。</li>
+</ul>
+</li>
+</ol>
+<h3 id="spiro-螺旋曲線展開與-2d-csg-布林聯集-typo-geom">Spiro 螺旋曲線展開與 2D CSG 布林聯集 (<code>typo-geom</code>)</h3>
+<p>在傳統字體設計中，曲線是由三次貝茲曲線（cubic Bézier）的控制點手拉出來的；而在 Iosevka 中，曲線是由 Raph Levien（同時也是 Google Fonts Inconsolata 與 Zed GPUI 部分文字渲染的先驅）提出的 <strong>Spiro 螺線演算法</strong>（Euler spiral）計算而成，確保曲率達到 <code>G2</code> 甚至 <code>G4</code> 連續。</p>
+<p>經過 <code>spiro-pen-expand.mjs</code> 將一維骨架向兩側展開成二維筆畫多邊形後，重頭戲交給了 <strong><code>typo-geom</code></strong> 幾何引擎：</p>
+<ul>
+<li>當我們把頂部橫樑、斜向主幹與水平橫槓透過 <code>union</code> 組合在一起時，三個零件在十字交會處會有內部的重疊邊線。</li>
+<li>如果直接把三個重疊的矩形寫進字型檔，在開啟半透明渲染、外框描邊或低解析度光柵化時，交界處會出現破洞（winding rule 衝突）或墨水過深。</li>
+<li><code>typo-geom</code> 會執行嚴謹的 <strong>2D 建構實體幾何布林聯集運算</strong>（CSG Union），自動找出所有交點（例如斜桿與橫槓相交的 <code>(300, 299)</code>、<code>(329, 373)</code>、<code>(417, 373)</code>、<code>(388, 299)</code> 四個內角），徹底剔除內部重疊線段，融合成<strong>單一封閉的 15 頂點外輪廓</strong>！</li>
+</ul>
+<p>我們直接用 Python 的 <code>fontTools</code> 把編譯出來的 <code>IoskeleyMono-Regular.ttf</code> 拆開，印出 <code>seven</code> 字形的 SVG 路徑指令，就能親眼驗證這個結果：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>M180 0 300 299H158V373H329L427 617H85V690H515V617L417 373H501V299H388L267 0Z</span></span></code></pre></div>
+
+
+
+  
+    <img src="/posts/2026/10-17-ioskeley-mono-custom-build/seven-csg-vertices.svg" alt="seven-csg-vertices.svg" class="img-responsive post-image">
+  
+
+<p>順著上圖右半邊標出的 <code>[1]</code> 到 <code>[15]</code> 號頂點走一圈，可以看到 <code>typo-geom</code> 如何把原本三個重疊的幾何零件融合成一條順時針方向（TrueType 外輪廓規範）的一筆畫封閉路徑：從基線左下角 <code>[1] (180, 0)</code> 出發，沿斜桿左緣爬升到橫槓下緣交角 <code>[2] (300, 299)</code>，往左折出橫槓左翼 <code>[3]➔[4]➔[5]</code>，繼續沿斜桿爬升到頂樑下緣交角 <code>[6] (427, 617)</code>，繞過頂部橫樑 <code>[7]➔[8]➔[9]➔[10]</code>，再沿斜桿右緣一路折出橫槓右翼 <code>[11]➔[12]➔[13]➔[14]</code> 回到基線右下角 <code>[15] (267, 0)</code> 閉合。整顆字元沒有任何多餘的內部節點，而且當 Verda 編譯 <code>Thin (100)</code>、<code>Bold (700)</code>、<code>Black (900)</code> 或 <code>SemiCondensed (90%)</code> 時，這 15 個頂點都會根據各自的 <code>Stroke</code> 與 <code>Width</code> 參數自動重新計算。</p>
+<h3 id="二次貝茲曲線擬合-quadify-與-opentype-封裝-ot-builder">二次貝茲曲線擬合 (<code>Quadify</code>) 與 OpenType 封裝 (<code>ot-builder</code>)</h3>
+<p>最後兩個底層步驟則是跨格式的幾何轉換：</p>
+<ol>
+<li><strong>三次轉二次貝茲曲線 (<code>Quadification</code>)</strong>：
+Iosevka 內部的幾何運算全部採用三次樣條（degree-3 cubic curves），但 TrueType（<code>.ttf</code>）的 <code>glyf</code> 表規範只支援<strong>二次貝茲曲線</strong>（degree-2 quadratic Bézier，每段曲線只有一個 off-curve 控制點）。<code>packages/geometry/src/quadify.mjs</code> 會呼叫 <code>TypoGeom.Quadify.auto(arc, 1, 8)</code>，將所有曲線自動細分並擬合為誤差小於 <code>1</code> 個字體設計單位（1/1000 em）的二次貝茲曲線。</li>
+<li><strong>二進位表格序列化 (<code>ot-builder</code>) 與 <code>ttfautohint</code></strong>：
+最後由 <code>ot-builder</code> 將輪廓點座標寫入 <code>glyf</code> 與 <code>loca</code> 表、將 Unicode 映射寫入 <code>cmap</code> 表、將連字與 <code>zero</code> 特徵寫入 <code>GSUB</code> 表，產出 <code>TTF-Unhinted/</code>，再交由 <code>ttfautohint</code> 注入對齊螢幕像素網格的 bytecode 指令產出 <code>TTF/</code>。</li>
+</ol>
+<h2 id="為自訂字體打上-nerd-font-補丁平行加速與兩個實戰陷阱">為自訂字體打上 Nerd Font 補丁：平行加速與兩個實戰陷阱</h2>
+<p>在 Linux 桌面環境（尤其是搭配 <code>eza</code>、<code>lazygit</code>、<code>neovim</code>、<code>starship</code> 與 <code>herdr</code> 的 terminal 工作流）中，只有純文字的 <code>.ttf</code> 是不夠的——我們還需要把 FontAwesome、Devicons、Octicons、Material Design Icons 與 Powerline 符號打包進去，做成 <strong>Nerd Font</strong> 版本。</p>
+<h3 id="平行化批次修補腳本-xargs--p-8">平行化批次修補腳本 (<code>xargs -P 8</code>)</h3>
+<p>官方的 <a href="https://github.com/ryanoasis/nerd-fonts">Nerd Fonts Patcher</a> 是一個由 <strong>FontForge</strong> Python 介面驅動的腳本。如果用單執行緒 <code>for</code> 迴圈逐一修補 40 個字型檔，每個檔案約需 15 至 20 秒，跑完一個家族就得花上十幾分鐘。</p>
+<p>實務上，我們可以直接下載 <code>FontPatcher.zip</code>（下方範例固定於 <code>v3.5.1</code> 確保可重現性），並利用 <code>xargs -n 2 -P 8</code> 啟動 8 個平行 worker 同時修補：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e">#!/usr/bin/env bash
+</span></span></span><span style="display:flex;"><span>set -e
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 1. 下載並解壓縮官方 Nerd Fonts Patcher (v3.5.1)</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">[</span> ! -d <span style="color:#e6db74">&#34;nerd-fonts-patcher&#34;</span> <span style="color:#f92672">]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    curl -fLO https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/FontPatcher.zip
+</span></span><span style="display:flex;"><span>    unzip -q FontPatcher.zip -d nerd-fonts-patcher
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>DIST_TERM<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;iosevka-src/dist/IoskeleyMonoTerm/TTF&#34;</span>
+</span></span><span style="display:flex;"><span>PATCHER<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;nerd-fonts-patcher/font-patcher&#34;</span>
+</span></span><span style="display:flex;"><span>mkdir -p patched-fonts-term/Normal patched-fonts-term/SemiCondensed
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>patch_font<span style="color:#f92672">()</span> <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>    local font<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span>$1<span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    local outdir<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span>$2<span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    fontforge -script <span style="color:#e6db74">&#34;</span>$PATCHER<span style="color:#e6db74">&#34;</span> <span style="color:#e6db74">&#34;</span>$font<span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>        --complete --careful --mono --outputdir <span style="color:#e6db74">&#34;</span>$outdir<span style="color:#e6db74">&#34;</span> &gt;/dev/null 2&gt;&amp;<span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;Finished </span><span style="color:#66d9ef">$(</span>basename <span style="color:#e6db74">&#34;</span>$font<span style="color:#e6db74">&#34;</span><span style="color:#66d9ef">)</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span>export -f patch_font
+</span></span><span style="display:flex;"><span>export PATCHER
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 2. 建立任務佇列（區分 SemiCondensed 與 Normal）</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> font in <span style="color:#e6db74">&#34;</span>$DIST_TERM<span style="color:#e6db74">&#34;</span>/IoskeleyMonoTerm-SemiCondensed*.ttf; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;</span>$font<span style="color:#e6db74">&#34;</span> <span style="color:#e6db74">&#34;patched-fonts-term/SemiCondensed&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">done</span> &gt; /tmp/fonts-term-to-patch.txt
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> font in <span style="color:#e6db74">&#34;</span>$DIST_TERM<span style="color:#e6db74">&#34;</span>/IoskeleyMonoTerm-*.ttf; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">[[</span> <span style="color:#e6db74">&#34;</span>$font<span style="color:#e6db74">&#34;</span> <span style="color:#f92672">==</span> *Condensed* <span style="color:#f92672">]]</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;</span>$font<span style="color:#e6db74">&#34;</span> <span style="color:#e6db74">&#34;patched-fonts-term/Normal&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">done</span> &gt;&gt; /tmp/fonts-term-to-patch.txt
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 3. 使用 8 個平行 worker 批次修補 40 個字型檔</span>
+</span></span><span style="display:flex;"><span>cat /tmp/fonts-term-to-patch.txt | xargs -n <span style="color:#ae81ff">2</span> -P <span style="color:#ae81ff">8</span> bash -c <span style="color:#e6db74">&#39;patch_font &#34;$@&#34;&#39;</span> _</span></span></code></pre></div>
+
+<p>這裡傳給 <code>font-patcher</code> 的三個參數至關重要：</p>
+<ul>
+<li><strong><code>--complete</code></strong>：注入所有開發者圖示集（FontAwesome、Devicons、Octicons、Codicons、Powerline 等）。</li>
+<li><strong><code>--careful</code></strong>：若圖示碼位與 Ioskeley Mono 原生已有的字元重疊，保留原生字元而不覆蓋。</li>
+<li><strong><code>--mono</code></strong>：將所有注入的圖示嚴格縮放至<strong>單一等寬字元格</strong>（1-cell），產出家族名稱帶有 <code>Nerd Font Mono</code> 後綴的字型，確保在 terminal 裡圖示不會溢位蓋住後面的空白或文字。</li>
+</ul>
+<h3 id="fontforge-清除-postisfixedpitch-等寬旗標的副作用">FontForge 清除 <code>post.isFixedPitch</code> 等寬旗標的副作用</h3>
+<p>當 <code>font-patcher</code> 透過 FontForge 重新匯出 <code>.ttf</code> 字型檔時，有一個歷史悠久的經典陷阱：<strong>FontForge 有時會將 TrueType <code>post</code> 表中的 <code>isFixedPitch</code> 欄位重設為 <code>0</code></strong>。</p>
+<p>一旦 <code>post.isFixedPitch</code> 不等於 <code>1</code>，部分 terminal 模擬器或作業系統的字體選擇器就會誤以為這是一套「比例字體（proportional font）」，進而拒絕在終端機字體清單中顯示它，或是導致字元間距計算異常。</p>
+<p>因此在 <code>font-patcher</code> 跑完之後，務必補上一段幾行就能跑完的 Python <code>fontTools</code> 修復腳本，把所有 <code>.ttf</code> 的 <code>isFixedPitch</code> 強制改回 <code>1</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#f92672">from</span> pathlib <span style="color:#f92672">import</span> Path
+</span></span><span style="display:flex;"><span><span style="color:#f92672">from</span> fontTools.ttLib <span style="color:#f92672">import</span> TTFont
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>fixed <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> f <span style="color:#f92672">in</span> sorted(Path(<span style="color:#e6db74">&#34;patched-fonts-term&#34;</span>)<span style="color:#f92672">.</span>rglob(<span style="color:#e6db74">&#34;*.ttf&#34;</span>)):
+</span></span><span style="display:flex;"><span>    font <span style="color:#f92672">=</span> TTFont(f)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#e6db74">&#34;post&#34;</span> <span style="color:#f92672">in</span> font <span style="color:#f92672">and</span> font[<span style="color:#e6db74">&#34;post&#34;</span>]<span style="color:#f92672">.</span>isFixedPitch <span style="color:#f92672">!=</span> <span style="color:#ae81ff">1</span>:
+</span></span><span style="display:flex;"><span>        font[<span style="color:#e6db74">&#34;post&#34;</span>]<span style="color:#f92672">.</span>isFixedPitch <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        font<span style="color:#f92672">.</span>save(f)
+</span></span><span style="display:flex;"><span>        fixed <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>print(<span style="color:#e6db74">f</span><span style="color:#e6db74">&#34;Restored isFixedPitch on </span><span style="color:#e6db74">{</span>fixed<span style="color:#e6db74">}</span><span style="color:#e6db74"> fonts&#34;</span>)</span></span></code></pre></div>
+
+<h3 id="為何重刷-fc-cache-後終端機裡的-7-依然沒有橫槓">為何重刷 <code>fc-cache</code> 後終端機裡的 7 依然沒有橫槓？</h3>
+<p>這是我昨晚在 <code>ioskeley-mono</code> workspace 裡遇到最有趣的一個實戰插曲。</p>
+<p>當我改完 <code>seven = &quot;straight-serifless-crossbar&quot;</code>、編譯完 <code>contents::IoskeleyMono</code>、跑完 40 個檔案的 Nerd Font 修補、複製進 <code>~/.local/share/fonts/</code>，並執行 <code>fc-cache -fv</code> 重新載入後——我滿懷期待地在 terminal 裡打出 <code>1234567890</code>，結果畫面上的 <code>7</code> <strong>依然是光禿禿的一根直桿，完全沒有水平橫槓</strong>！</p>
+<p>第一時間我還以為是 terminal 沒重讀字體快取（在 Kitty 可以按 <code>Ctrl + Shift + F5</code> 熱重載，Ghostty 可按 <code>Ctrl + Shift + ,</code> 重載設定，Alacritty 則會自動監聽設定檔變更，VS Code 可執行 <code>Developer: Reload Window</code>）。但就算重開整個 terminal 視窗，<code>7</code> 還是沒變。</p>
+<p>一查之下才揪出真正的兇手：</p>
+<ol>
+<li><strong>IDE 與 Terminal 使用不同的編譯目標 (<code>IoskeleyMono</code> vs. <code>IoskeleyMonoTerm</code>)</strong>：
+檢查我的 <code>~/.config/ghostty/config</code>、<code>~/.config/kitty/kitty.conf</code>、<code>~/.config/alacritty/alacritty.toml</code>、<code>~/.config/foot/foot.ini</code> 與 <code>~/.config/fontconfig/fonts.conf</code> 後發現，為了讓 terminal 的格線完美對齊，我所有的終端機設定檔指定的都是 <strong><code>IoskeleyMonoTerm Nerd Font Mono</code></strong>（也就是 <code>Term</code> 家族），而不是標準版的 <code>IoskeleyMono Nerd Font Mono</code>。</li>
+<li><strong><code>~/.local/share/fonts/</code> 裡殘留了舊版的 <code>Term</code> 字型檔</strong>：
+因為我第一輪只編譯並安裝了標準版 <code>contents::IoskeleyMono</code>，而 <code>~/.local/share/fonts/IoskeleyMono/</code> 資料夾底下還躺著先前安裝的舊版 <code>IoskeleyMonoTermNerdFontMono-*.ttf</code>！於是當 Fontconfig 解析 <code>IoskeleyMonoTerm Nerd Font Mono</code> 時，毫無懸念地繼續指向那批還沒加上橫槓的舊檔案。</li>
+</ol>
+<p>找出原因後，解法就非常俐落了：</p>
+<ol>
+<li>補跑 <code>npm run build -- contents::IoskeleyMonoTerm</code> 編譯帶橫槓 <code>7</code> 的 <code>Term</code> 家族。</li>
+<li>執行 <code>patch-term-fonts.sh</code> 將 40 個 <code>IoskeleyMonoTerm</code> 字型檔打上 Nerd Font 補丁並修復 <code>isFixedPitch = 1</code>。</li>
+<li>清理 <code>~/.local/share/fonts/</code> 下舊的散落檔案，統一安裝至 <code>~/.local/share/fonts/IoskeleyMono/</code> 與 <code>~/.local/share/fonts/IoskeleyMonoNerdFont/</code>。</li>
+<li>重刷快取並用 <strong><code>fc-match</code></strong> 驗證最終解析路徑：</li>
+</ol>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 重新建立 Fontconfig 快取</span>
+</span></span><span style="display:flex;"><span>fc-cache -fv
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 驗證 Fontconfig 實際匹配到的字型檔路徑</span>
+</span></span><span style="display:flex;"><span>fc-match -v <span style="color:#e6db74">&#34;IoskeleyMonoTerm Nerd Font Mono&#34;</span> | grep -E <span style="color:#e6db74">&#34;file:|family:&#34;</span></span></span></code></pre></div>
+
+<p>當看到輸出明確指向剛出爐的 <code>~/.local/share/fonts/IoskeleyMonoNerdFont/IoskeleyMonoTermNerdFontMono-Regular.ttf</code>，再重新載入終端機，整個畫面裡的 <code>7</code> 瞬間長出了那道俐落的水平橫槓！</p>
+<h2 id="反思與取捨為什麼在-ghostty-環境下我最終移除了-nerd-font-補丁">反思與取捨：為什麼在 Ghostty 環境下，我最終移除了 Nerd Font 補丁？</h2>
+<p>跑通上面整套 FontForge 平行打補丁與 <code>isFixedPitch</code> 修復流程後，雖然成功得到了自訂的 <code>IoskeleyMonoTerm Nerd Font Mono</code>，但在 <strong>Ghostty</strong> 終端機裡實際使用了一陣子後，我卻決定回過頭下達另一個指令：<strong>把所有 Nerd Font 補丁徹底移除，只安裝純淨未修補的原版 <code>Ioskeley Mono</code> 與 <code>Ioskeley Mono Term</code></strong>。</p>
+<p>為什麼費工夫打完補丁後，反而選擇回歸純淨字型？關鍵在於當今像 <strong>Ghostty</strong>（以及 WezTerm、Kitty）這類現代終端機的字型渲染架構已經與幾年前截然不同。把 Nerd Font 圖示直接「焊死」進主字型檔裡，實務上會帶來四個明顯的副作用：</p>
+<h3 id="屏蔽了-ghostty-原生內建的智慧圖示縮放引擎">屏蔽了 Ghostty 原生內建的智慧圖示縮放引擎</h3>
+<p>許多人可能沒注意到，<strong>Ghostty 出廠就已經原生內建了完整的 <code>Symbols Nerd Font</code> 作為預設後備字型（fallback）</strong>，不需要使用者額外安裝任何打過補丁的字體。更重要的是，Ghostty 在渲染引擎底層實作了極為細膩的<strong>動態字元格縮放邏輯（constraint-based glyph scaling）</strong>：</p>
+<ul>
+<li>當 Ghostty 在你的主字型（例如純淨的 <code>Ioskeley Mono Term</code>）中找不到某個 Private Use Area (PUA) 圖示碼位時，它會自動切換到內建的 Nerd Font 符號表，並<strong>動態檢查該圖示右側是否緊鄰空白字元</strong>。</li>
+<li>在 <code>eza -l</code>、<code>lazygit</code>、<code>yazi</code> 檔案樹或 <code>starship</code> 提示字元中，圖示後面通常都會跟著一個空白（<code> </code>）。此時 Ghostty 會允許圖示突破單一窄格的限制，以更飽滿、清晰且符合原始長寬比的尺寸渲染。</li>
+<li>反之，如果你安裝並指定了預先打上 <code>--mono</code> 補丁的 <code>IoskeleyMonoTerm Nerd Font Mono</code>，因為主字型檔本身已經佔據了所有 PUA 碼位，<strong>Ghostty 根本不會觸發內建的 fallback 與動態縮放引擎</strong>，而是直接畫出字型檔裡被 FontForge 硬生生壓扁塞進單一窄格（<code>Width = 600</code> 或 <code>540</code>）的微型圖示——導致資料夾、Git 分支與語言圖示縮得像郵票一樣小，白白浪費了 Ghostty 原生圖示渲染器的優勢。</li>
+</ul>
+<h3 id="fontforge-二次轉檔對-hinting-與-opentype-表格的破壞">FontForge 二次轉檔對 Hinting 與 OpenType 表格的破壞</h3>
+<p>Iosevka 編譯器透過 <code>ot-builder</code> 與 <code>ttfautohint</code> 產出的原版字型，在 OpenType 表格結構與像素對齊指令上極為嚴謹，並明確區分給標準螢幕用的 <code>TTF/</code>（Hinted）與給高解析度 HiDPI 螢幕用的 <code>TTF-Unhinted/</code>。</p>
+<p>然而，一旦把編譯好的 <code>.ttf</code> 丟進 FontForge 執行 <code>font-patcher</code>，FontForge 會將整顆字型反序列化後再重新匯出。這個過程不僅會如前文所述清掉 <code>post.isFixedPitch</code> 旗標，還會改寫 <code>name</code> 表與原有的 hinting 結構（這也是為什麼官方釋出的 Nerd Font 壓縮包無法提供獨立的 Hinted 與 Unhinted 版本）。不經過 FontForge 二次加工，才能保留 Iosevka 100% 原汁原味的曲線與 hinting 品質。</p>
+<h3 id="40-倍的圖示重複塞入與-88-mb-體積膨脹">40 倍的圖示重複塞入與 88 MB 體積膨脹</h3>
+<p>一套完整的 Nerd Fonts 圖示集包含超過一萬個向量圖形。由於圖示本身並沒有「細體 Light」或「粗斜體 Bold Italic」的差別，將圖示直接打進字型檔，等於在 10 種字重 × 2 種字寬 × 正斜體共 <strong>40 個 <code>.ttf</code> 檔案裡重複複製了一萬個完全相同的圖示</strong>！</p>
+<p>這使得單一家族的字型檔從原本輕巧的十幾 MB 暴增到 <strong>88 MB</strong>，而且每次修改一行 <code>private-build-plans.toml</code> 重新編譯時，都得額外花上好幾分鐘讓 8 個 FontForge 處理程序把 CPU 燒滿。</p>
+<h3 id="更現代的解耦配置純淨字體--終端機內建或單一符號-fallback">更現代的解耦配置：純淨字體 + 終端機內建或單一符號 Fallback</h3>
+<p>把 Nerd Font 補丁移除、重新執行乾淨的 Verda 建置後：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 直接編譯純淨的四大家族，不經過 FontForge 二次加工</span>
+</span></span><span style="display:flex;"><span>cd iosevka-src
+</span></span><span style="display:flex;"><span>npm run build -- contents::IoskeleyMono contents::IoskeleyMonoTerm contents::IoskeleyMonoNL contents::IoskeleyMonoWeb</span></span></code></pre></div>
+
+<p>在 <strong>Ghostty</strong>（<code>~/.config/ghostty/config</code>）中，只需要直接指定純淨的 <code>Ioskeley Mono Term</code>，圖示就會自動由 Ghostty 內建的 Nerd Font 引擎接手渲染：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-ini" data-lang="ini"><span style="display:flex;"><span><span style="color:#a6e22e">font-family</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;Ioskeley Mono Term&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">font-style</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">Regular</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">font-size</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">11</span></span></span></code></pre></div>
+
+<p>而如果同時有使用 Alacritty、Foot 或 Waybar 等沒有內建圖示的工具，也完全不需要回頭打補丁——只要在 Linux 系統中安裝單一一個僅約 2.5 MB 的獨立符號字型套件（例如 Arch Linux 官方套件庫的 <code>ttf-nerd-fonts-symbols-mono</code>），讓 Fontconfig 在遇到 PUA 圖示碼位時自動 fallback 到該符號字型即可。這樣一來，文字排版由最純淨的 <code>Ioskeley Mono Term</code> 負責，開發者圖示由終端機內建引擎或單一符號字型負責，職責徹底解耦，建置速度與視覺品質都達到了最理想的狀態。</p>
+<h2 id="結語把字體當作可編譯的基礎設施">結語：把字體當作可編譯的基礎設施</h2>
+<p>從單純「下載別人打包好的 <code>.zip</code> 字型檔」，跨出一步到「自己擁有字體的建置管線」，帶來的掌控感非常奇妙。</p>
+<p>透過 Iosevka 的 Patel 參數化引擎與 <code>private-build-plans.toml</code>，字體不再是一顆無法修改的黑盒子：不管你是想幫數字 <code>7</code> 加上水平橫槓、把預設的點狀 <code>0</code> 換成斜線 <code>0</code>、微調行距 <code>leading</code>，還是針對 Ghostty 的渲染特性選擇最純淨的 <code>Ioskeley Mono Term</code> 建置方案，都只需要改幾行設定檔，就能在幾分鐘內編譯出一套橫跨 10 種字重、2 種字寬的專屬字體家族。如果你也在使用 Ioskeley Mono，強烈推薦把儲存庫 clone 下來親手編譯一次，打造真正百分百貼合自己視覺習慣的開發者字體！</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

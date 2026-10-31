@@ -1,0 +1,60 @@
+%% JPEG XL codec 架構 — editable logical source for the hand-arranged Excalidraw diagram.
+%% Adapted from Jon Sneyers, JPEG XL codec architecture.svg (2021), CC BY-SA 4.0.
+%% https://commons.wikimedia.org/wiki/File:JPEG_XL_codec_architecture.svg
+%% https://creativecommons.org/licenses/by-sa/4.0/
+%% Changes: Traditional Chinese labels, vertical layout, simplified blocks,
+%% explicit Modular auxiliary-data path, and distinction between JPEG reconstruction and re-encoding.
+%% Technical reference: https://github.com/libjxl/libjxl/blob/main/doc/format_overview.md
+flowchart TD
+    Input["輸入影像：RGB／灰階像素"] --> Lossless{"需要像素無損？"}
+    Lossless -->|否| Content{"依影像內容選擇"}
+    Lossless -->|是| MC
+    Content -->|相片等內容| VC
+    Content -->|圖形等內容可選 Modular| MC
+    Extra["alpha、深度等額外通道"] --> MT
+
+    subgraph VarDCT["VarDCT 模式"]
+        direction TB
+        VC["色彩轉換：例如 XYB"] --> VF["影像特徵擷取：patches／splines／noise"]
+        VF --> VP["色度預測與濾波參數"] --> DCT["變動區塊 DCT 與自適應量化"]
+        DCT --> Progressive["漸進細化：可選 HF 多 pass"]
+        Progressive --> VE["係數預測、重排與熵編碼"]
+    end
+    subgraph Modular["Modular 模式：主影像可無損或有失真"]
+        direction TB
+        MC["可逆色彩轉換"] --> MF["影像特徵擷取"]
+        MF --> MT["轉換選擇：palette／Squeeze 等"]
+        MT --> MP["預測與 context model：MA tree"] --> ME["ANS／prefix 熵編碼"]
+    end
+    DCT -.->|LF 影像／量化權重等輔助資料| MT
+
+    JPEG["輸入 JPEG 位元流"] --> Coeff["DCT 係數解碼：不先還原像素"]
+    Coeff -->|沿用係數，略過 DCT 與重新量化| Progressive
+    Coeff --> JR["擷取 JPEG 重建資料"]
+
+    subgraph Container["JPEG XL 檔案容器（選用）"]
+        CS["JXL codestream：jxlc／jxlp"]
+        JBRD["JPEG 重建資料：jbrd（選用）"]
+        Meta["metadata：Exif／XMP／JUMBF（選用）"]
+    end
+    VE --> CS
+    ME --> CS
+    JR --> JBRD
+    CS --> Decode["影像解碼：反變換、特徵還原、色彩轉換與 frame 合成"]
+    Decode --> Pixels["解碼後影像：RGB／RGBA／HDR 像素"]
+    Pixels -.-> Export["另存 JPEG：一般情況需重新編碼"]
+    CS --> Rebuild["JPEG 位元流重建"]
+    JBRD --> Rebuild
+    Meta -.-> Rebuild
+    Rebuild --> Original["原始 JPEG：bit-exact，不重新量化"]
+
+    classDef input fill:#f0f9ff,stroke:#0284c7,color:#0c4a6e
+    classDef vardct fill:#ecfdf5,stroke:#059669,color:#065f46
+    classDef modular fill:#f5f3ff,stroke:#7c3aed,color:#5b21b6
+    classDef jpeg fill:#fffbeb,stroke:#b45309,color:#78350f
+    classDef container fill:#ecfeff,stroke:#0e7490,color:#164e63
+    class Input,Lossless,Content,Extra,Pixels input
+    class VC,VF,VP,DCT,Progressive,VE vardct
+    class MC,MF,MT,MP,ME modular
+    class JPEG,Coeff,JR,JBRD,Rebuild,Original jpeg
+    class CS,Meta,Decode container

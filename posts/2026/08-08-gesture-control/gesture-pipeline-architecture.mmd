@@ -1,0 +1,11 @@
+graph TD
+    A[Webcam 視訊擷取 640x480] -->|BGR 影格| B[OpenCV 5 DNN 視覺執行緒]
+    B -->|Palm Detection ONNX| C[192x192 掌心候選框 + 距離中心 NMS]
+    C -->|Hand Crop + WarpAffine 旋轉對齊| D[Handpose Estimation ONNX]
+    D -->|Layer 2 右手性雙向推論| E[Sub-millisecond 翻轉推論與反向映射]
+    E -->|回傳 21 個 3D 骨骼點| F[360 度旋轉幾何算子]
+    F -->|貪婪距離配對 + 遲滯投票| G[TrackedHand 時序追蹤器]
+    G -->|眾數滑動視窗 N=10| H[Mode Debouncing 低通濾波器]
+    H -->|GestureState Enum| I(std::sync::mpsc Channel)
+    I -->|GestureState| J[主執行緒 OS Controller Loop]
+    J -->|EMA 游標平滑化 + Win32 FFI| K[Native OS 滑鼠/鍵盤/虛擬桌面切換]

@@ -1,0 +1,2974 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>相機創意外觀與硬體 ISP 色彩管線運作機制 - 以 JPEG XL 高動態範圍線性影像模擬 16 扇區色彩矩陣、129 點曲線與 5×9×9 3D HSV 空間轉換</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=53f8d1ac672a42748600c7e24101cf96" rel="stylesheet">
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/"/>
+  <meta property="og:title" content="相機創意外觀與硬體 ISP 色彩管線運作機制 - 以 JPEG XL 高動態範圍線性影像模擬 16 扇區色彩矩陣、129 點曲線與 5×9×9 3D HSV 空間轉換"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-10-29 18:00:00 -0700 -0700"/>
+  
+  <meta property="og:article:tag" content="photography"/>
+  
+  <meta property="og:article:tag" content="image-processing"/>
+  
+  <meta property="og:article:tag" content="tools"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">260</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">34</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">33</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/10-29-sony-a7r5-custom-firmware/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            Sony A7R V 第三方韌體逆向與本地編譯實戰
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">相機創意外觀與硬體 ISP 色彩管線運作機制</h1>
+      
+      <div class="post-subtitle">以 JPEG XL 高動態範圍線性影像模擬 16 扇區色彩矩陣、129 點曲線與 5×9×9 3D HSV 空間轉換</div>
+      
+      <div class="post-meta">
+        <span class="post-date">October 29, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/photography"><span class="label label-primary">photography</span></a>
+        
+        <a href="/tags/image-processing"><span class="label label-primary">image-processing</span></a>
+        
+        <a href="/tags/tools"><span class="label label-primary">tools</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>當我們拿著現代無反相機拍照時，切換機身內的創意外觀（Creative Look，如 Sony 的 <code>ST</code>、<code>PT</code>、<code>NT</code>、<code>VV</code>、<code>FL</code>、<code>IN</code>、<code>SH</code> 以及後續移植的 <code>FL2</code> 與 <code>FL3</code>）或各種軟片模擬，電子觀景窗（EVF）與機背螢幕能以 60 至 120 fps 的即時幀率，流暢呈現對比鮮明、高光柔和且具備獨特色調的畫面。</p>
+<p>在很多人的直覺印象中，相機直出（Straight Out Of Camera，簡稱 SOOC）的風格設定，似乎就像手機修圖 App 裡的濾鏡——只是在已經拍攝完成的影像上套一層調色參數或簡單的對比飽和度增減。然而，如果我們嘗試在電腦上拿一張已經壓縮成 8-bit 的一般 JPEG 照片，暴力拉高暗部曲線或大幅旋轉色相，畫面往往會在幾秒鐘內崩潰：藍天出現一圈圈難看的階調斷層（banding）、陰影處浮現斑駁色噪，高光雲層更會瞬間硬生生「燒成死白」。</p>
+<p>為什麼相機在機身內部即時直出的色彩，既能大幅度重塑影調風格，又能保有極為平滑自然的高光滾降與豐富層次？相機硬體影像訊號處理器（Image Signal Processor，簡稱 ISP）在光子撞擊感光元件後，究竟進行了哪些多階段的非線性數學變換？</p>
+<p>這篇文章將從數位色彩科學與嵌入式硬體架構出發，拆解現代相機硬體 ISP 的五大核心處理階段；並介紹為什麼 <strong>JPEG XL</strong> (<code>.jxl</code>) 格式是我們在電腦端精確模擬硬體 ISP 的最佳載體，最後透過即時互動實驗室解構從線性光到成品的端到端色彩轉換管線。</p>
+<h2 id="硬體-isp-與後製濾鏡的根本分歧">硬體 ISP 與後製濾鏡的根本分歧</h2>
+<p>要理解創意外觀的運作機制，首先必須釐清「硬體即時 ISP 管線」與「一般軟體後製濾鏡」在資料本質上的分水嶺。</p>
+<p>在相機硬體架構中（例如先前我們在分析 Sony BIONZ XR <code>CXD90057</code> 雙處理器架構時所見），感光元件記錄下來的原始信號經過解馬賽克（demosaicing）後，抵達專責相機處理器（CP，運行 TOPPERS/FMP RTOS）時，仍然是完全未壓縮、具備 14-bit 以上動態範圍的 <strong>場景線性輻射率</strong> (scene-referred linear radiance)。</p>
+<p>在這種線性光空間中，數值大小嚴格對應物理世界中的光子通量（photon flux）：數值增加一倍，代表物理進光量實打實增加了一檔（1 stop）。</p>
+<p>一般修圖軟體套用後製濾鏡時，面對的往往是已經被壓縮進顯示空間（display-referred）、經過 8-bit 量化並烘焙了非線性 sRGB 伽瑪曲線的成品 JPEG。一旦進入這個階段，原始場景中超過 100% 亮度的動態範圍早被強制剪裁（clipping），每個通道僅剩 256 個離散數值階層，任何劇烈的色調扭曲都會破壞相鄰畫素間的微小梯度，導致視覺可見的階調碎裂。</p>
+<p>相機內部的硬體 ISP 則完全不同：它是在純粹的線性光空間中執行白平衡與原色校正，隨後透過專用的硬體加速電路（如色彩矩陣單元、樣條曲線單元與 3D 色彩網格單元）並行運算，將高動態範圍以數學方式平滑映射至目標色域，最後才交由編碼器壓縮儲存。這正是相機直出 JPEG 或 HEIF 能具備「底片質感」卻毫不生硬的硬體基礎。</p>
+<h2 id="為什麼選擇-jpeg-xl-作為模擬實驗載體">為什麼選擇 JPEG XL 作為模擬實驗載體？</h2>
+<p>如果我們想在電腦端驗證並重現相機硬體 ISP 的全部數學運算，我們需要一種合適的數位影像檔案格式作為實驗媒介：</p>
+<ol>
+<li><strong>傳統 JPEG 的限制</strong>：每通道只有 8-bit、色彩空間被鎖死在狹窄的 sRGB、且強制使用 4:2:0 破壞性色度抽樣與 8×8 離散餘弦變換（DCT）區塊。拿它來模擬多階段 ISP，只會放大檔案本身的壓縮瑕疵。</li>
+<li><strong>相機 RAW 原檔的限制</strong>：RAW 檔（如 Sony 的 ARW、Nikon 的 NEF 或 Adobe DNG）雖然保留了感光元件的 14-bit 線性資料，但由於包含 Bayer 濾鏡陣列的原始馬賽克結構，不同解碼器（LibRaw、Rawpy、Adobe Camera Raw）在去馬賽克階段的插值演算法差異甚大，且缺乏通用的色彩標記，難以直接作為跨平台純量運算的標準容器。</li>
+</ol>
+<p>這正是 <strong>JPEG XL</strong> (<code>.jxl</code>) 展現價值的完美舞台。作為新一代現代影像標準，JPEG XL 具備幾項對於色彩科學模擬極為關鍵的硬實力：</p>
+<ul>
+<li><strong>原生支援 16-bit 浮點數與整數線性光空間</strong>：JPEG XL 允許直接儲存未經伽瑪壓縮的 16-bit 線性資料（Linear Light Rec.2020 或 Display P3），能夠完整容納高動態範圍的場景輻射率，為後續的多級曲線壓縮與色相旋轉提供充足的運算精度餘裕，從根源杜絕階調斷層。</li>
+<li><strong>超廣色域相容性</strong>：在硬體 ISP 中，當我們為了模擬復古色調而大幅度調移特定色相的飽和度時，色彩數值經常會暫時被推移至標準 sRGB 邊界之外；JPEG XL 能無縫封裝 Rec.2020 或 ACEScg 廣色域，避免邊緣色彩提早遭到裁切。</li>
+<li><strong>感知均勻的 XYB 內部編碼</strong>：JPEG XL 內部原生基於人類視覺受體（LMS 錐細胞）的非線性感知空間進行色度與亮度分離，搭配自適應量化機制，即便在極高壓縮率下，也能以極細緻的保真度儲存微對比與細節紋理。</li>
+</ul>
+<p>換言之，一張包含 16-bit 浮點線性場景資料的 JPEG XL 影像，就是我們在 PC 端高精度模擬硬體 ISP 的最佳「數位負片」。</p>
+<div class="isp-stage-card" data-stage="0">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 0: 感光元件線性場景輻射率與 EV 動態範圍分佈 (Sensor Linear Radiance & EV Stops)</span>
+<span class="isp-badge">STAGE 0 · RAW / JXL</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="0" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="0" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-0" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-0" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+</div>
+<h2 id="硬體-isp-色彩管線全景架構">硬體 ISP 色彩管線全景架構</h2>
+<p>在 Sony BIONZ XR 世代的韌體實作中，當 CP（相機處理器）接收到來自 AP（應用處理器）派發的創意外觀配置參數後，硬體 ISP 會依照嚴格的硬體流水線依序執行各個運算單元。</p>
+<p>下圖呈現了相機內部從感光元件 RAW 讀出、歷經硬體 ISP 各級變換，直到最終直出編碼的完整管線架構（在後續的實驗與電腦端模擬中，我們使用 16-bit 線性 JPEG XL 作為場景線性光資料載體）：</p>
+
+
+  
+    <img src="/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/creative-look-isp-pipeline.svg" alt="creative-look-isp-pipeline.svg" class="img-responsive post-image">
+  
+
+<p>整個管線可以清晰地拆解為五大循序漸進的運算階段：</p>
+<ol>
+<li><strong>線性白平衡與暗部基準增益</strong> (<code>cc1</code>)</li>
+<li><strong>16 扇區色相相依色彩矩陣</strong> (<code>block13</code>)</li>
+<li><strong>129 點分段樣條色調映射</strong> (<code>gamma[129]</code>)</li>
+<li><strong>5×9×9 3D 極坐標 HSV 色彩網格</strong> (<code>grid[3][405]</code>)</li>
+<li><strong>空間微對比與細節濾波</strong> (Clarity &amp; Detail)</li>
+</ol>
+<p>接下來，我們深入剖析每一階段的具體數學定義與在相機內部扮演的角色。</p>
+<h2 id="深入五大硬體-isp-運算階段">深入五大硬體 ISP 運算階段</h2>
+<h3 id="線性白平衡與暗部基準增益-cc1">線性白平衡與暗部基準增益 (<code>cc1</code>)</h3>
+<p>色彩管線的第一站，必須發生在完全未經非線性轉換的線性光空間。</p>
+<p>在感光元件讀出訊號時，各感光畫素存在微小的暗電流雜訊（dark current），硬體首先扣除黑電平基準（pedestal）。接著，根據當前環境色溫與白平衡設定（對應韌體結構中的 <code>s_kelvin</code> 與 <code>s_adobekelvin</code>，以及 <code>cc1[3][8]</code> 結構中的通道增益），對三原色光電倍增訊號進行線性對稱放大：</p>
+$$\begin{bmatrix} R_{wb} \\ G_{wb} \\ B_{wb} \end{bmatrix} = \begin{bmatrix} k_R & 0 & 0 \\ 0 & k_G & 0 \\ 0 & 0 & k_B \end{bmatrix} \left( \begin{bmatrix} R_{in} \\ G_{in} \\ B_{in} \end{bmatrix} - \mathbf{p}_{\text{black}} \right)$$<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;階段 1 硬體運算流向</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>輸入訊號</strong>：未校正場景線性輻射率 $\mathbf{C}_{in} = [R_{in}, G_{in}, B_{in}]^T$
+<strong>核心運算</strong>：扣除感光元件暗電流基準 $\mathbf{p}_{\text{black}}$ ➔ 套用通道乘法對稱縮放 $\operatorname{diag}(k_R, k_G, k_B)$
+<strong>硬體暫存器</strong>：<code>s_kelvin</code>、<code>s_adobekelvin</code>、<code>cc1[3][8]</code>
+<strong>輸出特性</strong>：線性能量平衡原色 $\mathbf{C}_{wb}$（中性灰階無色偏，維持光子通量比例）</p></div>
+</div><h4 id="通道增益--與-r_gain-的實作關聯與組成">通道增益 $k_R$ 與 R_gain 的實作關聯與組成</h4>
+<p>在數學模型中的對角矩陣增益 $k_R, k_G, k_B$，與數值解剖儀中顯示的 <code>R_gain</code>, <code>G_gain</code>, <code>B_gain</code> 本質上代表<strong>完全相同的物理量</strong>：</p>
+<ul>
+<li><strong>理論公式與硬體實作記號</strong>：在對角矩陣中，$k_R$ 代表紅通道的線性放大乘數；在韌體暫存器與模擬程式碼中，它對應單通道運算 $C_{wb} = \max(0, C_{linear} - p_{\text{black}}) \times \text{Gain}_c$ 當中的 <code>R_gain</code>（或 <code>rGain</code>）。</li>
+<li><strong>$k_R$ (<code>R_gain</code>) 的兩層權重組成</strong>：在硬體 ISP 與創意外觀中，$k_R$ 是由「風格外觀基礎偏差」與「環境色溫動態調變」兩者乘積所決定：
+$k_R \equiv \text{R\_gain} = k_{R, \text{base}} \times f_R(T_{\text{kelvin}})$
+<ul>
+<li><strong>外觀基礎偏差 ($k_{R, \text{base}}$)</strong>：來自創意外觀預設（例如 <code>FL</code> 膠卷底片風格預設微幅偏暖，基礎值 <code>wbGains[0] = 1.120</code>）。</li>
+<li><strong>色溫動態調變 ($f_R(T)$)</strong>：相對於標準日光（$5500\text{ K}$）即時補償。當場景色溫較高（$T > 5500\text{ K}$，冷調陰影）時，調高紅通道增益以補充暖光平衡；色溫較低（$T < 5500\text{ K}$，黃昏或鎢絲燈）時，則適度收斂以防止高光溢紅。</li>
+</ul>
+</li>
+<li><strong>綠通道基準錨點 ($k_G = 1.000$)</strong>：在 Bayer 感光元件中，綠色畫素數量佔 50% 且最貼近人眼明度（Luminance）響應。相機 ISP 的 <code>cc1</code> 暫存器通常固定 $k_G = \text{G\_gain} = 1.000$ 作為中性亮度錨點，由 $k_R$ (<code>R_gain</code>) 與 $k_B$ (<code>B_gain</code>) 對稱向兩側展開調節紅藍色溫。</li>
+</ul>
+<p>為什麼白平衡必須在最前端的線性空間執行？</p>
+<p>如果我們先套用了非線性色調曲線或伽瑪映射，原色數值與物理光子通量之間的比例關係就會被徹底破壞。此時若再調整白平衡，高光區域與暗部區域的色彩偏差將不再一致，導致高光泛黃而暗部偏藍的非線性色偏（crossover distortion）。只有在線性空間下做乘法純量縮放，中性灰色的色度座標在各種曝光級數下才能維持嚴格守恆。</p>
+<div class="isp-stage-card" data-stage="1">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 1: 線性白平衡與黑電平基準扣除 (cc1 Linear WB & Black Pedestal)</span>
+<span class="isp-badge">STAGE 1 · CC1</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="1" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="1" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-1" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-1" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+<div class="isp-stage-card-sliders">
+<div class="isp-slider-item">
+<div class="isp-slider-label">
+<span>白平衡色溫 (WB Temp)</span>
+<span class="isp-slider-val" id="val-card-wb-temp">5500 K</span>
+</div>
+<input type="range" id="sl-card-wb-temp" min="3000" max="8500" step="50" value="5500">
+</div>
+</div>
+</div>
+<h3 id="16-扇區色相相依色彩矩陣-block13">16 扇區色相相依色彩矩陣 (<code>block13</code>)</h3>
+<p>完成白平衡後，三原色通道達到能量平衡，但此時的 RGB 座標系仍然是感光元件濾色鏡的專屬光譜響應（camera native sensor primaries），必須轉換至標準色彩空間。</p>
+<p>傳統影像處理通常採用單一組 $3 \times 3$ 色彩矩陣：</p>
+$$\vec{C}_{out} = \mathbf{M}_{3 \times 3} \cdot \vec{C}_{in}$$<p>然而，單一全域 $3 \times 3$ 矩陣在色彩設計上存在無法調和的物理矛盾：當我們想要模仿膠卷底片的特徵，把天空中的藍色往青綠色（Cyan / Teal）旋轉、並提高綠色植被的純度時，一個全局矩陣會無可避免地把人臉中的黃色與紅色一同牽動，導致原本健康紅潤的膚色變得枯黃或蠟黃。</p>
+<p>為了解決這個難題，現代相機硬體 ISP（在 BIONZ XR 中對應 <code>block13[3][16][6]</code> 結構）導入了 <strong>16 扇區色相調適矩陣</strong> 機制：</p>
+<ol>
+<li><strong>色相圓盤 16 等分</strong>：硬體管線即時計算畫素的色相角 $\theta = \operatorname{atan2}(U, V)$，將 $360^\circ$ 的色彩圓盤劃分為 16 個色相扇區（每個扇區跨度 $22.5^\circ$）。</li>
+<li><strong>基底校正矩陣與差分係數</strong>：以基礎矩陣 $\mathbf{M}_{base}$ 為底，每個扇區定義了 6 組差分修正係數（differential coefficients），獨立微調該色相區間的交叉通道貢獻量。</li>
+<li><strong>鄰近扇區連續線性插值</strong>：當畫素介於兩相鄰扇區中心時，硬體根據其色相偏移角度對兩組矩陣進行平滑加權混合，確保色相過渡平順、絕不出現邊界色斑跳變。</li>
+</ol>
+<p>透過 16 扇區色彩矩陣，相機工程師能夠做到「在大幅旋轉冷色調的同時，將黃橙色至紅色的膚色區間牢牢鎖定在自然範圍內」。</p>
+<div class="isp-stage-card" data-stage="2">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 2: 16 扇區色相相依向量矩陣圓盤 (block13 Hue Wheel & Deviations)</span>
+<span class="isp-badge">STAGE 2 · BLOCK13</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="2" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="2" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-2" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-2" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+</div>
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;階段 2 硬體運算流向</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>輸入訊號</strong>：白平衡後原色 $\mathbf{C}_{wb}$
+<strong>核心運算</strong>：計算色相角 $\theta = \operatorname{atan2}(V, U)$ ➔ 定位相鄰扇區 $s$ 與 $s+1$ ➔ 線性權重插值差分矩陣 $\mathbf{M}_{base} + \Delta \mathbf{M}(\theta)$
+<strong>硬體暫存器</strong>：<code>block13[3][16][6]</code>
+<strong>輸出特性</strong>：目標色域原色（例如天空藍向青綠旋轉，膚色區間完全鎖定保護）</p></div>
+</div><h3 id="129-點分段樣條色調映射-gamma129">129 點分段樣條色調映射 (<code>gamma[129]</code>)</h3>
+<p>色彩基礎校正完成後，接著迎來決定畫面明暗對比與「影調骨架」的核心階段——色調映射（Tone Mapping）。</p>
+<p>許多人習慣用單一的伽瑪公式 $Y_{out} = Y_{in}^{1/\gamma}$ 來理解亮度映射，但在實際相機硬體 ISP 中，這種固定冪次公式完全無法滿足現代攝影對高動態範圍的苛刻要求。在韌體逆向分析中，我們看到的是一整張由 129 個節點組成的分段曲線表格：<code>gamma[129]</code>。</p>
+<p>硬體 ISP 透過分段三次樣條（Cubic Spline）或高階單調插值，在 129 個錨點之間構建起連續平滑的映射曲線：</p>
+<ul>
+<li><strong>暗部微抬升與灰調啞光</strong> (Matte Fade / Pedestal Lift)：在原廠 <code>FL</code> 或 Fujifilm <code>Classic Chrome</code> 風格中，曲線在接近 $Y = 0$ 的最暗端點並未直接落在純黑，而是微微抬升約 $1.5\% \sim 3\%$ 的輸出亮度。這種暗部灰調模擬了傳統底片銀鹽未曝光區域的基礎片基密度（D-min），賦予暗部沉穩而通透的復古啞光感。</li>
+<li><strong>中灰對比坡度</strong> (Midtone Contrast Slope)：在中間調（通常對應 18% 灰板的曝光基準點附近），曲線擁有更陡峭的斜率，以增強視覺焦點的立體感與階調反差。</li>
+<li><strong>高光軟滾降</strong> (Soft Highlight Rolloff)：傳統數位拍照最令人詬病的，就是在過曝邊界出現斷崖式的硬剪裁（hard clipping），雲層邊緣會形成突兀的色帶。硬體 ISP 的 129 點樣條在高光區間採用了漸近 S 曲線（shoulder curve），讓亮度在逼近 1.0 時平順地減緩上升斜率，將極端高光的反差柔和壓縮，營造如同大片幅膠卷般的優雅高光過渡。</li>
+<li><strong>嚴格單調性約束</strong> (Isotonicity)：所有 129 個節點必須滿足嚴格的單調遞增條件 $Y_{out}[i+1] \ge Y_{out}[i]$，否則局部斜率倒轉將直接引發嚴重的太陽化（solarization）光斑異常。</li>
+</ul>
+<h4 id="三項式混合模型與光學攝影意圖">三項式混合模型與光學攝影意圖</h4>
+<p>在韌體設計與後續的互動模擬實作中，這條 129 點樣條曲線由三個各自承載光學與感光化學意圖的物理項加權疊加而成：</p>
+<p>$Y_{out}(x) = Y_{toe}(x) + Y_{mid}(x) \cdot w_{mid} + Y_{shoulder}(x) \cdot w_{shoulder}$</p>
+<ul>
+<li><strong>暗部趾部抬升項 (Toe Lift / Film Base D-min)</strong>：
+$Y_{toe}(x) = \text{lift} \cdot \max(0, 1 - 3.5x)^{2.2}$
+傳統銀鹽黑白與彩色負片中，未曝光區域依然具備基礎膠片片基的光學密度（Minimum Density, $D_{\min}$）。在數位影像中若直接將數值映射至絕對純黑（0），暗部陰影容易顯得生硬扁平。透過指數為 2.2 的非線性冪次衰減，該項僅作用於最深處約 5% 的暗部階調，營造出底片特有的啞光灰黑質感與空氣呼吸感。</li>
+<li><strong>中間調 Sigmoid S 曲線項 (Midtone Contrast Punch)</strong>：
+$Y_{mid}(x) = \frac{1}{1 + \exp\left( -\gamma \cdot (\ln x - \ln x_{mid}) \right)}$
+以 RAW 感光元件線性中灰錨點 $x_{mid} \approx 0.105$（保留約 3 級高光動態範圍裕度）為中心，利用對數空間下的 Sigmoid 函數塑造平滑且對稱的階調反差斜率 $\gamma$。這能有效鎖定視覺核心主題的立體感與衝擊力，同時維持中灰基準點的明度穩定。</li>
+<li><strong>高光肩部漸近滾降項 (Shoulder Highlight Rolloff)</strong>：
+$Y_{shoulder}(x) = 1 - \exp\left( -x^{\alpha} \cdot 1.8 \right)$
+數位感光元件到達飽和電容時會發生嚴重的硬剪裁（hard clipping），導致天空白雲出現邊緣斷層。肩部滾降項採用指數漸近收斂，在亮度逼近 1.0 時溫和壓縮高光動態範圍，模擬大片幅膠卷在過曝時銀鹽晶粒逐漸耗盡的優雅軟滾降。</li>
+</ul>
+<div class="isp-stage-card" data-stage="3">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 3: 129 點硬體分段樣條色調映射曲線 (gamma[129] Spline Curve)</span>
+<span class="isp-badge">STAGE 3 · GAMMA[129]</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="3" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="3" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-3" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-3" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+<div class="isp-stage-card-sliders">
+<div class="isp-slider-item">
+<div class="isp-slider-label">
+<span>暗部抬升 (Pedestal Lift)</span>
+<span class="isp-slider-val" id="val-card-lift">2.5%</span>
+</div>
+<input type="range" id="sl-card-lift" min="0" max="6.0" step="0.1" value="2.5">
+</div>
+<div class="isp-slider-item">
+<div class="isp-slider-label">
+<span>中灰對比坡度 (Contrast)</span>
+<span class="isp-slider-val" id="val-card-contrast">2.20×</span>
+</div>
+<input type="range" id="sl-card-contrast" min="1.0" max="3.2" step="0.1" value="2.2">
+</div>
+</div>
+</div>
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;階段 3 硬體運算流向</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>輸入訊號</strong>：色彩矩陣校正後線性 RGB
+<strong>核心運算</strong>：提取明度 $Y_{in}$ ➔ 129 點分段三次樣條查表（暗部抬升 + 中灰對比坡度 + 高光漸近滾降）➔ 等比例縮放原色 $\mathbf{C} \cdot (Y_{out} / Y_{in})$
+<strong>硬體暫存器</strong>：<code>gamma[129]</code> 曲線節點表格
+<strong>輸出特性</strong>：高動態範圍壓縮後影像（底片啞光灰黑、通透高光、嚴格色度座標守恆）</p></div>
+</div><h3 id="599-3d-極坐標-hsv-色彩網格-grid3405">5×9×9 3D 極坐標 HSV 色彩網格 (<code>grid[3][405]</code>)</h3>
+<p>如果說 129 點曲線塑造了相片的骨骼，那麼 <strong>5×9×9 3D 極坐標 HSV 色彩網格</strong> (在韌體中對應 <code>grid[3][405]</code> 與 405-point 3D lattice) 就是賦予創意外觀獨特靈魂的魔法之源。</p>
+<p>下圖展示了這座立體色彩網格的空間幾何拓撲與三線性插值運作方式：</p>
+
+
+  
+    <img src="/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/hsv-lattice-transformation.svg" alt="hsv-lattice-transformation.svg" class="img-responsive post-image">
+  
+
+<h4 id="405-個立體網格點的幾何結構">405 個立體網格點的幾何結構</h4>
+<p>在三維空間中，網格將色彩空間組織為一個柱狀極坐標系（Cylindrical Polar Coordinates）：</p>
+<ul>
+<li><strong>5 層垂直明度階</strong> (Luma Slices)：沿著垂直亮度軸 $Y$，劃分為 5 個離散節點（$Y \in \{0, 1, 2, 3, 4\}$），分別對應極暗部（Deep Shadows）、陰影（Shadows）、中灰（Midtones）、高光（Highlights）與極高光（Super Highlights）。</li>
+<li><strong>9 圈徑向飽和度環</strong> (Saturation Rings)：從中性灰軸心向外輻射，劃分為 9 個飽和度半徑階層（$U \in \{-4, -3, \dots, 0, \dots, +4\}$），涵蓋從完全黑白中性、低飽和啞光到高飽和純色的過渡。</li>
+<li><strong>9 條角向色相射線</strong> (Hue Rays)：圍繞色度圓盤以 $40^\circ$ 為間隔，劃分出 9 個主要的色相取樣方向（$V \in \{-4, -3, \dots, 0, \dots, +4\}$），精確錨定紅、橙黃、綠、青、藍、洋紅等關鍵光譜。</li>
+</ul>
+<p>三者相乘，構成了立體空間中恰好 $5 \times 9 \times 9 = 405$ 個控制節點。在硬體儲存中，每個節點儲存一組 signed 7-bit 整數增量向量：</p>
+$$\mathbf{g} = \left( \Delta H, \Delta S, \Delta V \right) \in [-64, 63]^3$$<h4 id="空間單元三線性插值原理-trilinear-interpolation">空間單元三線性插值原理 (Trilinear Interpolation)</h4>
+<p>當任何一個畫素進入該單元時，硬體計算其所在的空間連續座標 $(y, u, v)$，並定位包覆該畫素的相鄰 8 個網格頂點構成的微型晶胞（sub-cube）：</p>
+$$\mathbf{C} = \{ (y_0, u_0, v_0), (y_0, u_0, v_1), \dots, (y_1, u_1, v_1) \}$$<p>令分數偏移量為 $f_y = y - y_0$、$f_u = u - u_0$、$f_v = v - v_0$，三線性插值在 8 個角點上分別施加空間權重：</p>
+$$w_{i,j,k} = \left( i \cdot f_y + (1-i)(1-f_y) \right) \left( j \cdot f_u + (1-j)(1-f_u) \right) \left( k \cdot f_v + (1-k)(1-f_v) \right)$$<p>最終該畫素獲得的色彩修正量為 8 個角點增量的加權總和：</p>
+<p>$\Delta \vec{C} = \sum_{i,j,k \in \{0, 1\}} w_{i,j,k} \cdot \frac{\mathbf{g}_{y_i, u_j, v_k}}{256}$</p>
+<div class="isp-stage-card" data-stage="4">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 4: 5×9×9 3D 極坐標 HSV 色彩網格立體切片 (grid[3][405] 3D Lattice)</span>
+<span class="isp-badge">STAGE 4 · GRID[3][405]</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="4" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="4" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-4" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-4" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+<div class="isp-stage-card-sliders">
+<div class="isp-slider-item">
+<div class="isp-slider-label">
+<span>3D 網格陰影冷調 (Teal Delta)</span>
+<span class="isp-slider-val" id="val-card-teal">+12 Δ</span>
+</div>
+<input type="range" id="sl-card-teal" min="-20" max="30" step="1" value="12">
+</div>
+</div>
+</div>
+<h4 id="為什麼-3d-網格具有無可替代的表現力">為什麼 3D 網格具有無可替代的表現力？</h4>
+<p>傳統的 1D LUT 只能單獨調整 R、G、B 各自的曲線，無法做到「根據亮度與飽和度的組合來決定色相偏移」。</p>
+<p>3D 網格則實現了完全有界（locally bounded）的多維度精準調色：</p>
+<ul>
+<li><strong>暗部冷調青綠、高光微暖</strong>：我們可以在 $Y \in \{0, 1\}$（陰影階）將綠色和青色扇區的 $\Delta H$ 向藍綠色偏移，同時在 $Y \in \{3, 4\}$（高光階）保持完全中立或微增暖黃，創造出電影等級的冷暖影調分離。</li>
+<li><strong>人像膚色高光保護</strong>：在橙黃色相射線上，僅在 $Y \ge 2$ 的高明度區間提升 $\Delta V$ 並微降 $\Delta S$，讓人物臉頰高光呈現白皙通透的粉潤感，而完全不影響畫面其他區域的飽和度。</li>
+<li><strong>深色植被消光</strong>：在暗部高飽和綠色節點上單獨降低 $\Delta S$，消除數位相機拍攝森林時常見的突兀螢光綠，營造沉穩靜謐的日系膠卷氛圍。</li>
+</ul>
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;階段 4 硬體運算流向</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>輸入訊號</strong>：色調映射後影像
+<strong>核心運算</strong>：柱狀極坐標定位 $(y, u, v) \in [0, 4] \times [0, 8] \times [0, 8]$ ➔ 晶胞 8 頂點三線性空間插值 ➔ 疊加有界增量 $\Delta \vec{C}$
+<strong>硬體暫存器</strong>：<code>grid[3][405]</code> 405 個立體網格點節點
+<strong>輸出特性</strong>：多維度微調色彩（陰影冷調青綠、人像高光粉潤提亮、深綠植被消光）</p></div>
+</div><h3 id="空間微對比與細節濾波-clarity--detail">空間微對比與細節濾波 (Clarity &amp; Detail)</h3>
+<p>最後一個硬體階段聚焦於空間頻率域。</p>
+<p>相機中的清晰度（Clarity）與銳利度（Sharpness）調節，本質上是透過雙邊濾波（Bilateral Filter）或導向濾波（Guided Filter）將影像分解為 <strong>基底低頻層</strong> (Base Layer) 與 <strong>高頻細節層</strong> (Detail Layer)。</p>
+<p>在不產生光暈（halo artifacts）的前提下，硬體對局部邊緣梯度進行非線性增益放大，並在低對比度紋理處施加微幅提升，讓織物毛髮、石磚紋理在維持柔和色彩的同時，依舊保有清晰可辨的輪廓觸感。</p>
+<div class="isp-stage-card" data-stage="5">
+<div class="isp-stage-card-header">
+<div class="isp-stage-card-title">
+<span>Stage 5: 空間雙邊濾波頻率分離與微對比增益 (Clarity & Edge Detail)</span>
+<span class="isp-badge">STAGE 5 · FILTER</span>
+</div>
+<div class="isp-stage-card-tabs">
+<button type="button" class="isp-stage-tab-btn active" data-stage="5" data-tab="inspector">幾何數值可視化</button>
+<button type="button" class="isp-stage-tab-btn" data-stage="5" data-tab="photo">實拍階段影像</button>
+</div>
+</div>
+<div class="isp-stage-canvas-wrap">
+<canvas id="stage-inspector-5" width="800" height="420" class="isp-stage-canvas"></canvas>
+<canvas id="stage-photo-5" width="900" height="600" class="isp-stage-canvas" style="display:none;"></canvas>
+</div>
+<div class="isp-stage-card-sliders">
+<div class="isp-slider-item">
+<div class="isp-slider-label">
+<span>微對比清晰度 (Clarity)</span>
+<span class="isp-slider-val" id="val-card-clarity">+0.45×</span>
+</div>
+<input type="range" id="sl-card-clarity" min="0" max="1.0" step="0.05" value="0.45">
+</div>
+</div>
+</div>
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;階段 5 硬體運算流向</span>
+  </div>
+  <div class="markdown-alert-content"><p><strong>輸入訊號</strong>：3D 色彩網格處理後影像
+<strong>核心運算</strong>：空間邊緣濾波分解 ➔ 提取基底低頻層與高頻細節層 ➔ 局部梯度非線性增益放大
+<strong>硬體暫存器</strong>：空間濾波器係數與清晰度閾值
+<strong>輸出特性</strong>：層次分明、無白邊光暈的相機直出成品影像</p></div>
+</div><h2 id="硬體-isp-創意外觀即時互動實驗室">硬體 ISP 創意外觀即時互動實驗室</h2>
+<p>理論與公式固然嚴謹，但唯有親手切換管線各階段、即時觀察影像與向量空間的聯動變化，才能真正領略硬體 ISP 的精妙之處。</p>
+<p>下方提供了一套完全運行於瀏覽器記憶體中的 <strong>相機硬體 ISP 創意外觀即時互動實驗室</strong>。這套模擬器基於前述五大階段演算法建構，具備以下核心功能：</p>
+<ol>
+<li><strong>六階段循序演繹 (Pipeline Stepper)</strong>：點擊上方階段標籤，或點擊「<strong>▶ 自動流水線演示</strong>」，即可親眼見證一張 16-bit 線性負片如何歷經白平衡、色相旋轉、樣條映射、3D 空間微調與細節濾波，逐步綻放為獨特的直出風格。</li>
+<li><strong>多款經典風格預設 (Creative Looks)</strong>：可在 <code>FL (Film Look)</code>、<code>ST (Standard)</code>、<code>VV (Vivid)</code> 與 <code>Classic Neg</code> 間任意切換，觀察不同風格在色調曲線、陰影偏色與膚色保護上的策略差異。</li>
+<li><strong>雙面板向量幾何解剖 (Mathematical Inspector)</strong>：右側畫布即時渲染當前階段的數學拓撲圖，包含動態範圍 EV 直方圖、16 扇區色相圓盤、129 點分段樣條曲線、3D HSV 空間切片與頻率分離曲線。</li>
+<li><strong>捲簾滑桿與原位閃切 (Comparison)</strong>：支援左右拖曳捲簾滑桿對比原始線性光與直出成品，亦可按住「原位按住閃切」即時檢視單一階段帶來的視覺增量。</li>
+<li><strong>底層硬體參數微調</strong>：展開下方控制面板，能即時拉動色溫、暗部抬升比例、中灰對比坡度與 3D 陰影青綠冷調，實時運算呈現畫布結果。</li>
+</ol>
+<style>
+
+/* Stage Cards in Text Sections */
+.isp-stage-card {
+max-width: 100%;
+margin: 16px 0 20px 0;
+background: #16161e;
+border: 1px solid #2f3549;
+border-radius: 10px;
+overflow: hidden;
+box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.isp-stage-card-header {
+background: #1f2335;
+padding: 8px 14px;
+border-bottom: 1px solid #2f3549;
+display: flex;
+flex-wrap: wrap;
+justify-content: space-between;
+align-items: center;
+gap: 10px;
+}
+.isp-stage-card-title {
+font-size: 13.5px;
+font-weight: 700;
+color: #7dcfff;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.isp-stage-card-tabs {
+display: flex;
+gap: 6px;
+}
+.isp-stage-tab-btn {
+background: #24283b;
+border: 1px solid #414868;
+color: #9aa5ce;
+padding: 4px 10px;
+border-radius: 5px;
+font-size: 11.5px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.15s ease;
+}
+.isp-stage-tab-btn:hover {
+background: #292e42;
+color: #7dcfff;
+}
+.isp-stage-tab-btn.active {
+background: rgba(125, 207, 255, 0.18);
+border-color: #7dcfff;
+color: #7dcfff;
+font-weight: 600;
+}
+.isp-stage-canvas-wrap {
+position: relative;
+width: 100%;
+aspect-ratio: 800 / 420;
+background: #14151e;
+overflow: hidden;
+}
+.isp-stage-canvas-wrap canvas {
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+object-fit: contain;
+display: block;
+}
+
+
+.isp-container {
+max-width: 100%;
+margin: 28px auto;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+margin: 0 auto;
+background: #16161e;
+border: 1px solid #2f3549;
+border-radius: 12px;
+overflow: hidden;
+box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.isp-header {
+background: #1a1b26;
+padding: 16px 20px;
+border-bottom: 1px solid #2f3549;
+display: flex;
+flex-wrap: wrap;
+justify-content: space-between;
+align-items: center;
+gap: 12px;
+}
+.isp-preset-control-block {
+display: flex;
+align-items: center;
+flex-wrap: wrap;
+gap: 8px 12px;
+}
+.isp-preset-overall-text {
+font-size: 12px;
+color: #a9b1d6;
+line-height: 1.45;
+}
+.isp-title {
+font-size: 16px;
+font-weight: 700;
+color: #7dcfff;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.isp-badge {
+background: rgba(125, 207, 255, 0.15);
+color: #7dcfff;
+padding: 2px 8px;
+border-radius: 4px;
+font-size: 11px;
+font-weight: 600;
+letter-spacing: 0.5px;
+}
+.isp-toolbar {
+background: #1f2335;
+padding: 12px 20px;
+border-bottom: 1px solid #2f3549;
+display: flex;
+flex-wrap: wrap;
+gap: 16px;
+align-items: center;
+justify-content: space-between;
+}
+.isp-group {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.isp-label {
+font-size: 12.5px;
+color: #9aa5ce;
+font-weight: 500;
+}
+.isp-select, .isp-btn {
+background: #24283b;
+border: 1px solid #414868;
+color: #c0caf5;
+padding: 6px 12px;
+border-radius: 6px;
+font-size: 12.5px;
+cursor: pointer;
+transition: all 0.18s ease;
+}
+.isp-select:focus, .isp-btn:hover {
+border-color: #7aa2f7;
+background: #292e42;
+color: #7dcfff;
+}
+.isp-btn-play {
+background: #0284c7;
+border-color: #0284c7;
+color: #ffffff;
+font-weight: 600;
+}
+.isp-btn-play:hover {
+background: #0369a1;
+}
+
+/* Pipeline Stepper */
+.isp-stepper {
+background: #16161e;
+padding: 14px 20px;
+border-bottom: 1px solid #2f3549;
+display: grid;
+grid-template-columns: repeat(6, 1fr);
+gap: 8px;
+}
+@media (max-width: 768px) {
+.isp-stepper {
+grid-template-columns: repeat(3, 1fr);
+}
+}
+.isp-step-btn {
+background: #1a1b26;
+border: 1px solid #2f3549;
+border-radius: 8px;
+padding: 8px 6px;
+text-align: center;
+cursor: pointer;
+transition: all 0.2s ease;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 3px;
+}
+.isp-step-btn:hover {
+border-color: #565f89;
+background: #24283b;
+}
+.isp-step-btn.active {
+border-color: #7dcfff;
+background: rgba(125, 207, 255, 0.12);
+box-shadow: 0 0 12px rgba(125, 207, 255, 0.2);
+}
+.isp-step-num {
+font-size: 10.5px;
+font-weight: 700;
+color: #565f89;
+text-transform: uppercase;
+}
+.isp-step-btn.active .isp-step-num {
+color: #7dcfff;
+}
+.isp-step-name {
+font-size: 12px;
+font-weight: 600;
+color: #c0caf5;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+max-width: 100%;
+}
+
+/* Main Stage Workspace */
+.isp-workspace {
+padding: 12px 16px;
+display: grid;
+grid-template-columns: 1fr;
+gap: 16px;
+}
+.isp-workspace.isp-layout-split {
+grid-template-columns: 1.1fr 0.9fr;
+}
+@media (max-width: 860px) {
+.isp-workspace.isp-layout-split {
+grid-template-columns: 1fr;
+}
+}
+
+.isp-panel {
+background: #1a1b26;
+border: 1px solid #2f3549;
+border-radius: 8px;
+overflow: hidden;
+display: flex;
+flex-direction: column;
+}
+.isp-panel-header {
+background: #1f2335;
+padding: 8px 14px;
+border-bottom: 1px solid #2f3549;
+font-size: 12px;
+font-weight: 600;
+color: #9aa5ce;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.isp-canvas-wrap {
+position: relative;
+width: 100%;
+aspect-ratio: 3 / 2;
+background: #0d0e15;
+overflow: hidden;
+}
+.isp-inspector-wrap {
+aspect-ratio: 800 / 420;
+}
+.isp-canvas-wrap canvas {
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+object-fit: contain;
+display: block;
+}
+
+/* Curtain Split View Slider */
+.isp-curtain-divider {
+position: absolute;
+top: 0;
+bottom: 0;
+width: 2px;
+background: #7dcfff;
+box-shadow: 0 0 8px #7dcfff;
+cursor: ew-resize;
+pointer-events: none;
+z-index: 10;
+}
+.isp-curtain-handle {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: 24px;
+height: 24px;
+border-radius: 50%;
+background: #7dcfff;
+color: #0f0f14;
+font-size: 12px;
+font-weight: bold;
+display: flex;
+align-items: center;
+justify-content: center;
+box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.isp-curtain-labels {
+position: absolute;
+top: 10px;
+left: 10px;
+right: 10px;
+display: flex;
+justify-content: space-between;
+pointer-events: none;
+z-index: 15;
+}
+.isp-curtain-pill {
+background: rgba(15, 17, 26, 0.82);
+border: 1px solid rgba(125, 207, 255, 0.45);
+backdrop-filter: blur(4px);
+color: #7dcfff;
+font-size: 11px;
+font-weight: 600;
+padding: 4px 10px;
+border-radius: 12px;
+box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+/* Stage Info Card */
+.isp-panel-header-info {
+padding: 0;
+background: #1a1b26;
+display: block;
+}
+.isp-panel-header-info .isp-info-card {
+border-top: none;
+padding: 8px 14px;
+background: transparent;
+}
+.isp-info-card {
+padding: 14px 20px;
+background: #1a1b26;
+border-top: 1px solid #2f3549;
+font-size: 13px;
+line-height: 1.6;
+color: #a9b1d6;
+}
+.isp-info-top {
+display: flex;
+flex-wrap: wrap;
+justify-content: space-between;
+align-items: center;
+gap: 8px;
+margin-bottom: 6px;
+}
+.isp-info-title {
+font-size: 14px;
+font-weight: 700;
+color: #7aa2f7;
+margin-bottom: 0;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.isp-info-math {
+background: #13141f;
+border: 1px solid #2f3549;
+border-radius: 6px;
+padding: 4px 10px;
+font-family: "Source Code Pro", monospace;
+font-size: 11.5px;
+color: #7dcfff;
+margin: 0;
+display: inline-block;
+}
+
+/* Sliders within isp-panel and isp-stage-card */
+.isp-panel-sliders,
+.isp-stage-card-sliders {
+padding: 10px 16px;
+background: #14151e;
+border-top: 1px solid #2f3549;
+display: flex;
+flex-wrap: wrap;
+gap: 14px;
+align-items: center;
+}
+.isp-panel-sliders .isp-slider-item,
+.isp-stage-card-sliders .isp-slider-item {
+flex: 1 1 200px;
+min-width: 180px;
+}
+.isp-slider-note {
+font-size: 12px;
+line-height: 1.5;
+color: #9aa5ce;
+padding: 2px 4px;
+width: 100%;
+}
+.isp-slider-item {
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.isp-slider-label {
+display: flex;
+justify-content: space-between;
+font-size: 11.5px;
+color: #9aa5ce;
+}
+.isp-slider-val {
+font-family: "Source Code Pro", monospace;
+color: #7dcfff;
+}
+.isp-slider-item input[type="range"] {
+width: 100%;
+accent-color: #7dcfff;
+cursor: pointer;
+}
+</style>
+<div class="isp-container" id="isp-lab">
+<!-- Header -->
+<div class="isp-header">
+<div class="isp-title">
+<span>相機硬體 ISP 創意外觀即時互動實驗室</span>
+<span class="isp-badge">BIONZ XR PIPELINE SIMULATOR</span>
+</div>
+</div>
+<!-- 1. Top Section: Live Stage View (Photo Preview) -->
+<div class="isp-toolbar" style="background:#1f2335;">
+<div class="isp-group">
+<span class="isp-label">測試場景：</span>
+<select class="isp-select" id="isp-scene-select">
+<option value="icefield">加拿大冰原大道 (Icefield Parkway - 實拍 RAW JXL)</option>
+<option value="chicago">芝加哥天際線 (Chicago Skyline - 實拍 RAW JXL)</option>
+<option value="gibbon">林肯公園長臂猿 (Lincoln Park Gibbon - 實拍 RAW JXL)</option>
+<option value="newyork">紐約街頭人文 (New York Street - 實拍 RAW JXL)</option>
+<option value="checker">24 色標準色卡與動態範圍階梯 (Color Checker & HDR)</option>
+</select>
+</div>
+<div class="isp-group">
+<span class="isp-label">檢視模式：</span>
+<button type="button" class="isp-btn" id="isp-btn-curtain">捲簾滑桿對比</button>
+<button type="button" class="isp-btn" id="isp-btn-blink">原位按住閃切</button>
+<button type="button" class="isp-btn" id="isp-btn-layout" style="display:none;">切換單欄展開／雙欄並排</button>
+</div>
+</div>
+<div class="isp-workspace" id="isp-workspace" style="padding:10px 14px;">
+<!-- Photo Preview Panel -->
+<div class="isp-panel">
+<div class="isp-panel-header">
+<span id="isp-view-label">即時階段渲染畫布 (Live Stage View)</span>
+<span style="font-size:11px; color:#9ece6a;">900 × 600 (3:2) · 16-bit 浮點渲染</span>
+</div>
+<div class="isp-canvas-wrap" id="isp-wrap">
+<canvas id="isp-canvas-main" width="900" height="600"></canvas>
+<canvas id="isp-canvas-compare" width="900" height="600" style="display:none;"></canvas>
+<div class="isp-curtain-divider" id="isp-curtain-divider" style="display:none; left:50%;">
+<div class="isp-curtain-handle">⇄</div>
+</div>
+<div class="isp-curtain-labels" id="isp-curtain-labels" style="display:none;">
+<span class="isp-curtain-pill" id="isp-curtain-left-lbl">當前階段直出</span>
+<span class="isp-curtain-pill">原始 RAW 線性 (Stage 0)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- 2. Creative Look Selection -->
+<div class="isp-toolbar" style="background:#1f2335; border-top:1px solid #2f3549;">
+<div class="isp-preset-control-block">
+<span class="isp-label">風格外觀預設：</span>
+<select class="isp-select" id="isp-preset-select">
+<option value="FL">FL (Film Look 膠卷底片)</option>
+<option value="FL2">FL2 (Film Look 2 柔和低反差電影)</option>
+<option value="FL3">FL3 (Film Look 3 通透高光清亮膠卷)</option>
+<option value="ST">ST (Standard 標準直出)</option>
+<option value="VV">VV (Vivid 鮮豔生動)</option>
+<option value="CN">Classic Neg (經典人文負片)</option>
+</select>
+<span id="isp-preset-overall-text" class="isp-preset-overall-text">沉穩平靜的日系膠卷感，陰影具備呼吸感，膚色通透。</span>
+</div>
+</div>
+<!-- 3. Pipeline Stepper & Switches -->
+<div class="isp-stepper" id="isp-stepper">
+<div class="isp-step-btn active" data-step="0">
+<span class="isp-step-num">Stage 0</span>
+<span class="isp-step-name">RAW 線性光負片</span>
+</div>
+<div class="isp-step-btn" data-step="1">
+<span class="isp-step-num">Stage 1 (cc1)</span>
+<span class="isp-step-name">白平衡與黑基準</span>
+</div>
+<div class="isp-step-btn" data-step="2">
+<span class="isp-step-num">Stage 2 (block13)</span>
+<span class="isp-step-name">16 扇區色彩矩陣</span>
+</div>
+<div class="isp-step-btn" data-step="3">
+<span class="isp-step-num">Stage 3 (gamma)</span>
+<span class="isp-step-name">129 點分段樣條</span>
+</div>
+<div class="isp-step-btn" data-step="4">
+<span class="isp-step-num">Stage 4 (grid)</span>
+<span class="isp-step-name">5×9×9 3D 網格</span>
+</div>
+<div class="isp-step-btn" data-step="5">
+<span class="isp-step-num">Stage 5 (filter)</span>
+<span class="isp-step-name">微對比與細節直出</span>
+</div>
+</div>
+<!-- Stage Navigation Toolbar -->
+<div class="isp-toolbar" style="background:#1a1b26;">
+<div class="isp-group">
+<button type="button" class="isp-btn" id="isp-btn-prev">◀ 上一階段</button>
+<button type="button" class="isp-btn" id="isp-btn-next">下一階段 ▶</button>
+<button type="button" class="isp-btn isp-btn-play" id="isp-btn-play">▶ 自動流水線演示</button>
+</div>
+</div>
+<!-- 4. Stage Visualization (Mathematical Inspector & Sliders) -->
+<div class="isp-workspace" style="padding:10px 14px;">
+<div class="isp-panel">
+<div class="isp-panel-header isp-panel-header-info">
+<div class="isp-info-card" id="isp-info-card">
+<div class="isp-info-top">
+<div class="isp-info-title" id="isp-info-title">Stage 0: 感光元件線性場景輻射率 (Sensor Linear Radiance)</div>
+<div id="isp-info-math" class="isp-info-math">Linear Radiance: (R, G, B) ∈ [0.0, 2.2+]</div>
+</div>
+<div id="isp-info-desc">感光元件原始線性光子能量（電腦端模擬以 16-bit 線性 JXL 載入），維持無損寬容度與物理照度比例，為後續膠卷曲線儲備動態餘量。</div>
+</div>
+</div>
+<div class="isp-canvas-wrap isp-inspector-wrap">
+<canvas id="isp-canvas-inspector" width="800" height="420"></canvas>
+</div>
+<div class="isp-panel-sliders" id="isp-panel-sliders">
+<div class="isp-slider-note" data-stage="0">
+<span style="color:#7aa2f7; font-weight:600;">● 感光元件原生線性輸入</span>：維持感測器未校正光子能量，數值與物理進光量嚴格成正比，無手動暫存器參數。
+</div>
+<div class="isp-slider-item" data-stage="1" style="display:none;">
+<div class="isp-slider-label">
+<span>白平衡色溫 (WB Temp)</span>
+<span class="isp-slider-val" id="val-wb-temp">5500 K</span>
+</div>
+<input type="range" id="sl-wb-temp" min="3000" max="8500" step="50" value="5500">
+</div>
+<div class="isp-slider-note" data-stage="2" style="display:none;">
+<span style="color:#7dcfff; font-weight:600;">● 16 扇區色彩矩陣 (block13)</span>：由上方「風格外觀預設」固定配置各扇區色偏係數（含膚色保護與天空偏色），無單一純量滑桿。
+</div>
+<div class="isp-slider-item" data-stage="3" style="display:none;">
+<div class="isp-slider-label">
+<span>暗部抬升 (Pedestal Lift)</span>
+<span class="isp-slider-val" id="val-lift">2.5%</span>
+</div>
+<input type="range" id="sl-lift" min="0" max="6.0" step="0.1" value="2.5">
+</div>
+<div class="isp-slider-item" data-stage="3" style="display:none;">
+<div class="isp-slider-label">
+<span>中灰對比坡度 (Contrast)</span>
+<span class="isp-slider-val" id="val-contrast">2.20×</span>
+</div>
+<input type="range" id="sl-contrast" min="1.0" max="3.2" step="0.1" value="2.2">
+</div>
+<div class="isp-slider-item" data-stage="4" style="display:none;">
+<div class="isp-slider-label">
+<span>3D 網格陰影冷調 (Teal Delta)</span>
+<span class="isp-slider-val" id="val-teal">+12 Δ</span>
+</div>
+<input type="range" id="sl-teal" min="-20" max="30" step="1" value="12">
+</div>
+<div class="isp-slider-item" data-stage="5" style="display:none;">
+<div class="isp-slider-label">
+<span>微對比清晰度 (Clarity)</span>
+<span class="isp-slider-val" id="val-clarity">+0.45×</span>
+</div>
+<input type="range" id="sl-clarity" min="0" max="1.0" step="0.05" value="0.45">
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+(function() {
+function initIsp() {
+
+const W = 900;
+const H = 600;
+const N = W * H;
+
+// Presets definition
+const PRESETS = {
+FL: {
+name: "FL (Film Look 膠卷底片)",
+wbTemp: 5500,
+wbGains: [1.02, 1.0, 1.14],
+pedestal: 0.006,
+sectorOffsets: [
+[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0],
+[0, 0.03, -0.01], [0, 0.04, -0.02],
+[0, 0.02, 0], [0, 0.01, 0.02],
+[-0.01, 0.03, 0.02], [-0.03, 0.06, 0.01],
+[-0.05, 0.08, -0.02], [-0.06, 0.09, -0.03],
+[-0.03, 0.04, -0.01], [-0.01, 0.01, 0],
+[0, 0, 0], [0, 0, 0]
+],
+pedestalLift: 0.025,
+contrast: 2.2,
+shoulder: 0.85,
+shadowTeal: 14,
+clarity: 0.45,
+nativeGamma129: [
+0, 594, 1549, 2531, 3538, 4569, 5621, 6693, 7784, 8891, 10013, 11149, 12297, 13455, 14623, 15800,
+16983, 18172, 19365, 20563, 21762, 22964, 24166, 25367, 26568, 27766, 28962, 30155, 31343, 32527, 33705, 34876,
+36042, 37200, 38350, 39492, 40625, 41750, 42864, 43969, 45064, 46148, 47222, 48284, 49335, 50374, 51402, 52417,
+53421, 54412, 55390, 56357, 57310, 58251, 59179, 60094, 60997, 61887, 62764, 63628, 64479, 65318, 66144, 66957,
+67758, 70840, 73731, 76441, 78981, 81363, 83601, 85705, 87688, 89562, 91337, 93022, 94625, 96151, 97607, 98996,
+100321, 104958, 108535, 111201, 113247, 114867, 116181, 117264, 118174, 118951, 119627, 120224, 120760, 121249, 121701, 122124,
+122524, 122906, 123272, 123626, 123969, 124302, 124627, 124944, 125254, 125850, 126417, 126954, 127458, 127930, 128367, 128771,
+129141, 129477, 129781, 130053, 130295, 130509, 130697, 130860, 131002, 131002, 131002, 131002, 131002, 131002, 131002, 131002, 131002
+],
+overallDesc: "沉穩平靜的日系膠卷感，陰影具備呼吸感，膚色通透。",
+desc: "沉穩平靜的日系膠卷感，陰影具備呼吸感，膚色通透。",
+stageDescs: [
+"感光元件原始線性光子能量（電腦端模擬以 16-bit 線性 JXL 載入），維持無損寬容度與物理照度比例，為後續膠卷曲線儲備動態餘量。",
+"微調白平衡（5500 K，增益 [1.02, 1.0, 1.14]），Pedestal 暗部基準抬升 0.006，奠定底片陰影溫潤厚度與純黑保護。",
+"天空藍色相扇區朝青色偏移約 8°，暖黃色微降飽和，紅色扇區微偏暖調，建構日系底片經典的色相分離。",
+"暗部抬升 2.5%（啞光灰黑 Toe Lift），中灰對比略為增強（坡度 2.2），階調過渡富有立體呼吸感與層次。",
+"陰影綠色飽和度抑制，增加冷青調（Teal +14），人像高光橘黃維持獨立亮度保護與粉潤純度。",
+"微對比提升 0.45×，細緻強化紋理邊緣，呈現如 35mm 膠卷般的自然顆粒解析與通透細節。"
+]
+},
+FL2: {
+name: "FL2 (Film Look 2 柔和低反差電影)",
+wbTemp: 5350,
+wbGains: [1.01, 1.0, 1.08],
+pedestal: 0.007,
+sectorOffsets: [
+[-0.001, -0.032, 0.057], [-0.002, -0.026, 0.038], [0.004, -0.024, 0.033], [0.006, -0.017, 0.027],
+[0.009, 0.014, 0.011], [0.007, 0.028, -0.018], [-0.014, 0.023, -0.031], [-0.043, 0.010, -0.018],
+[-0.012, 0.040, -0.013], [-0.006, 0.055, 0.006], [0.040, 0.081, 0.017], [0.045, 0.087, 0.023],
+[0.033, 0.050, 0.016], [0.032, 0.016, 0.018], [0.062, -0.008, 0.066], [0.070, 0.017, 0.082]
+],
+pedestalLift: 0.032,
+contrast: 1.88,
+shoulder: 0.78,
+shadowTeal: 8,
+clarity: 0.30,
+nativeGamma129: [
+0, 1158, 2316, 3474, 4632, 5789, 6947, 8105, 9263, 10421, 11579, 12737, 13895, 15053, 16211, 17368,
+18526, 19684, 20842, 22000, 23158, 24316, 25474, 26632, 27789, 28947, 30105, 31263, 32421, 33579, 34737, 35895,
+37053, 38211, 39368, 40526, 41684, 42842, 44000, 45158, 46316, 47664, 48805, 49920, 51010, 52075, 53117, 54136,
+55132, 56107, 57060, 57993, 58905, 59798, 60671, 61526, 62363, 63182, 63984, 64769, 65538, 66290, 67028, 67750,
+68457, 71145, 73625, 75917, 78040, 80009, 81841, 83547, 85142, 86634, 88035, 89351, 90590, 91758, 92860, 93902,
+94887, 98347, 101188, 103566, 105592, 107347, 108891, 110270, 111518, 112660, 113716, 114701, 115625, 116497, 117325, 118112,
+118863, 119581, 120267, 120924, 121552, 122153, 122728, 123276, 123800, 124774, 125654, 126444, 127149, 127774, 128324, 128806,
+129223, 129583, 129892, 130154, 130375, 130560, 130714, 130841, 130944, 130944, 130944, 130944, 130944, 130944, 130944, 130944, 130944
+],
+overallDesc: "柔和低飽和的懷舊電影質感，高光溫潤不刺眼，暗部具備厚實片基啞光感。",
+desc: "柔和低飽和的懷舊電影質感，高光溫潤不刺眼，暗部具備厚實片基啞光感。",
+stageDescs: [
+"相機感光元件原始線性光子能量，保留未壓縮的高光極限階調，供平緩肩部曲線平滑滾落。",
+"微暖色溫（5350 K，增益 [1.01, 1.0, 1.08]），Pedestal 設定為 0.007，避免深黑死黑硬切，營造片基黑厚度。",
+"植被綠扇區朝復古橄欖綠旋轉，全色域微幅降低飽和，藍天扇區轉為啞光墨青，低調耐看。",
+"暗部微抬升 3.2%（gamma[1] 為 1158），中灰反差收斂（坡度 1.88），高光肩部極其平緩（Shoulder 0.78）。",
+"陰影冷調青綠適度收斂（+8），在 405 點網格中強化中灰藍綠色彩純淨分離，營造電影調性。",
+"微對比收斂至 0.30×，邊緣過渡極度溫和柔順，杜絕數位銳化生硬感，模擬復古電影鏡頭質感。"
+]
+},
+FL3: {
+name: "FL3 (Film Look 3 通透高光清亮膠卷)",
+wbTemp: 5650,
+wbGains: [1.03, 1.0, 1.18],
+pedestal: 0.005,
+sectorOffsets: [
+[0.009, 0.023, 0.087], [-0.006, 0.038, 0.076], [-0.013, 0.038, 0.077], [-0.027, 0.021, 0.041],
+[-0.011, 0.008, -0.013], [0.000, 0.003, -0.052], [0.015, 0.000, -0.026], [0.001, -0.019, 0.005],
+[-0.003, -0.005, 0.002], [-0.005, 0.004, 0.011], [0.032, 0.008, 0.020], [0.043, -0.003, 0.031],
+[0.035, -0.001, 0.028], [0.029, 0.021, 0.042], [0.043, 0.032, 0.095], [0.049, 0.061, 0.095]
+],
+pedestalLift: 0.028,
+contrast: 2.05,
+shoulder: 0.88,
+shadowTeal: 6,
+clarity: 0.50,
+nativeGamma129: [
+0, 1282, 2564, 3845, 5127, 6409, 7691, 8973, 10255, 11536, 12818, 14100, 15382, 16664, 17946, 19227,
+20509, 21791, 23073, 24355, 25637, 26918, 28200, 29482, 30764, 32046, 33328, 34609, 35873, 37105, 38307, 39479,
+40624, 41743, 42836, 43905, 44951, 45974, 46976, 47956, 48917, 49859, 50782, 51687, 52575, 53445, 54300, 55138,
+55961, 56769, 57563, 58343, 59109, 59862, 60602, 61329, 62044, 62747, 63439, 64119, 64789, 65447, 66095, 66733,
+67361, 69777, 72051, 74195, 76220, 78135, 79948, 81669, 83302, 84854, 86332, 87740, 89082, 90363, 91586, 92756,
+93876, 97906, 101332, 104272, 106818, 109038, 110987, 112708, 114237, 115601, 116824, 117925, 118920, 119821, 120642, 121390,
+122075, 122703, 123281, 123813, 124305, 124760, 125182, 125574, 125939, 126597, 127171, 127676, 128122, 128518, 128870, 129185,
+129467, 129721, 129950, 130158, 130346, 130517, 130673, 130815, 130945, 130945, 130945, 130945, 130945, 130945, 130945, 130945, 130945
+],
+overallDesc: "明亮清爽的高調日系膠卷氛圍，天空湛藍通透，人像氣色白皙粉嫩。",
+desc: "明亮清爽的高調日系膠卷氛圍，天空湛藍通透，人像氣色白皙粉嫩。",
+stageDescs: [
+"高動態範圍線性場景輻射，為中低光暗部的開闊拉升儲備充裕純淨的信噪比空間。",
+"清爽冷白平衡（5650 K，增益 [1.03, 1.0, 1.18]），Pedestal 0.005，保持暗部清透明朗與純淨信號。",
+"藍天扇區大幅提亮並維持湛藍純度（ΔB > 0），暖黃與膚色扇區粉潤清麗，綠意明亮輕盈。",
+"中低光暗部大幅拉升（gamma[32] 達 40,624，空氣通透感），高光展現開闊線性階調與明朗氛圍。",
+"陰影清透微冷（+6），不偏濁綠，明度動態範圍通透開闊，網格插值保證色彩過渡晶瑩細膩。",
+"微對比設定為 0.50×，突顯清澈空氣感與高光輪廓，使日常微光與街景呈現鮮活呼吸感。"
+]
+},
+ST: {
+name: "ST (Standard 標準直出)",
+wbTemp: 5500,
+wbGains: [1.0, 1.0, 1.0],
+pedestal: 0.002,
+sectorOffsets: new Array(16).fill([0, 0, 0]),
+pedestalLift: 0.005,
+contrast: 1.8,
+shoulder: 1.0,
+shadowTeal: 0,
+clarity: 0.2,
+nativeGamma129: [
+0, 1049, 2097, 3146, 4195, 5243, 6292, 7341, 8390, 9438, 10487, 11536, 12584, 13633, 14674, 15690,
+16682, 17651, 18600, 19530, 20443, 21339, 22220, 23086, 23938, 24778, 25604, 26419, 27222, 28015, 28796, 29568,
+30329, 31081, 31824, 32557, 33282, 33998, 34706, 35406, 36098, 36782, 37459, 38128, 38790, 39445, 40093, 40734,
+41369, 41996, 42618, 43233, 43842, 44445, 45042, 45633, 46218, 46797, 47371, 47939, 48502, 49059, 49611, 50158,
+50700, 52816, 54855, 56821, 58717, 60548, 62315, 64022, 65672, 67267, 68809, 70302, 71746, 73144, 74498, 75810,
+77081, 81791, 85969, 89692, 93021, 96010, 98704, 101138, 103346, 105355, 107186, 108861, 110397, 111808, 113107, 114306,
+115414, 116441, 117394, 118279, 119104, 119873, 120591, 121262, 121891, 123034, 124043, 124938, 125735, 126448, 127087, 127661,
+128180, 128649, 129074, 129461, 129813, 130135, 130429, 130699, 130946, 130946, 130946, 130946, 130946, 130946, 130946, 130946, 130946
+],
+overallDesc: "寫實自然，色彩精準，適合日常紀錄與標準檢視。",
+desc: "寫實自然，色彩精準，適合日常紀錄與標準檢視。",
+stageDescs: [
+"基準感光元件物理光子通量，忠實反映真實場景照明強度與線性動態比例。",
+"標準中性白平衡（5500 K，增益 [1.0, 1.0, 1.0]），Pedestal 0.002，嚴格還原光學基準黑階。",
+"近似標準 Rec.709 原色映射，各扇區差分接近零，維持光學色相與飽和度的客觀真實。",
+"標準 S 型曲線，微幅暗部壓制（坡度 1.8），高光維持線性比例，階調過渡自然大方。",
+"全零網格增量（ΔC = 0），完全保留原始色彩幾何坐標，無任何局部色彩扭曲與人為偏移。",
+"微對比微幅套用 0.20×，保持標準光學鏡頭成像特徵，畫面乾淨自然、無過度修飾。"
+]
+},
+VV: {
+name: "VV (Vivid 鮮明濃郁)",
+wbTemp: 5700,
+wbGains: [1.04, 1.0, 1.08],
+pedestal: 0.001,
+sectorOffsets: [
+[0.04, -0.01, -0.01], [0.03, 0, -0.01], [0.02, 0.02, -0.02], [0, 0.04, -0.03],
+[-0.02, 0.06, -0.03], [-0.03, 0.08, -0.02], [-0.02, 0.06, 0], [0, 0.04, 0.02],
+[-0.01, 0.02, 0.04], [-0.02, 0.02, 0.06], [-0.03, 0.01, 0.08], [-0.02, 0, 0.07],
+[0, -0.01, 0.05], [0.02, -0.02, 0.03], [0.03, -0.02, 0.01], [0.04, -0.01, 0]
+],
+pedestalLift: 0.002,
+contrast: 2.7,
+shoulder: 0.75,
+shadowTeal: -4,
+clarity: 0.7,
+overallDesc: "鮮豔高飽和與高對比，純黑深邃，藍天與翠綠極其濃郁奪目，富強烈視覺張力。",
+desc: "鮮豔高飽和與高對比，純黑深邃，藍天與翠綠極其濃郁奪目，富強烈視覺張力。",
+stageDescs: [
+"感光元件全光譜光子能量，為後續高彩度扇區拉伸與陡峭對比儲備豐富層次。",
+"微暖高對比調校（5700 K，增益 [1.04, 1.0, 1.08]），Pedestal 0.001，暗部深邃沉穩。",
+"全色域扇區色彩飽和度全面推升，紅色偏暖洋紅，藍天與翠綠飽和大幅激化，視覺衝擊強烈。",
+"純黑下壓（Lift 0.2%），中間調反差陡峭（坡度 2.7），高光滾落迅速，展現銳利硬調動態。",
+"陰影略為收縮冷色，中高飽和色彩空間網格大幅外擴，呈現高純度鮮活光澤與濃郁立體感。",
+"微對比提升至 0.70×，邊緣清晰銳利，結構張力十足，適合風景建築與高色彩衝擊題材。"
+]
+},
+CN: {
+name: "Classic Neg (經典人文負片)",
+wbTemp: 5200,
+wbGains: [0.98, 1.0, 1.22],
+pedestal: 0.008,
+sectorOffsets: [
+[0.02, -0.02, 0.01], [0.01, -0.01, 0], [0, 0, 0], [0, 0.02, -0.02],
+[-0.02, 0.05, -0.04], [-0.04, 0.08, -0.03], [-0.03, 0.07, 0], [-0.01, 0.04, 0.03],
+[-0.03, 0.05, 0.04], [-0.05, 0.07, 0.02], [-0.07, 0.09, -0.02], [-0.06, 0.08, -0.04],
+[-0.03, 0.04, -0.02], [0, 0.01, 0.01], [0.02, -0.01, 0.02], [0.03, -0.02, 0.02]
+],
+pedestalLift: 0.035,
+contrast: 2.9,
+shoulder: 0.7,
+shadowTeal: 22,
+clarity: 0.55,
+overallDesc: "經典街頭人文負片感，硬調反差強烈，色彩厚重富戲劇張力。",
+desc: "經典街頭人文負片感，硬調反差強烈，色彩厚重富戲劇張力。",
+stageDescs: [
+"原始場景動態通量，支援硬調曲線高光壓暗與深邃陰影的廣闊動態重分佈。",
+"微偏冷調白平衡（5200 K，增益 [0.98, 1.0, 1.22]），Pedestal 0.008，營造懷舊底片感。",
+"綠色通道大幅往藍綠旋轉，紅色通道微偏洋紅，模擬傳統街頭負片染料光學特徵。",
+"極硬的中間調對比（坡度 2.9），暗部深度深邃，高光顯著壓暗，展現強烈戲劇性影調。",
+"暗部顯著增加青色增量，人像橘黃維持獨立亮度保護，冷暖交織形成濃烈人文基調。",
+"微對比調校至 0.60×，刻畫深邃紋理與斑駁陰影，為街頭與紀實攝影注入深刻情緒。"
+]
+}
+};
+
+let currentPresetKey = 'FL';
+let currentSceneKey = 'icefield';
+let currentStage = 0;
+let isCurtainMode = false;
+let curtainRatio = 0.5;
+let isPlaying = false;
+let playTimer = null;
+
+let pWbTemp = PRESETS.FL.wbTemp;
+let pLift = PRESETS.FL.pedestalLift;
+let pContrast = PRESETS.FL.contrast;
+let pTeal = PRESETS.FL.shadowTeal;
+let pClarity = PRESETS.FL.clarity;
+
+const canvasMain = document.getElementById('isp-canvas-main');
+const ctxMain = canvasMain.getContext('2d');
+const canvasComp = document.getElementById('isp-canvas-compare');
+const ctxComp = canvasComp.getContext('2d');
+const canvasInsp = document.getElementById('isp-canvas-inspector');
+const ctxInsp = canvasInsp.getContext('2d');
+
+const stageBuffers = [null, null, null, null, null, null];
+
+const elPreset = document.getElementById('isp-preset-select');
+const elPresetOverallText = document.getElementById('isp-preset-overall-text');
+const elScene = document.getElementById('isp-scene-select');
+const elStepBtns = document.querySelectorAll('.isp-step-btn');
+const elBtnPrev = document.getElementById('isp-btn-prev');
+const elBtnNext = document.getElementById('isp-btn-next');
+const elBtnPlay = document.getElementById('isp-btn-play');
+const elBtnCurtain = document.getElementById('isp-btn-curtain');
+const elBtnBlink = document.getElementById('isp-btn-blink');
+const elBtnLayout = document.getElementById('isp-btn-layout');
+const elWorkspace = document.getElementById('isp-workspace');
+const elCurtainDivider = document.getElementById('isp-curtain-divider');
+const elCurtainLabels = document.getElementById('isp-curtain-labels');
+const elCurtainLeftLbl = document.getElementById('isp-curtain-left-lbl');
+const elWrap = document.getElementById('isp-wrap');
+
+const elInfoTitle = document.getElementById('isp-info-title');
+const elInfoMath = document.getElementById('isp-info-math');
+const elInfoDesc = document.getElementById('isp-info-desc');
+
+const slWbTemp = document.getElementById('sl-wb-temp');
+const slLift = document.getElementById('sl-lift');
+const slContrast = document.getElementById('sl-contrast');
+const slTeal = document.getElementById('sl-teal');
+const slClarity = document.getElementById('sl-clarity');
+
+const valWbTemp = document.getElementById('val-wb-temp');
+const valLift = document.getElementById('val-lift');
+const valContrast = document.getElementById('val-contrast');
+const valTeal = document.getElementById('val-teal');
+const valClarity = document.getElementById('val-clarity');
+
+const photoBuffers = {
+icefield: null,
+chicago: null,
+gibbon: null,
+newyork: null
+};
+
+function decodeFloat16Buffer(arrayBuffer) {
+const u16 = new Uint16Array(arrayBuffer);
+const len = u16.length;
+const f32 = new Float32Array(len);
+for (let i = 0; i < len; i++) {
+const h = u16[i];
+const s = (h & 0x8000) >> 15;
+const e = (h & 0x7c00) >> 10;
+const f = h & 0x03ff;
+if (e === 0) {
+f32[i] = (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+} else if (e === 31) {
+f32[i] = f ? NaN : ((s ? -1 : 1) * Infinity);
+} else {
+f32[i] = (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+}
+}
+return f32;
+}
+
+function initPhotoSamples() {
+function getBundleBasePath() {
+  const img = document.querySelector('img[src*="10-29-creative-look-isp-simulation-with-jpeg-xl"]');
+  if (img && img.getAttribute('src')) {
+    const src = img.getAttribute('src');
+    const idx = src.lastIndexOf('/');
+    if (idx !== -1) {
+      return src.substring(0, idx + 1);
+    }
+  }
+  if (window.location.pathname.includes('10-29-creative-look-isp-simulation-with-jpeg-xl')) {
+    let path = window.location.pathname;
+    if (!path.endsWith('/')) path += '/';
+    return path;
+  }
+  return '/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/';
+}
+
+const basePath = getBundleBasePath();
+
+function loadSceneBinary(key, filename) {
+  const targetUrl = basePath + filename;
+  fetch(targetUrl)
+    .then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.arrayBuffer();
+    })
+    .then(ab => {
+      photoBuffers[key] = decodeFloat16Buffer(ab);
+      if (currentSceneKey === key) {
+        recomputePipeline();
+        updateStageUI();
+      }
+    })
+    .catch(err => {
+      if (targetUrl !== filename) {
+        fetch(filename)
+          .then(res => {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.arrayBuffer();
+          })
+          .then(ab => {
+            photoBuffers[key] = decodeFloat16Buffer(ab);
+            if (currentSceneKey === key) {
+              recomputePipeline();
+              updateStageUI();
+            }
+          })
+          .catch(fallbackErr => {
+            console.warn("Could not load scene binary " + filename + ":", fallbackErr);
+          });
+      } else {
+        console.warn("Could not load scene binary " + filename + ":", err);
+      }
+    });
+}
+
+loadSceneBinary('icefield', 'sample-icefield.bin');
+loadSceneBinary('chicago', 'sample-chicago.bin');
+loadSceneBinary('gibbon', 'sample-gibbon.bin');
+loadSceneBinary('newyork', 'sample-newyork.bin');
+}
+
+function generateLinearScene(sceneKey) {
+if (photoBuffers[sceneKey]) {
+return new Float32Array(photoBuffers[sceneKey]);
+}
+const buf = new Float32Array(N * 3);
+if (sceneKey === 'checker') {
+for (let y = 0; y < H; y++) {
+const ny = y / (H - 1);
+for (let x = 0; x < W; x++) {
+const nx = x / (W - 1);
+const idx = (y * W + x) * 3;
+if (ny > 0.72) {
+const rampLinear = Math.pow(nx, 2.0) * 2.5;
+buf[idx] = rampLinear;
+buf[idx + 1] = rampLinear;
+buf[idx + 2] = rampLinear;
+} else {
+const col = Math.floor(nx * 6);
+const row = Math.floor((ny / 0.72) * 4);
+const patchIdx = row * 6 + col;
+const patches = [
+[0.115, 0.082, 0.065], [0.387, 0.264, 0.218], [0.125, 0.165, 0.252], [0.085, 0.132, 0.065],
+[0.215, 0.205, 0.355], [0.185, 0.425, 0.365], [0.525, 0.185, 0.045], [0.075, 0.095, 0.315],
+[0.345, 0.075, 0.095], [0.065, 0.035, 0.115], [0.325, 0.465, 0.105], [0.565, 0.365, 0.045],
+[0.035, 0.055, 0.245], [0.075, 0.285, 0.085], [0.285, 0.035, 0.035], [0.655, 0.545, 0.045],
+[0.325, 0.085, 0.265], [0.045, 0.225, 0.355], [0.905, 0.905, 0.905], [0.585, 0.585, 0.585],
+[0.355, 0.355, 0.355], [0.185, 0.185, 0.185], [0.085, 0.085, 0.085], [0.031, 0.031, 0.031]
+];
+const p = patches[patchIdx] || [0.5, 0.5, 0.5];
+buf[idx] = p[0]; buf[idx + 1] = p[1]; buf[idx + 2] = p[2];
+}
+}
+}
+} else {
+// Clean solid neutral dark slate background for photo scenes while loading
+for (let i = 0; i < N * 3; i += 3) {
+buf[i]   = 0.032;
+buf[i+1] = 0.034;
+buf[i+2] = 0.038;
+}
+}
+return buf;
+}
+
+function runStage1(src, wbGains, pedestal) {
+const out = new Float32Array(N * 3);
+const kr = wbGains[0], kg = wbGains[1], kb = wbGains[2];
+for (let i = 0; i < N * 3; i += 3) {
+out[i]   = Math.max(0, src[i]   - pedestal) * kr;
+out[i+1] = Math.max(0, src[i+1] - pedestal) * kg;
+out[i+2] = Math.max(0, src[i+2] - pedestal) * kb;
+}
+return out;
+}
+
+function runStage2(src, sectorOffsets) {
+const out = new Float32Array(N * 3);
+const twoPi = Math.PI * 2;
+for (let i = 0; i < N * 3; i += 3) {
+const r = src[i], g = src[i+1], b = src[i+2];
+const y = 0.299 * r + 0.587 * g + 0.114 * b;
+const u = -0.14713 * r - 0.28886 * g + 0.436 * b;
+const v = 0.615 * r - 0.51499 * g - 0.10001 * b;
+
+let theta = Math.atan2(v, u);
+if (theta < 0) theta += twoPi;
+
+const sectorFloat = (theta / twoPi) * 16.0;
+const s0 = Math.floor(sectorFloat) % 16;
+const s1 = (s0 + 1) % 16;
+const t = sectorFloat - Math.floor(sectorFloat);
+
+const d0 = sectorOffsets[s0] || [0, 0, 0];
+const d1 = sectorOffsets[s1] || [0, 0, 0];
+const dr = (1 - t) * d0[0] + t * d1[0];
+const dg = (1 - t) * d0[1] + t * d1[1];
+const db = (1 - t) * d0[2] + t * d1[2];
+
+out[i]   = Math.max(0, r + dr * y);
+out[i+1] = Math.max(0, g + dg * y);
+out[i+2] = Math.max(0, b + db * y);
+}
+return out;
+}
+
+function buildSplineLUT(lift, contrast, shoulder, presetKey) {
+const p = presetKey ? PRESETS[presetKey] : null;
+const lut = new Float32Array(129);
+// RAW 感光元件線性中灰錨點 (約 10.5%，保留 3 級高光裕度)
+const mid = 0.105;
+for (let i = 0; i < 129; i++) {
+const x = i / 128.0;
+const toe = lift * Math.pow(Math.max(0, 1.0 - x * 3.5), 2.2);
+const logX = Math.log(Math.max(1e-4, x));
+const s = 1.0 / (1.0 + Math.exp(-contrast * (logX - Math.log(mid))));
+const sh = 1.0 - Math.exp(-Math.pow(x, shoulder) * 1.8);
+lut[i] = Math.min(1.0, Math.max(0.0, toe + s * 0.68 + sh * 0.32));
+}
+return lut;
+}
+
+function runStage3(src, lut) {
+const out = new Float32Array(N * 3);
+for (let i = 0; i < N * 3; i += 3) {
+const r = src[i], g = src[i+1], b = src[i+2];
+const yIn = 0.299 * r + 0.587 * g + 0.114 * b;
+if (yIn <= 1e-6) {
+out[i] = lut[0]; out[i+1] = lut[0]; out[i+2] = lut[0];
+continue;
+}
+const idx = Math.min(127.999, Math.max(0, yIn * 128.0));
+const i0 = Math.floor(idx);
+const t = idx - i0;
+const yOut = (1 - t) * lut[i0] + t * lut[i0 + 1];
+const scale = yOut / yIn;
+out[i]   = Math.min(1.0, r * scale);
+out[i+1] = Math.min(1.0, g * scale);
+out[i+2] = Math.min(1.0, b * scale);
+}
+return out;
+}
+
+function runStage4(src, shadowTeal) {
+const out = new Float32Array(N * 3);
+const tealRad = (shadowTeal / 256.0);
+for (let i = 0; i < N * 3; i += 3) {
+const r = src[i], g = src[i+1], b = src[i+2];
+const y = 0.299 * r + 0.587 * g + 0.114 * b;
+const shadowWeight = Math.max(0, 1.0 - y * 2.5);
+const dR = -tealRad * 0.6 * shadowWeight;
+const dG = tealRad * 0.4 * shadowWeight;
+const dB = tealRad * 0.8 * shadowWeight;
+out[i]   = Math.min(1.0, Math.max(0, r + dR));
+out[i+1] = Math.min(1.0, Math.max(0, g + dG));
+out[i+2] = Math.min(1.0, Math.max(0, b + dB));
+}
+return out;
+}
+
+function runStage5(src, clarity) {
+const out = new Float32Array(N * 3);
+for (let y = 0; y < H; y++) {
+const yPrev = Math.max(0, y - 1) * W;
+const yCurr = y * W;
+const yNext = Math.min(H - 1, y + 1) * W;
+for (let x = 0; x < W; x++) {
+const xPrev = Math.max(0, x - 1);
+const xNext = Math.min(W - 1, x + 1);
+
+for (let c = 0; c < 3; c++) {
+const base = (
+src[(yPrev + xPrev) * 3 + c] + src[(yPrev + x) * 3 + c] + src[(yPrev + xNext) * 3 + c] +
+src[(yCurr + xPrev) * 3 + c] + src[(yCurr + x) * 3 + c] + src[(yCurr + xNext) * 3 + c] +
+src[(yNext + xPrev) * 3 + c] + src[(yNext + x) * 3 + c] + src[(yNext + xNext) * 3 + c]
+) / 9.0;
+const val = src[(yCurr + x) * 3 + c];
+const detail = val - base;
+const boost = detail * clarity * Math.max(0, 1.0 - Math.abs(detail) * 4.0);
+out[(yCurr + x) * 3 + c] = Math.min(1.0, Math.max(0, val + boost));
+}
+}
+}
+return out;
+}
+
+function recomputePipeline() {
+const p = PRESETS[currentPresetKey];
+stageBuffers[0] = generateLinearScene(currentSceneKey);
+
+const tempK = pWbTemp;
+const rGain = p.wbGains[0] * (tempK > 5500 ? (1 + (tempK - 5500) / 10000) : (1 - (5500 - tempK) / 8000));
+const bGain = p.wbGains[2] * (tempK < 5500 ? (1 + (5500 - tempK) / 8000) : (1 - (tempK - 5500) / 10000));
+stageBuffers[1] = runStage1(stageBuffers[0], [rGain, p.wbGains[1], bGain], p.pedestal);
+
+stageBuffers[2] = runStage2(stageBuffers[1], p.sectorOffsets);
+
+const lut = buildSplineLUT(pLift, pContrast, p.shoulder, currentPresetKey);
+stageBuffers[3] = runStage3(stageBuffers[2], lut);
+
+stageBuffers[4] = runStage4(stageBuffers[3], pTeal);
+
+stageBuffers[5] = runStage5(stageBuffers[4], pClarity);
+}
+
+function drawBufferToCanvas(ctx, buf, isLinearPreview) {
+const imgData = ctx.createImageData(W, H);
+const data = imgData.data;
+for (let i = 0; i < N; i++) {
+const srcI = i * 3;
+const dstI = i * 4;
+let r = buf[srcI], g = buf[srcI + 1], b = buf[srcI + 2];
+if (isLinearPreview) {
+r = Math.pow(Math.min(1.0, Math.max(0, r)), 1.0 / 2.2);
+g = Math.pow(Math.min(1.0, Math.max(0, g)), 1.0 / 2.2);
+b = Math.pow(Math.min(1.0, Math.max(0, b)), 1.0 / 2.2);
+}
+data[dstI]     = Math.round(Math.min(255, Math.max(0, r * 255)));
+data[dstI + 1] = Math.round(Math.min(255, Math.max(0, g * 255)));
+data[dstI + 2] = Math.round(Math.min(255, Math.max(0, b * 255)));
+data[dstI + 3] = 255;
+}
+ctx.putImageData(imgData, 0, 0);
+}
+
+function drawStageInspector(ctxInsp, stage) {
+  if (!ctxInsp) return;
+  const INSP_W = 800, INSP_H = 420;
+  ctxInsp.fillStyle = "#14151e";
+  ctxInsp.fillRect(0, 0, INSP_W, INSP_H);
+
+  // Decorative subtle background grid
+  ctxInsp.strokeStyle = "rgba(47, 53, 73, 0.45)";
+  ctxInsp.lineWidth = 1;
+  ctxInsp.beginPath();
+  for (let x = 40; x < INSP_W; x += 40) { ctxInsp.moveTo(x, 0); ctxInsp.lineTo(x, INSP_H); }
+  for (let y = 40; y < INSP_H; y += 40) { ctxInsp.moveTo(0, y); ctxInsp.lineTo(INSP_W, y); }
+  ctxInsp.stroke();
+
+  if (stage === 0) {
+
+    const axisY = 345;
+    const startX = 40, endX = 760;
+    const stepX = (endX - startX) / 12;
+    const topY = 48;
+
+    // 1. Zone bands
+    ctxInsp.fillStyle = "rgba(122, 162, 247, 0.08)";
+    ctxInsp.fillRect(startX, topY, stepX * 5, axisY - topY);
+    ctxInsp.fillStyle = "rgba(158, 206, 106, 0.08)";
+    ctxInsp.fillRect(startX + stepX * 5, topY, stepX * 4, axisY - topY);
+    ctxInsp.fillStyle = "rgba(224, 175, 104, 0.12)";
+    ctxInsp.fillRect(startX + stepX * 9, topY, stepX * 3, axisY - topY);
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.fillText("深邃暗部區 (-8 ~ -3 EV)", startX + 20, 72);
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("中灰過渡區 (-3 ~ +1 EV)", startX + stepX * 5 + 25, 72);
+    ctxInsp.fillStyle = "#e0af68";
+    ctxInsp.fillText("未截斷擴展高光 (+1 ~ +4 EV+)", startX + stepX * 9 + 15, 72);
+
+    // 2. EV stop vertical grid lines & labels
+    ctxInsp.strokeStyle = "#414868";
+    ctxInsp.lineWidth = 1.5;
+    ctxInsp.beginPath();
+    ctxInsp.moveTo(startX, axisY); ctxInsp.lineTo(endX, axisY);
+    ctxInsp.stroke();
+
+    for (let i = 0; i <= 12; i++) {
+      const ev = i - 8;
+      const x = startX + i * stepX;
+      ctxInsp.beginPath();
+      ctxInsp.moveTo(x, topY); ctxInsp.lineTo(x, axisY);
+      ctxInsp.strokeStyle = (ev === 0 ? "rgba(224, 175, 104, 0.6)" : "rgba(47, 53, 73, 0.7)");
+      ctxInsp.setLineDash(ev === 0 ? [5, 3] : [2, 4]);
+      ctxInsp.stroke();
+      ctxInsp.setLineDash([]);
+
+      ctxInsp.fillStyle = (ev === 0 ? "#e0af68" : "#9aa5ce");
+      ctxInsp.font = (ev === 0 ? "bold 12px monospace" : "11px monospace");
+      ctxInsp.fillText((ev > 0 ? "+" : "") + ev + " EV", x - 18, axisY + 20);
+    }
+
+    // 3. Dynamic histogram from stageBuffers[0]
+    const buf = stageBuffers[0];
+    const bins = new Float32Array(50);
+    if (buf) {
+      for (let i = 0; i < buf.length; i += 12) {
+        const lum = 0.299 * buf[i] + 0.587 * buf[i+1] + 0.114 * buf[i+2];
+        if (lum > 1e-4) {
+          const evVal = Math.log2(lum / 0.18);
+          const binIdx = Math.floor(((evVal + 8) / 12) * 50);
+          if (binIdx >= 0 && binIdx < 50) bins[binIdx]++;
+        }
+      }
+    }
+    let maxBin = 1;
+    for (let i = 0; i < 50; i++) if (bins[i] > maxBin) maxBin = bins[i];
+
+    for (let i = 0; i < 50; i++) {
+      const x = startX + (i / 49.0) * (endX - startX - 8);
+      const hVal = Math.min(260, (bins[i] / maxBin) * 240 + 4);
+      const grad = ctxInsp.createLinearGradient(0, axisY - hVal, 0, axisY);
+      grad.addColorStop(0, "#7dcfff");
+      grad.addColorStop(1, "rgba(125, 207, 255, 0.2)");
+      ctxInsp.fillStyle = grad;
+      ctxInsp.fillRect(x, axisY - hVal, (endX - startX) / 55, hVal);
+    }
+
+    // 4. 18% Middle Gray Anchor Indicator (Top badge)
+    const midX = startX + stepX * 8;
+    ctxInsp.fillStyle = "#161722";
+    ctxInsp.strokeStyle = "rgba(224, 175, 104, 0.85)";
+    ctxInsp.lineWidth = 1;
+    ctxInsp.strokeRect(midX - 115, 14, 230, 24);
+    ctxInsp.fillRect(midX - 115, 14, 230, 24);
+
+    ctxInsp.fillStyle = "#e0af68";
+    ctxInsp.font = "bold 11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.textAlign = "center";
+    ctxInsp.fillText("▼ 18% 中灰基準 (0 EV · 0.18 Radiance)", midX, 30);
+    ctxInsp.textAlign = "left";
+
+    // 5. Footnote
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("特性：16-bit 浮點線性保留完整動態範圍，後續曲線可平滑滾落，杜絕死白斷層 (Zero Banding)", startX, 396);
+
+  } else if (stage === 1) {
+
+    const p = PRESETS[currentPresetKey];
+    const tempK = pWbTemp;
+    const rGain = p.wbGains[0] * (tempK > 5500 ? (1 + (tempK - 5500) / 10000) : (1 - (5500 - tempK) / 8000));
+    const bGain = p.wbGains[2] * (tempK < 5500 ? (1 + (5500 - tempK) / 8000) : (1 - (tempK - 5500) / 10000));
+
+    const channels = [
+      { label: "紅通道增益 (R_gain)", val: rGain, col: "#f7768e", tag: "紅色調溫控增益" },
+      { label: "綠通道增益 (G_gain)", val: p.wbGains[1], col: "#9ece6a", tag: "綠色基準基準線 (1.000)" },
+      { label: "藍通道增益 (B_gain)", val: bGain, col: "#7aa2f7", tag: "藍色調溫控增益" }
+    ];
+
+    const leftX = 35;
+    const barX = 295, barW = 470;
+
+    channels.forEach((c, idx) => {
+      const y = 28 + idx * 62;
+      ctxInsp.fillStyle = "#c0caf5";
+      ctxInsp.font = "14px 'Noto Sans TC', sans-serif";
+      ctxInsp.fillText(c.label, leftX, y + 18);
+      ctxInsp.font = "bold 14px 'Source Code Pro', monospace";
+      ctxInsp.fillStyle = c.col;
+      ctxInsp.fillText("× " + c.val.toFixed(3), leftX + 175, y + 18);
+
+      ctxInsp.fillStyle = "#1a1b26";
+      ctxInsp.strokeStyle = "#2f3549";
+      ctxInsp.strokeRect(barX, y, barW, 26);
+      ctxInsp.fillRect(barX, y, barW, 26);
+
+      const baseMarkX = barX + barW * (1.0 / 1.6);
+      ctxInsp.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctxInsp.setLineDash([3, 3]);
+      ctxInsp.beginPath(); ctxInsp.moveTo(baseMarkX, y - 4); ctxInsp.lineTo(baseMarkX, y + 30); ctxInsp.stroke();
+      ctxInsp.setLineDash([]);
+
+      const fillW = Math.min(barW, Math.max(0, barW * (c.val / 1.6)));
+      ctxInsp.fillStyle = c.col;
+      ctxInsp.fillRect(barX, y, fillW, 26);
+
+      ctxInsp.font = "11px 'Noto Sans TC', sans-serif";
+      ctxInsp.fillStyle = "#565f89";
+      ctxInsp.fillText(c.tag, barX + 5, y + 42);
+    });
+
+    // Black Pedestal Calibration Box
+    const pedY = 222, pedH = 168;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(leftX, pedY, 730, pedH);
+    ctxInsp.fillRect(leftX, pedY, 730, pedH);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#e0af68";
+    ctxInsp.fillText("感光元件黑電平偏置校準 (Black Pedestal Calibration)", leftX + 20, pedY + 28);
+
+    ctxInsp.font = "bold 12.5px 'Source Code Pro', monospace";
+    ctxInsp.fillStyle = "#7dcfff";
+    ctxInsp.fillText("C_wb = max(0, C_linear - " + p.pedestal + ") × Gain_c", leftX + 20, pedY + 56);
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("✔ 扣除感測器暗電流基底偏置，確保極深暗部完全黑階純淨", leftX + 20, pedY + 84);
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9aa5ce";
+    ctxInsp.fillText("✔ 消除通道基準偏差，防止陰影色彩交叉污染並保留線性零點參考", leftX + 20, pedY + 110);
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.fillText("✔ 增益縮放維持色彩中性灰軸，防止色溫偏移影響亮度感知", leftX + 20, pedY + 136);
+
+  } else if (stage === 2) {
+
+    const cx = 225, cy = 210, r = 165;
+
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.lineWidth = 1.5;
+    ctxInsp.beginPath(); ctxInsp.arc(cx, cy, r, 0, Math.PI * 2); ctxInsp.stroke();
+    ctxInsp.beginPath(); ctxInsp.arc(cx, cy, r * 0.4, 0, Math.PI * 2); ctxInsp.stroke();
+
+    for (let s = 0; s < 16; s++) {
+      const ang = (s / 16) * Math.PI * 2;
+      const x0 = cx + Math.cos(ang) * (r * 0.4);
+      const y0 = cy + Math.sin(ang) * (r * 0.4);
+      const x1 = cx + Math.cos(ang) * r;
+      const y1 = cy + Math.sin(ang) * r;
+      ctxInsp.strokeStyle = "#3b4261";
+      ctxInsp.lineWidth = 1;
+      ctxInsp.beginPath(); ctxInsp.moveTo(x0, y0); ctxInsp.lineTo(x1, y1); ctxInsp.stroke();
+
+      const lx = cx + Math.cos(ang) * (r + 16);
+      const ly = cy + Math.sin(ang) * (r + 16) + 4;
+      ctxInsp.font = "10.5px 'Source Code Pro', monospace";
+      ctxInsp.fillStyle = "#7aa2f7";
+      ctxInsp.fillText("S" + s, lx - 7, ly);
+
+      const colAng = ang * (180 / Math.PI);
+      ctxInsp.fillStyle = "hsl(" + colAng + ", 85%, 60%)";
+      ctxInsp.beginPath();
+      ctxInsp.arc(cx + Math.cos(ang + 0.19) * (r - 16), cy + Math.sin(ang + 0.19) * (r - 16), 6, 0, Math.PI * 2);
+      ctxInsp.fill();
+    }
+
+    ctxInsp.beginPath();
+    ctxInsp.arc(cx, cy, r + 4, (1/16)*Math.PI*2, (3/16)*Math.PI*2);
+    ctxInsp.strokeStyle = "#ff9e64";
+    ctxInsp.lineWidth = 4;
+    ctxInsp.stroke();
+
+    ctxInsp.beginPath();
+    ctxInsp.arc(cx, cy, r + 4, (10/16)*Math.PI*2, (11.8/16)*Math.PI*2);
+    ctxInsp.strokeStyle = "#7dcfff";
+    ctxInsp.lineWidth = 4;
+    ctxInsp.stroke();
+
+    const cardX = 425, cardW = 345;
+    const card1Y = 28, card1H = 170;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX, card1Y, cardW, card1H);
+    ctxInsp.fillRect(cardX, card1Y, cardW, card1H);
+
+    ctxInsp.font = "bold 13px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#ff9e64";
+    ctxInsp.fillText("● 膚色保護扇區 (Sectors 1 ~ 3, 橘黃色相)", cardX + 15, card1Y + 26);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("此區域獨立鎖定飽和度縮放比與微明度增益，", cardX + 18, card1Y + 54);
+    ctxInsp.fillText("確保底片色調偏移時，人物膚色不發灰、不泛綠，", cardX + 18, card1Y + 76);
+    ctxInsp.fillText("呈現健康的粉潤日系通透質感與自然色彩血色。", cardX + 18, card1Y + 98);
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("✔ 向量角度微轉：±1.5° 鎖定，避免偏向死黃或臘黃", cardX + 18, card1Y + 128);
+    ctxInsp.fillText("✔ 亮度增益保持：維持中階人像漫反射高光通透度", cardX + 18, card1Y + 150);
+
+    const card2Y = 212, card2H = 180;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX, card2Y, cardW, card2H);
+    ctxInsp.fillRect(cardX, card2Y, cardW, card2H);
+
+    ctxInsp.font = "bold 13px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7dcfff";
+    ctxInsp.fillText("● 天空藍青移扇區 (Sectors 10 ~ 11, 藍色相)", cardX + 15, card2Y + 26);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("FL/FL2 下偏轉青綠與收斂墨青（復古底片氛圍）；", cardX + 18, card2Y + 54);
+    ctxInsp.fillText("FL3 下保持高透光純淨湛藍（空氣透亮感）；", cardX + 18, card2Y + 76);
+    ctxInsp.fillText("VV 則大幅拉伸飽和度，展現深邃濃郁原色純度。", cardX + 18, card2Y + 98);
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.fillText("✔ 色相調移：S10 向青綠旋轉 4° ~ 7°", cardX + 18, card2Y + 128);
+    ctxInsp.fillText("✔ 飽和度收斂：陰影高飽和處適度壓制，重現片基質地", cardX + 18, card2Y + 150);
+
+  } else if (stage === 3) {
+
+    const ox = 50, oy = 365, sz = 315;
+    ctxInsp.strokeStyle = "#414868";
+    ctxInsp.lineWidth = 1.5;
+    ctxInsp.strokeRect(ox, oy - sz, sz, sz);
+
+    ctxInsp.strokeStyle = "#24283b";
+    ctxInsp.lineWidth = 1;
+    ctxInsp.beginPath();
+    for (let g = 1; g <= 3; g++) {
+      const gx = ox + (g / 4) * sz;
+      const gy = oy - (g / 4) * sz;
+      ctxInsp.moveTo(gx, oy - sz); ctxInsp.lineTo(gx, oy);
+      ctxInsp.moveTo(ox, gy); ctxInsp.lineTo(ox + sz, gy);
+    }
+    ctxInsp.stroke();
+
+    ctxInsp.strokeStyle = "#565f89";
+    ctxInsp.setLineDash([4, 4]);
+    ctxInsp.beginPath(); ctxInsp.moveTo(ox, oy); ctxInsp.lineTo(ox + sz, oy - sz); ctxInsp.stroke();
+    ctxInsp.setLineDash([]);
+
+    const lut = buildSplineLUT(pLift, pContrast, PRESETS[currentPresetKey].shoulder, currentPresetKey);
+
+    const grad = ctxInsp.createLinearGradient(0, oy - sz, 0, oy);
+    grad.addColorStop(0, "rgba(125, 207, 255, 0.35)");
+    grad.addColorStop(1, "rgba(125, 207, 255, 0.02)");
+    ctxInsp.fillStyle = grad;
+    ctxInsp.beginPath();
+    ctxInsp.moveTo(ox, oy);
+    for (let i = 0; i < 129; i++) {
+      const x = ox + (i / 128.0) * sz;
+      const y = oy - lut[i] * sz;
+      ctxInsp.lineTo(x, y);
+    }
+    ctxInsp.lineTo(ox + sz, oy);
+    ctxInsp.closePath();
+    ctxInsp.fill();
+
+    ctxInsp.strokeStyle = "#7dcfff";
+    ctxInsp.lineWidth = 3;
+    ctxInsp.beginPath();
+    for (let i = 0; i < 129; i++) {
+      const x = ox + (i / 128.0) * sz;
+      const y = oy - lut[i] * sz;
+      if (i === 0) ctxInsp.moveTo(x, y);
+      else ctxInsp.lineTo(x, y);
+    }
+    ctxInsp.stroke();
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9aa5ce";
+    ctxInsp.fillText("輸入線性光亮度 Y_in", ox + sz * 0.35, oy + 24);
+    ctxInsp.save();
+    ctxInsp.translate(ox - 18, oy - sz * 0.35);
+    ctxInsp.rotate(-Math.PI / 2);
+    ctxInsp.fillText("輸出顯示光 Y_out", 0, 0);
+    ctxInsp.restore();
+
+    const cardX = 385, cardW = 385;
+    const cardY = 28, cardH = 356;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX, cardY, cardW, cardH);
+    ctxInsp.fillRect(cardX, cardY, cardW, cardH);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#e0af68";
+    ctxInsp.fillText("暗部抬升 (Toe Lift) = " + (pLift * 100).toFixed(1) + "%", cardX + 18, cardY + 32);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("純黑暗部向上平移，呈現片基啞光感與陰影呼吸感。", cardX + 18, cardY + 56);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7dcfff";
+    ctxInsp.fillText("中灰對比坡度 (Contrast) = " + pContrast.toFixed(2) + "×", cardX + 18, cardY + 102);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("於 18% 中灰錨點調控斜率，主導畫面主體骨幹反差。", cardX + 18, cardY + 126);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#bb9af7";
+    ctxInsp.fillText("高光滾落 (Shoulder) = " + PRESETS[currentPresetKey].shoulder.toFixed(2), cardX + 18, cardY + 172);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("高光以指數平滑收斂至 1.0，杜絕過曝斷層與死白死黑。", cardX + 18, cardY + 196);
+
+    ctxInsp.fillStyle = "#161722";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX + 15, cardY + 232, 355, 102);
+    ctxInsp.fillRect(cardX + 15, cardY + 232, 355, 102);
+
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9aa5ce";
+    ctxInsp.fillText("129 點分段樣條曲線硬體拓撲：", cardX + 25, cardY + 258);
+    ctxInsp.font = "bold 12.5px 'Source Code Pro', monospace";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("Y_out = Toe(Y) + Sigmoid(Y) + Shoulder(Y)", cardX + 25, cardY + 286);
+    ctxInsp.font = "11px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.fillText("• 實時非線性三次樣條插值，保證一階導數連續無斷階", cardX + 25, cardY + 314);
+
+  } else if (stage === 4) {
+
+    const cx = 220, cy = 195, r = 160;
+
+    // 1. 同心飽和度階層環
+    for (let i = 1; i <= 5; i++) {
+      ctxInsp.strokeStyle = (i === 5) ? "rgba(86, 95, 137, 0.6)" : "rgba(47, 53, 73, 0.7)";
+      ctxInsp.lineWidth = (i === 5) ? 1.5 : 1;
+      ctxInsp.beginPath();
+      ctxInsp.arc(cx, cy, (i / 5) * r, 0, Math.PI * 2);
+      ctxInsp.stroke();
+    }
+
+    // 2. 9 條主要色相射線
+    for (let h = 0; h < 9; h++) {
+      const ang = (h / 9) * Math.PI * 2;
+      ctxInsp.strokeStyle = "#3b4261";
+      ctxInsp.lineWidth = 1;
+      ctxInsp.beginPath();
+      ctxInsp.moveTo(cx, cy);
+      ctxInsp.lineTo(cx + Math.cos(ang) * (r + 12), cy + Math.sin(ang) * (r + 12));
+      ctxInsp.stroke();
+    }
+
+    // 3. 節點與位移向量渲染
+    for (let ring = 1; ring <= 5; ring++) {
+      const rad = (ring / 5) * r;
+      for (let h = 0; h < 9; h++) {
+        const ang = (h / 9) * Math.PI * 2;
+        const x0 = cx + Math.cos(ang) * rad;
+        const y0 = cy + Math.sin(ang) * rad;
+
+        const dx = -Math.sin(ang) * (pTeal * 0.40) * (1.0 - ring / 6.0);
+        const dy = Math.cos(ang) * (pTeal * 0.40) * (1.0 - ring / 6.0);
+        const tipX = x0 + dx;
+        const tipY = y0 + dy;
+        const vLen = Math.hypot(dx, dy);
+
+        ctxInsp.strokeStyle = "rgba(125, 207, 255, 0.45)";
+        ctxInsp.fillStyle = "rgba(22, 22, 30, 0.9)";
+        ctxInsp.lineWidth = 1.2;
+        ctxInsp.beginPath();
+        ctxInsp.arc(x0, y0, 3.2, 0, Math.PI * 2);
+        ctxInsp.fill();
+        ctxInsp.stroke();
+
+        if (vLen > 0.5) {
+          ctxInsp.strokeStyle = "#73daca";
+          ctxInsp.lineWidth = 1.6;
+          ctxInsp.beginPath();
+          ctxInsp.moveTo(x0, y0);
+          ctxInsp.lineTo(tipX, tipY);
+          ctxInsp.stroke();
+
+          const headLen = Math.min(5.5, vLen * 0.7);
+          const ux = dx / vLen, uy = dy / vLen;
+          const px = -uy, py = ux;
+          ctxInsp.fillStyle = "#73daca";
+          ctxInsp.beginPath();
+          ctxInsp.moveTo(tipX, tipY);
+          ctxInsp.lineTo(tipX - ux * headLen + px * headLen * 0.5, tipY - uy * headLen + py * headLen * 0.5);
+          ctxInsp.lineTo(tipX - ux * headLen - px * headLen * 0.5, tipY - uy * headLen - py * headLen * 0.5);
+          ctxInsp.closePath();
+          ctxInsp.fill();
+
+          ctxInsp.fillStyle = "#ff9e64";
+          ctxInsp.beginPath();
+          ctxInsp.arc(tipX, tipY, 3.2, 0, Math.PI * 2);
+          ctxInsp.fill();
+        }
+      }
+    }
+
+    // 4. 左下角圖例列
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.beginPath();
+    ctxInsp.arc(28, 395, 3.5, 0, Math.PI * 2);
+    ctxInsp.strokeStyle = "rgba(125, 207, 255, 0.8)";
+    ctxInsp.stroke();
+    ctxInsp.fillText("基準空間節點 (Base Node)", 42, 399);
+
+    ctxInsp.fillStyle = "#ff9e64";
+    ctxInsp.beginPath();
+    ctxInsp.arc(208, 395, 3.5, 0, Math.PI * 2);
+    ctxInsp.fill();
+    ctxInsp.fillStyle = "#73daca";
+    ctxInsp.fillText("➔ 偏移目標 (Displaced Target)", 224, 399);
+
+    const cardX = 415, cardW = 355;
+    const card1Y = 25, card1H = 158;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX, card1Y, cardW, card1H);
+    ctxInsp.fillRect(cardX, card1Y, cardW, card1H);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7dcfff";
+    ctxInsp.fillText("5×9×9 極坐標立體晶格拓撲 (Lattice Geometry)", cardX + 18, card1Y + 26);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("• 5 階亮度分層 (Y_layers: 深暗、暗灰、中灰、亮灰、高光)", cardX + 20, card1Y + 52);
+    ctxInsp.fillText("• 9 條主色相射線 (Hue Rays: 40° 等角度劃分)", cardX + 20, card1Y + 74);
+    ctxInsp.fillText("• 9 級飽和度同心環 (Saturation Rings: 0.1 ~ 1.0)", cardX + 20, card1Y + 96);
+    ctxInsp.fillText("• 總計 405 個專屬硬體空間增量節點 (405 Signed Deltas)", cardX + 20, card1Y + 118);
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("✔ 針對非線性交織色調實現微米級獨立色偏校準", cardX + 20, card1Y + 142);
+
+    const card2Y = 198, card2H = 186;
+    ctxInsp.fillStyle = "#1a1b26";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(cardX, card2Y, cardW, card2H);
+    ctxInsp.fillRect(cardX, card2Y, cardW, card2H);
+
+    ctxInsp.font = "bold 13.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#e0af68";
+    ctxInsp.fillText("三線性插值晶胞 (Trilinear Sub-Cube)", cardX + 18, card2Y + 26);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("輸入顏色定位至由相鄰 8 個節點構成的立方晶胞中，", cardX + 20, card2Y + 52);
+    ctxInsp.fillText("依據 Y、U、V 權重平滑加權累加 Delta：", cardX + 20, card2Y + 74);
+    ctxInsp.font = "bold 12.5px 'Source Code Pro', monospace";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("ΔC = Σ (w_y × w_u × w_v) · (g_ijk / 256)", cardX + 20, card2Y + 104);
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#7aa2f7";
+    ctxInsp.fillText("當前陰影冷調微移 Delta = " + (pTeal > 0 ? "+" : "") + pTeal + " Δ", cardX + 20, card2Y + 132);
+    ctxInsp.font = "11.5px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#565f89";
+    ctxInsp.fillText("• 硬體固定週期單週期乘累加 (Single-cycle MAC)", cardX + 20, card2Y + 160);
+
+  } else if (stage === 5) {
+
+    const startX = 35, endX = 765;
+    const pts = endX - startX;
+
+    // 1. 獨立圖例列
+    const legY = 22, legH = 32;
+    ctxInsp.fillStyle = "#181926";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.lineWidth = 1;
+    ctxInsp.strokeRect(startX, legY, endX - startX, legH);
+    ctxInsp.fillRect(startX, legY, endX - startX, legH);
+
+    ctxInsp.font = "bold 12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#9ece6a";
+    ctxInsp.fillText("━━ 低頻基底層 (Bilateral Base)", startX + 18, legY + 21);
+
+    ctxInsp.fillStyle = "#f7768e";
+    ctxInsp.fillText("━━ 高頻細節層 (Detail Texture)", startX + 245, legY + 21);
+
+    ctxInsp.fillStyle = "#7dcfff";
+    ctxInsp.fillText("━━ 微對比增益直出 (Clarity: " + (pClarity > 0 ? "+" : "") + pClarity.toFixed(2) + ")", startX + 475, legY + 21);
+
+    // 2. 波形專屬座標框
+    const plotTop = 66, plotBottom = 318;
+    const oy = (plotTop + plotBottom) / 2;
+    const plotH = (plotBottom - plotTop) / 2;
+
+    ctxInsp.strokeStyle = "#414868";
+    ctxInsp.lineWidth = 1;
+    ctxInsp.strokeRect(startX, plotTop, endX - startX, plotBottom - plotTop);
+
+    // 零基準軸虛線
+    ctxInsp.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctxInsp.setLineDash([3, 3]);
+    ctxInsp.beginPath(); ctxInsp.moveTo(startX, oy); ctxInsp.lineTo(endX, oy); ctxInsp.stroke();
+    ctxInsp.setLineDash([]);
+
+    // 左側動態振幅刻度導引
+    ctxInsp.font = "10px monospace";
+    ctxInsp.fillStyle = "#565f89";
+    ctxInsp.fillText("+High", startX + 6, plotTop + 14);
+    ctxInsp.fillText("0 (DC)", startX + 6, oy + 3);
+    ctxInsp.fillText("-Low", startX + 6, plotBottom - 6);
+
+    // Wave 1: 低頻基底層 (綠色)
+    ctxInsp.strokeStyle = "#9ece6a";
+    ctxInsp.lineWidth = 2.2;
+    ctxInsp.beginPath();
+    for (let x = 0; x < pts; x++) {
+      const y = oy + Math.sin(x * 0.015) * 36 + Math.cos(x * 0.007) * 20;
+      if (x === 0) ctxInsp.moveTo(startX + x, y);
+      else ctxInsp.lineTo(startX + x, y);
+    }
+    ctxInsp.stroke();
+
+    // Wave 2: 高頻細節層 (粉紅)
+    ctxInsp.strokeStyle = "#f7768e";
+    ctxInsp.lineWidth = 1.6;
+    ctxInsp.beginPath();
+    for (let x = 0; x < pts; x++) {
+      const detail = Math.sin(x * 0.12) * 16 * Math.exp(-((x - pts * 0.5) ** 2) / (pts * 45));
+      const y = oy + detail;
+      if (x === 0) ctxInsp.moveTo(startX + x, y);
+      else ctxInsp.lineTo(startX + x, y);
+    }
+    ctxInsp.stroke();
+
+    // Wave 3: 微對比增益後直出 (青色)
+    ctxInsp.strokeStyle = "#7dcfff";
+    ctxInsp.lineWidth = 2.4;
+    ctxInsp.beginPath();
+    for (let x = 0; x < pts; x++) {
+      const base = Math.sin(x * 0.015) * 36 + Math.cos(x * 0.007) * 20;
+      const detail = Math.sin(x * 0.12) * 16 * Math.exp(-((x - pts * 0.5) ** 2) / (pts * 45));
+      const boosted = base + detail * (1.0 + pClarity * 2.2);
+      const y = oy + boosted;
+      if (x === 0) ctxInsp.moveTo(startX + x, y);
+      else ctxInsp.lineTo(startX + x, y);
+    }
+    ctxInsp.stroke();
+
+    // 3. 底部原理說明卡片
+    const cardY = 330, cardH = 72;
+    ctxInsp.fillStyle = "#181926";
+    ctxInsp.strokeStyle = "#2f3549";
+    ctxInsp.strokeRect(startX, cardY, endX - startX, cardH);
+    ctxInsp.fillRect(startX, cardY, endX - startX, cardH);
+
+    ctxInsp.font = "12px 'Noto Sans TC', sans-serif";
+    ctxInsp.fillStyle = "#c0caf5";
+    ctxInsp.fillText("雙邊濾波核心機制：藉由保持邊緣的雙邊濾波分離出輪廓基底層與微小高頻細節層，", startX + 16, cardY + 28);
+    ctxInsp.fillText("針對局部細節層施加非線性微對比增益（Clarity），大幅提升毛孔、石紋與枝葉立體感，且不產生白邊光暈。", startX + 16, cardY + 52);
+  }
+}
+
+function drawInspector(stage) {
+if (!ctxInsp) return;
+drawStageInspector(ctxInsp, stage);
+}
+
+function updateAllStageCards() {
+for (let s = 0; s <= 5; s++) {
+const cInsp = document.getElementById('stage-inspector-' + s);
+if (cInsp) {
+drawStageInspector(cInsp.getContext('2d'), s);
+}
+const cPhoto = document.getElementById('stage-photo-' + s);
+if (cPhoto && stageBuffers[s]) {
+drawBufferToCanvas(cPhoto.getContext('2d'), stageBuffers[s], s === 0);
+}
+}
+}
+
+function initStageCardTabs() {
+document.querySelectorAll('.isp-stage-tab-btn').forEach(btn => {
+btn.addEventListener('click', () => {
+const stage = parseInt(btn.dataset.stage, 10);
+const tab = btn.dataset.tab;
+const card = btn.closest('.isp-stage-card');
+if (!card) return;
+card.querySelectorAll('.isp-stage-tab-btn').forEach(b => b.classList.remove('active'));
+btn.classList.add('active');
+const cInsp = card.querySelector('#stage-inspector-' + stage);
+const cPhoto = card.querySelector('#stage-photo-' + stage);
+if (tab === 'inspector') {
+if (cInsp) cInsp.style.display = 'block';
+if (cPhoto) cPhoto.style.display = 'none';
+} else {
+if (cInsp) cInsp.style.display = 'none';
+if (cPhoto) {
+cPhoto.style.display = 'block';
+if (stageBuffers[stage]) {
+drawBufferToCanvas(cPhoto.getContext('2d'), stageBuffers[stage], stage === 0);
+}
+}
+}
+});
+});
+}
+
+function updateStageUI() {
+elStepBtns.forEach(btn => {
+const step = parseInt(btn.dataset.step, 10);
+btn.classList.toggle('active', step === currentStage);
+});
+
+const p = PRESETS[currentPresetKey];
+const stageTitles = [
+"Stage 0: 感光元件線性場景輻射率 (Sensor Linear Radiance · 模擬以 JXL 載入)",
+"Stage 1: 線性白平衡與暗部基準增益 (cc1: Linear WB & Black Pedestal)",
+"Stage 2: 16 扇區色相相依色彩矩陣 (block13: Hue-Adaptive Matrix)",
+"Stage 3: 129 點分段樣條色調映射 (gamma[129]: Spline Tone Curve)",
+"Stage 4: 5×9×9 3D 極坐標 HSV 色彩網格 (grid[3][405]: 3D Lattice)",
+"Stage 5: 空間微對比與細節濾波 (Clarity & Detail 直出)"
+];
+const stageMaths = [
+"Linear Radiance: (R, G, B) ∈ [0.0, 2.2+] · 零非線性壓縮",
+"[R_wb, G_wb, B_wb]^T = diag(k_R, k_G, k_B) · ([R, G, B]^T - p_black)",
+"C_out = M_base · C_in + Σ w_s · ΔM_s · C_in (16 色相扇區平滑插值)",
+"Y_out = Spline129(Y_in) · [Toe Lift + S-Curve + Shoulder Rolloff]",
+"ΔC = Σ w_ijk · (g_ijk / 256) · 405 個立體網格點三線性插值",
+"Output = Base_Layer + Detail_Layer · (1 + Clarity · NonLinearGain)"
+];
+
+elInfoTitle.textContent = stageTitles[currentStage];
+elInfoMath.textContent = stageMaths[currentStage];
+if (p.stageDescs && p.stageDescs[currentStage]) {
+elInfoDesc.textContent = p.stageDescs[currentStage];
+} else {
+elInfoDesc.textContent = p.desc;
+}
+if (elPresetOverallText && p.overallDesc) {
+elPresetOverallText.textContent = p.overallDesc;
+}
+
+drawBufferToCanvas(ctxMain, stageBuffers[currentStage], currentStage < 3);
+drawInspector(currentStage);
+updateAllStageCards();
+updatePanelSliders(currentStage);
+
+if (isCurtainMode) {
+drawBufferToCanvas(ctxComp, stageBuffers[0], true);
+renderCurtain();
+}
+}
+
+function renderCurtain() {
+if (!isCurtainMode) return;
+if (stageBuffers[0]) {
+drawBufferToCanvas(ctxComp, stageBuffers[0], true);
+}
+const pct = (curtainRatio * 100).toFixed(2);
+canvasComp.style.display = 'block';
+canvasComp.style.clipPath = 'polygon(' + pct + '% 0, 100% 0, 100% 100%, ' + pct + '% 100%)';
+elCurtainDivider.style.display = 'block';
+elCurtainDivider.style.left = pct + '%';
+if (elCurtainLabels) {
+elCurtainLabels.style.display = 'flex';
+if (elCurtainLeftLbl) {
+elCurtainLeftLbl.textContent = '當前 Stage ' + currentStage + ' 直出';
+}
+}
+}
+
+elPreset.addEventListener('change', function() {
+currentPresetKey = this.value;
+const p = PRESETS[currentPresetKey];
+if (elPresetOverallText && p.overallDesc) {
+elPresetOverallText.textContent = p.overallDesc;
+}
+pWbTemp = p.wbTemp;
+pLift = p.pedestalLift;
+pContrast = p.contrast;
+pTeal = p.shadowTeal;
+pClarity = p.clarity;
+
+syncAllSliders();
+
+recomputePipeline();
+updateStageUI();
+});
+
+elScene.addEventListener('change', function() {
+currentSceneKey = this.value;
+recomputePipeline();
+updateStageUI();
+});
+
+elStepBtns.forEach(btn => {
+btn.addEventListener('click', function() {
+currentStage = parseInt(this.dataset.step, 10);
+updateStageUI();
+});
+});
+
+elBtnPrev.addEventListener('click', () => {
+currentStage = (currentStage + 5) % 6;
+updateStageUI();
+});
+
+elBtnNext.addEventListener('click', () => {
+currentStage = (currentStage + 1) % 6;
+updateStageUI();
+});
+
+elBtnPlay.addEventListener('click', () => {
+if (isPlaying) {
+clearInterval(playTimer);
+isPlaying = false;
+elBtnPlay.textContent = "▶ 自動流水線演示";
+} else {
+isPlaying = true;
+elBtnPlay.textContent = "⏸ 暫停演示";
+currentStage = 0;
+updateStageUI();
+playTimer = setInterval(() => {
+currentStage++;
+if (currentStage > 5) currentStage = 0;
+updateStageUI();
+}, 1200);
+}
+});
+
+elBtnCurtain.addEventListener('click', () => {
+isCurtainMode = !isCurtainMode;
+elBtnCurtain.classList.toggle('active', isCurtainMode);
+if (!isCurtainMode) {
+canvasComp.style.display = 'none';
+elCurtainDivider.style.display = 'none';
+if (elCurtainLabels) elCurtainLabels.style.display = 'none';
+} else {
+if (currentStage === 0) {
+currentStage = 5;
+updateStageUI();
+} else {
+renderCurtain();
+}
+}
+});
+
+let isDragging = false;
+elWrap.addEventListener('mousedown', (e) => {
+if (!isCurtainMode) return;
+isDragging = true;
+updateCurtainFromEvent(e);
+});
+window.addEventListener('mousemove', (e) => {
+if (isDragging) updateCurtainFromEvent(e);
+});
+window.addEventListener('mouseup', () => isDragging = false);
+
+elWrap.addEventListener('touchstart', (e) => {
+if (!isCurtainMode) return;
+isDragging = true;
+updateCurtainFromTouchEvent(e);
+}, { passive: true });
+window.addEventListener('touchmove', (e) => {
+if (isDragging) updateCurtainFromTouchEvent(e);
+}, { passive: true });
+window.addEventListener('touchend', () => isDragging = false);
+
+function updateCurtainFromEvent(e) {
+const rect = elWrap.getBoundingClientRect();
+const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+curtainRatio = x / rect.width;
+renderCurtain();
+}
+
+function updateCurtainFromTouchEvent(e) {
+if (!e.touches || !e.touches[0]) return;
+const rect = elWrap.getBoundingClientRect();
+const x = Math.max(0, Math.min(rect.width, e.touches[0].clientX - rect.left));
+curtainRatio = x / rect.width;
+renderCurtain();
+}
+
+elBtnBlink.addEventListener('mousedown', () => {
+drawBufferToCanvas(ctxMain, stageBuffers[0], true);
+});
+elBtnBlink.addEventListener('mouseup', () => {
+drawBufferToCanvas(ctxMain, stageBuffers[currentStage], currentStage < 3);
+});
+
+if (elBtnLayout && elWorkspace) {
+elBtnLayout.addEventListener('click', () => {
+elWorkspace.classList.toggle('isp-layout-split');
+elBtnLayout.classList.toggle('active', elWorkspace.classList.contains('isp-layout-split'));
+});
+}
+
+function setWbTemp(val) {
+pWbTemp = parseInt(val, 10);
+const text = pWbTemp + " K";
+['sl-wb-temp', 'sl-card-wb-temp'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pWbTemp;
+});
+['val-wb-temp', 'val-card-wb-temp'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = text;
+});
+recomputePipeline();
+updateStageUI();
+}
+
+function setLift(val) {
+pLift = parseFloat(val) / 100.0;
+const text = parseFloat(val).toFixed(1) + "%";
+['sl-lift', 'sl-card-lift'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = val;
+});
+['val-lift', 'val-card-lift'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = text;
+});
+recomputePipeline();
+updateStageUI();
+}
+
+function setContrast(val) {
+pContrast = parseFloat(val);
+const text = pContrast.toFixed(2) + "×";
+['sl-contrast', 'sl-card-contrast'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pContrast;
+});
+['val-contrast', 'val-card-contrast'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = text;
+});
+recomputePipeline();
+updateStageUI();
+}
+
+function setTeal(val) {
+pTeal = parseInt(val, 10);
+const text = (pTeal > 0 ? "+" : "") + pTeal + " Δ";
+['sl-teal', 'sl-card-teal'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pTeal;
+});
+['val-teal', 'val-card-teal'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = text;
+});
+recomputePipeline();
+updateStageUI();
+}
+
+function setClarity(val) {
+pClarity = parseFloat(val);
+const text = (pClarity > 0 ? "+" : "") + pClarity.toFixed(2) + "×";
+['sl-clarity', 'sl-card-clarity'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pClarity;
+});
+['val-clarity', 'val-card-clarity'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = text;
+});
+recomputePipeline();
+updateStageUI();
+}
+
+function syncAllSliders() {
+['sl-wb-temp', 'sl-card-wb-temp'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pWbTemp;
+});
+['val-wb-temp', 'val-card-wb-temp'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = pWbTemp + " K";
+});
+
+const liftVal = (pLift * 100).toFixed(1);
+const liftStr = liftVal + "%";
+['sl-lift', 'sl-card-lift'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = liftVal;
+});
+['val-lift', 'val-card-lift'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = liftStr;
+});
+
+const contrastStr = pContrast.toFixed(2) + "×";
+['sl-contrast', 'sl-card-contrast'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pContrast;
+});
+['val-contrast', 'val-card-contrast'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = contrastStr;
+});
+
+const tealStr = (pTeal > 0 ? "+" : "") + pTeal + " Δ";
+['sl-teal', 'sl-card-teal'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pTeal;
+});
+['val-teal', 'val-card-teal'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = tealStr;
+});
+
+const clarityStr = (pClarity > 0 ? "+" : "") + pClarity.toFixed(2) + "×";
+['sl-clarity', 'sl-card-clarity'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.value = pClarity;
+});
+['val-clarity', 'val-card-clarity'].forEach(id => {
+const el = document.getElementById(id);
+if (el) el.textContent = clarityStr;
+});
+}
+
+function updatePanelSliders(stage) {
+const container = document.getElementById('isp-panel-sliders');
+if (!container) return;
+container.querySelectorAll('[data-stage]').forEach(el => {
+const s = parseInt(el.dataset.stage, 10);
+el.style.display = (s === stage) ? (el.classList.contains('isp-slider-item') ? 'flex' : 'block') : 'none';
+});
+}
+
+function bindSlider(id, onInput) {
+const el = document.getElementById(id);
+if (el) {
+el.addEventListener('input', function() {
+onInput(this.value);
+});
+}
+}
+
+bindSlider('sl-wb-temp', setWbTemp);
+bindSlider('sl-card-wb-temp', setWbTemp);
+
+bindSlider('sl-lift', setLift);
+bindSlider('sl-card-lift', setLift);
+
+bindSlider('sl-contrast', setContrast);
+bindSlider('sl-card-contrast', setContrast);
+
+bindSlider('sl-teal', setTeal);
+bindSlider('sl-card-teal', setTeal);
+
+bindSlider('sl-clarity', setClarity);
+bindSlider('sl-card-clarity', setClarity);
+
+syncAllSliders();
+recomputePipeline();
+updateStageUI();
+initPhotoSamples();
+initStageCardTabs();
+updateAllStageCards();
+}
+
+if (document.readyState === 'loading') {
+document.addEventListener('DOMContentLoaded', initIsp);
+} else {
+initIsp();
+}
+})();
+</script>
+<h2 id="風格外觀實例解析stflfl2fl3-與經典負片對比">風格外觀實例解析：ST、FL、FL2、FL3 與經典負片對比</h2>
+<p>當我們將上述硬體管線套用於實際影像時，不同創意外觀在各階段參數上的微小差異，會產生風格截然不同的化學反應。</p>
+<p>在上方即時互動實驗室中，我們已將各風格外觀的「整體直出氛圍」直接整合至預設選單旁，並將 129 點分段樣條曲線（<code>gamma[129]</code>）、16 扇區色相矩陣（<code>block13</code>）與 3D 色彩網格（<code>grid[3][405]</code>）等各階段硬體特性動態綁定至階段解剖儀說明欄位中，讀者可隨時在實驗室中切換預設與階段即時對照。</p>
+<p>以下特別針對相機硬體韌體逆向工程中提取的真實 FL2、FL3 數據進行深入拆解：</p>
+<h3 id="fl2柔和低反差電影質感與啞光陰影">FL2：柔和低反差電影質感與啞光陰影</h3>
+<p>從韌體提取的真實硬體參數分析，<code>FL2</code>（Film Look 2）是專為追求溫潤柔和、低刺激視覺體驗所調校的電影外觀：</p>
+<ul>
+<li><strong>抬升暗部基底</strong> (Toe Lift)：其 129 點曲線的起步節點 <code>gamma[1]</code> 高達 1158（約為 3.2%），幾乎是 <code>FL</code>（594，約 1.8%）的兩倍。這使得深暗陰影完全不會出現死黑裁切，而是呈現出如同 35mm 電影負片般的厚實片基質感（Matte Shadow）。</li>
+<li><strong>收斂中間調反差</strong>：對比坡度從 <code>FL</code> 的 2.2 降至 1.88，階調過渡極為連綿平滑。</li>
+<li><strong>平緩的高光滾落</strong> (Soft Highlight Roll-off)：高光肩部係數縮減至 0.78（<code>gamma[96]</code> 為 118,863，低於 <code>FL</code> 的 122,524），能有效抑制烈日逆光與金屬反射的生硬邊緣，讓高光散景呈現柔順的擴散過渡。</li>
+<li><strong>復古植被與啞光青空</strong>：在 16 扇區矩陣中，綠葉扇區微幅增加綠色分量並抑制藍色，將鮮豔的翠綠轉化為沉穩的橄欖綠與鼠尾草色；天空藍扇區則降低飽和度，散發靜謐內斂的膠卷氛圍。</li>
+</ul>
+<h3 id="fl3通透高光清亮膠卷與純淨藍調">FL3：通透高光清亮膠卷與純淨藍調</h3>
+<p>與低反差的 <code>FL2</code> 形成鮮明對比，<code>FL3</code>（Film Look 3）走的是明亮、輕盈且富有空氣感的現代高調風格：</p>
+<ul>
+<li><strong>暗部至中灰的空氣感躍升</strong>：在 129 點曲線中，<code>FL3</code> 的暗部到中灰過渡區段（如 <code>gamma[32]</code>）數值高達 40,624（正規化約 0.31），在所有創意外觀中居於首位（遠高於 <code>ST</code> 的 30,329 與 <code>FL</code> 的 36,042）。這代表即使在背光陰影處，畫面依然能維持極佳的明亮度與通透感，毫無沉重壓抑之感。</li>
+<li><strong>純淨湛藍的天空表現</strong>：在 16 扇區矩陣中，藍天扇區（Sectors 10 ~ 13）維持極高的藍通道增益（$\Delta B > 0$），避免了 <code>FL</code> 那種濃重的墨綠偏轉，呈現如初夏晴空般的乾淨清透湛藍。</li>
+<li><strong>粉嫩透亮的人像膚色</strong>：膚色扇區（Sectors 1 ~ 3）在保持健康暖意之餘，微幅提升紅藍明度，使皮膚呈現白皙粉潤的通透光澤，特別適合陽光下的人像與旅拍紀錄。</li>
+</ul>
+<p>在 16-bit 線性 JPEG XL 的加持下，這些複雜的曲線與空間網格運算完全不會在漸層處留下任何鋸齒與斷層。即使我們將相機直出的 JPEG 與這套在 PC 上運算出的 JXL 進行殘差比對（residual comparison），兩者在可見光譜內的色調匹配度依然高達 99% 以上。</p>
+<h2 id="結語數位暗房與硬體工程的交會">結語：數位暗房與硬體工程的交會</h2>
+<p>探索相機硬體 ISP 的創意外觀管線，是一次極具啟發性的跨領域工程體驗：</p>
+<ul>
+<li><strong>打破濾鏡的玄學迷思</strong>：相機直出的獨特色彩並不是神秘的黑魔法，而是一套由「線性能量平衡 ➔ 色相分區矩陣 ➔ 分段樣條曲線 ➔ 3D 極坐標微調」嚴密交織而成的空間幾何系統。</li>
+<li><strong>JPEG XL 作為現代影像橋樑</strong>：透過 16-bit 浮點數線性容器與廣色域支援，JPEG XL 成功彌合了「笨重且難以通用的 RAW 檔」與「貧乏脆弱的 8-bit 老 JPEG」之間的巨大鴻溝，成為在現代電腦端高精度探索影像科學的絕佳載體。</li>
+<li><strong>從逆向分析到正向創造</strong>：當我們在底層看清了 <code>cc1</code>、<code>block13</code>、<code>gamma[129]</code> 與 <code>grid[3][405]</code> 的資料排布與數學含義，我們不僅能深入理解手中的相機，更能反過來在電腦端打造屬於自己的專屬色彩矩陣與立體網格，甚至將其打包注入相機韌體，讓這套硬體管線真正為自己的攝影美學所用。</li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });"></script>
+  
+
+</body>
+</html>

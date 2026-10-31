@@ -1,0 +1,7 @@
+flowchart TD
+    Boot1["Multi-Port UART 硬體引導 (RP2040 · 48000 baud)<br/>GPIO28(RX) / GPIO29(TX) / GPIO27(Reset) 觸發 BootROM 握手，將 fastboot.bin 載入至 SRAM 0x92028000"]
+    Boot2["[mira] Android Fastboot v0.5 (USB 0x18d1:0x4ee0)<br/>UART 輸出 [mira] fastboot ready @ 115200 baud；USB 執行 oem partition dump nflasha1 + upload"]
+    Boot3["原地修補 nflasha1 (/boot/initrd.img SquashFS 4.0)<br/>1. 替換 /etc/VerificationKey.pem (451B) 為自訂 public.pem<br/>2. 將 4 個 updater .so 的 verifyKey() 開頭 8B 改為 00 00 80 52 c0 03 5f d6<br/>3. 更新 /p1chksum 並將變動的 233 個扇區編碼為 Android Sparse Image (<125 KB) 刷回"]
+    Boot4["SD 卡正常刷入自簽章 BODYDATA.DAT<br/>VerifySignature() 完整保留，往後所有自製韌體更新皆可直接透過 SD 卡安全驗證安裝"]
+
+    Boot1 --> Boot2 --> Boot3 --> Boot4
