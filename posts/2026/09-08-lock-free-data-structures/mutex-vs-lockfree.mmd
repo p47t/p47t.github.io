@@ -1,0 +1,25 @@
+flowchart TD
+    subgraph MutexRole["Mutex 提供的三重保護"]
+        M1["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>1. 互斥性 (Mutual Exclusion)</b><br/>• 同一時間僅允許單一執行緒進入臨界區</div>"]
+        M2["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>2. 記憶體同步 (Memory Ordering)</b><br/>• unlock Release + lock Acquire 自動建立同步</div>"]
+        M3["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>3. 生命週期安全 (Lifetime Safety)</b><br/>• 臨界區內刪除節點，絕無其他執行緒能同時讀取</div>"]
+        M1 --> M2 --> M3
+    end
+
+    subgraph LockFreeRole["Lock-Free 必須獨立解決的三大課題"]
+        L1["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>1. 狀態移轉 (State Transition)</b><br/>• 改由硬體原子 CAS 原語樂觀競爭處理</div>"]
+        L2["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>2. 記憶體順序 (Memory Ordering)</b><br/>• 自行精確配置 Acquire / Release 語意</div>"]
+        L3["<div style='width:380px; padding:4px 8px 8px 8px; text-align:left; line-height:1.4;'><b>3. 生命週期安全 (Lifetime Safety)</b><br/>• 必須引進專門的 SMR 回收協定保護節點</div>"]
+        L1 --> L2 --> L3
+    end
+
+    MutexRole -->|"思維範式轉移"| LockFreeRole
+
+    style MutexRole fill:#16161e,stroke:#414868,stroke-width:1.5px,color:#7aa2f7;
+    style LockFreeRole fill:#16161e,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    classDef mBox fill:#24283b,stroke:#414868,stroke-width:1.5px,color:#c0caf5;
+    classDef lBox fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class M1,M2,M3 mBox;
+    class L1,L2,L3 lBox;

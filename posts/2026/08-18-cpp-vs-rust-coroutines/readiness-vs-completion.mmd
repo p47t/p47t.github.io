@@ -1,0 +1,28 @@
+flowchart TD
+    subgraph Readiness["📡 Readiness 模型 (Linux epoll / macOS kqueue)"]
+        direction TB
+        E1["1. 註冊 fd 至 epoll"] --> E2["2. epoll_wait 通知: fd 可讀！"]
+        E2 --> E3["3. 應用程式呼叫 read(fd, &mut buf) 抓取資料"]
+    end
+
+    subgraph Completion["📥 Completion 模型 (Linux io_uring / Windows IOCP)"]
+        direction TB
+        C1["1. 應用程式提交 SQE: 請核心把資料讀入 buf 指標"]
+        C1 --> C2["2. Linux 核心接管 Buffer，非同步進行 DMA 寫入"]
+        C2 --> C3["3. 核心完成寫入，向 CQE 發送完成通知"]
+    end
+
+    E3 ==>|天生契合| Pull["🦀 <b>Rust Pull 模型 (Future::poll)</b><br/>短暫借用 &mut [u8]，隨時可安全 Drop"]
+    C3 ==>|天生契合| Push["⚡ <b>C++ Push 模型 (co_await await_suspend)</b><br/>Buffer 於 Frame 中位址固定，直接交給核心"]
+
+    classDef rBox fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+    classDef cBox fill:#f5f3ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
+    classDef rustTarget fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef cppTarget fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef innerNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class Readiness rBox;
+    class Completion cBox;
+    class Pull rustTarget;
+    class Push cppTarget;
+    class E1,E2,E3,C1,C2,C3 innerNode;

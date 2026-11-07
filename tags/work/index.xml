@@ -1,0 +1,820 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/work/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2018-03-12 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>C&#43;&#43; 套件管理</title>
+      <link>https://blog.simplypatrick.com/posts/2018/03-12-c&#43;&#43;-conan/</link>
+      <pubDate>Mon, 12 Mar 2018 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2018/03-12-c&#43;&#43;-conan/</guid>
+      <description>&lt;h3 id=&#34;手動管理-cc-套件&#34;&gt;手動管理 C/C++ 套件&lt;/h3&gt;
+&lt;p&gt;想像你需要使用 &lt;a href=&#34;https://llvm.org/&#34;&gt;LLVM&lt;/a&gt; 開發一個程式，如果在 macOS 上，最簡單的安裝方法是用 Homebrew，一行就搞定: &lt;code&gt;brew install llvm&lt;/code&gt;。但 Homebrew 上的版本不一定是最新的而且也無法同時安裝不同的版本 (例如 LLVM 5.0/6.0 共存) 或同版本但不同設置（例如 LLVM 6.0 的 debug/release 版本)；而在 Linux 及 Windows 上也有各自不同的安裝問題。&lt;/p&gt;
+&lt;p&gt;安裝完畢後，麻煩才剛開始：通常第一步是設置編譯環境的 CPPFLAGS 及 LDFLAGS:&lt;/p&gt;
+
+  &lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;For compilers to find this software you may need to set:
+    LDFLAGS:  -L/usr/local/opt/llvm/lib
+    CPPFLAGS: -I/usr/local/opt/llvm/include&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;根據不同的開發環境或編譯器，設置的方法也都不同。最後設置完後編譯及連結也不一定能成功，因為 LLVM 本身可能又依賴其他套件，還需要把它的 dependencies 一一安裝及設置。&lt;/p&gt;
+&lt;h3 id=&#34;conan-介紹&#34;&gt;Conan 介紹&lt;/h3&gt;
+&lt;p&gt;Conan 企圖幫助 C/C++ 脫離這個窘境：沒有一個像樣的套件管理 (package management) 工具。&lt;/p&gt;
+&lt;p&gt;我建議先讀一下 Conan 的文檔來了解如何&lt;a href=&#34;http://docs.conan.io/en/latest/installation.html&#34;&gt;安裝 Conan&lt;/a&gt; 以及&lt;a href=&#34;http://docs.conan.io/en/latest/getting_started.html&#34;&gt;利用 Conan 來使用現成的程式庫&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;如果你是使用 CMake，事情會簡單一些，因為 Conan 提供的 CMake 整合還算好用，使用範例可以參考這個基於 LLVM 的小程式: &lt;a href=&#34;https://github.com/p47r1ck7541/clike&#34;&gt;clike&lt;/a&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;下載套件&#34;&gt;下載套件&lt;/h3&gt;
+&lt;p&gt;除了預設的 &lt;code&gt;conan-center&lt;/code&gt;，Conan 官網建議也可以到 &lt;a href=&#34;https://bintray.com/bincrafters/public-conan&#34;&gt;&lt;code&gt;bincrafters&lt;/code&gt;&lt;/a&gt; 及 &lt;a href=&#34;https://bintray.com/conan-community/conan&#34;&gt;&lt;code&gt;conan-community&lt;/code&gt;&lt;/a&gt; 裡尋找，可以用下列指令新增這兩個 remote:&lt;/p&gt;
+&lt;pre class=&#34;command-line&#34; data-user=&#34;pat&#34; data-host=&#34;host&#34;&gt;&lt;code class=&#34;language-bash&#34;&gt;$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; remote add conan-community https://api.bintray.com/conan/conan-community/conan
+$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; remote add bincrafters https://api.bintray.com/conan/bincrafters/public-conan&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;之後就可以指定 remote 搜尋 package:&lt;/p&gt;
+&lt;pre class=&#34;command-line&#34; data-user=&#34;pat&#34; data-host=&#34;host&#34; data-output=&#34;2-4&#34;&gt;&lt;code class=&#34;language-bash&#34;&gt;$ &lt;span class=&#34;token function&#34;&gt;conan&lt;/span&gt; search ffmpeg -r=bincrafters
+Existing package recipes:
+
+ffmpeg/3.4@bincrafters/stable&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;目前 server 上面的套件數量不算多，有可能你會找不到你想要的，因此你不能期待很快地有人會幫你做出來，相反地你&lt;strong&gt;必須學會自己創建套件&lt;/strong&gt;才能充分得到使用 Conan 的好處。&lt;/p&gt;
+&lt;h3 id=&#34;創建-package&#34;&gt;創建 package&lt;/h3&gt;
+&lt;p&gt;自己創建一個套件其實也不難，基本的概念如下:&lt;/p&gt;
+&lt;img src=&#39;https://blog.simplypatrick.com/posts/2018/03-12-c&amp;#43;&amp;#43;-conan/package_create_flow.png&#39; width=&#34;100%&#34;&gt;
+&lt;p&gt;整個建置過程需要的目錄結構及流程會是由 Conan 來控制，但你需要提供一個 &lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html&#34;&gt;conanfile.py&lt;/a&gt; 描述每個步驟裡的需要執行的動作。Conan 會把打包的套件放在一個 local cache 裡讓其他的程式來使用。&lt;/p&gt;
+&lt;p&gt;以下示範如何下載 LLVM 6.0 的原始碼, 編譯，最後把它包裝成套件：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;from&lt;/span&gt; conans &lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; ConanFile, CMake
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; glob
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;import&lt;/span&gt; os
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;class&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;LlvmConan&lt;/span&gt;(ConanFile):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    name &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;LLVM&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    version &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;release_60&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    license &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;LLVM Release License&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    url &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;https://github.com/p47r1ck7541/llvm-60&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    description &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; (name, version)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    settings &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;os&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;compiler&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;build_type&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;arch&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    generators &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;cmake&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;source&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;run(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;git clone https://github.com/llvm-mirror/llvm -b &lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;%s&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt; --depth 1 src&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;%&lt;/span&gt; self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;version)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;build&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; CMake(self)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;configure(source_folder&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;src&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        cmake&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;install()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;package&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;# nothing to do here now because we reuse &amp;#39;cmake install&amp;#39; to package files&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;pass&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;def&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;package_info&lt;/span&gt;(self):
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp\_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;libs &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[os&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;path&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;basename(a) &lt;span style=&#34;color:#66d9ef&#34;&gt;for&lt;/span&gt; a &lt;span style=&#34;color:#f92672&#34;&gt;in&lt;/span&gt; glob&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;glob(os&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;path&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;join(self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;package\_folder, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;lib&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;*.a&amp;#34;&lt;/span&gt;))\]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cppflags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-std=c++11&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-fno-rtti&amp;#34;&lt;/span&gt;\]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        self&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;cpp_info&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;exelinkflags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; \[&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-lcurses&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;-lz&amp;#34;&lt;/span&gt;\]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;幾個關鍵步驟：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#source&#34;&gt;&lt;code&gt;source()&lt;/code&gt;&lt;/a&gt;: 利用 &lt;code&gt;git clone&lt;/code&gt; 下載原始碼&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#build&#34;&gt;&lt;code&gt;build()&lt;/code&gt;&lt;/a&gt;: 負責編譯，這裏我們直接使用 Conan 提供的 CMake class 來控制 cmake 的執行，值得注意的是我們直接利用 &lt;code&gt;cmake.install()&lt;/code&gt; 來取代實際打包套件的工作。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#package&#34;&gt;&lt;code&gt;package()&lt;/code&gt;&lt;/a&gt;: 如上解釋，不需做任何事。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.conan.io/en/latest/reference/conanfile/methods.html#package-info&#34;&gt;&lt;code&gt;package_info()&lt;/code&gt;&lt;/a&gt;: 提供套件的相關使用資訊。例如 &lt;code&gt;cppflags&lt;/code&gt; 及 &lt;code&gt;exelinkflags&lt;/code&gt; 是寫死的，但 &lt;code&gt;libs&lt;/code&gt; 則是運行 Python script 搜尋編譯結果找出來的。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;完整範例可以參考這個 GitHub project: &lt;a href=&#34;https://github.com/p47r1ck7541/conan-llvm-60&#34;&gt;conan-llvm-60&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;實際運作過程如下(中間請自行快轉):&lt;/p&gt;
+&lt;script src=&#34;https://asciinema.org/a/9yi010lhV4Bvjk321P8h151aB.js&#34; id=&#34;asciicast-9yi010lhV4Bvjk321P8h151aB&#34; async&gt;&lt;/script&gt;
+&lt;h3 id=&#34;總結&#34;&gt;總結&lt;/h3&gt;
+&lt;p&gt;就簡化自己手動管理 C/C++ 套件的工作來看，我認為 Conan 提供的好處值得你花時間去學它，至於它是否能成為主流的 C/C++ 套件管理工具，那就等待時間來驗證了。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Build iOS App with rake</title>
+      <link>https://blog.simplypatrick.com/posts/2011/12-24-build-ios-app-with-rake/</link>
+      <pubDate>Sat, 24 Dec 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/12-24-build-ios-app-with-rake/</guid>
+      <description>&lt;p&gt;上次說到 rake 是幫忙 iOS App 本地化的好用工具，但其實幾乎所有要自動化的事情都能請它幫忙，
+例如寫 game 的人需要做的 sprite sheet 也能請 rake &lt;a href=&#34;http://whatupdave.com/post/5729378739/automate-your-ios-projects-with-rake&#34;&gt;自動產生&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;除此之外，準備各種不同的 build 也是頗煩人的事，如果你也用 rake 的話就可以用 &lt;a href=&#34;http://rubygems.org/gems/wox&#34;&gt;wox&lt;/a&gt; 這個 gem
+來幫忙，下面的範例是 &lt;a href=&#34;http://rubydoc.info/gems/wox/0.0.8/frames&#34;&gt;wox 文檔&lt;/a&gt;建議的方式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ruby&#34; data-lang=&#34;ruby&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;# Rakefile&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Wox&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;Tasks&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;create &lt;span style=&#34;color:#e6db74&#34;&gt;:info_plist&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Resources/Info.plist&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:sdk&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;iphoneos&amp;#39;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:configuration&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Release&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  build &lt;span style=&#34;color:#e6db74&#34;&gt;:debug&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:configuration&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Debug&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  build &lt;span style=&#34;color:#e6db74&#34;&gt;:release&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:developer_certificate&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;iPhone Developer: Dangerous Dave (9GZ84DL0DZ)&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ipa &lt;span style=&#34;color:#e6db74&#34;&gt;:app_store&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:provisioning_profile&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;App Store&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    ipa &lt;span style=&#34;color:#e6db74&#34;&gt;:adhoc&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:provisioning_profile&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Team Provisioning Profile&amp;#39;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;      testflight &lt;span style=&#34;color:#e6db74&#34;&gt;:publish&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;:api_token&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;nphsZ6nVXMl0brDEsevLY0wRfU6iP0NLaQH3nqoh8jG&amp;#39;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:team_token&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;Qfom2HnGGJnXrUVnOKAxKAmpNO3wdQ9panhtqcA&amp;#39;&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:notes&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; proc { &lt;span style=&#34;color:#66d9ef&#34;&gt;File&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;.&lt;/span&gt;read(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;CHANGELOG&amp;#34;&lt;/span&gt;) },
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:distribution_lists&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;%w[Internal QA]&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                          &lt;span style=&#34;color:#e6db74&#34;&gt;:notify&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  &lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;end&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;使用 wox 的優點是不同 task 的 configuration 是可以繼承的，例如 ipa:app_store 套用的就是上一層
+build:release 的設定，但用的是上傳 App Store 用的 provisioning profile。同樣道理 ipa:adhoc 用的是
+Team Provisioning Profile。而如果你有用 &lt;a href=&#34;http://testflightapp.com&#34;&gt;TestFlight&lt;/a&gt; 的話，就可以繼承 ipa:adhoc 把做出來
+的 ipa 檔直接上傳到 TestFlight。&lt;/p&gt;
+&lt;p&gt;關於 TestFlight，可以參考 &lt;a href=&#34;http://thepolydice.com/2011/01/27/%E4%BD%BF%E7%94%A8testflight%E6%8F%90%E4%BE%9B%E6%9C%80%E5%A5%BD%E7%9A%84%E6%B8%AC%E8%A9%A6%E9%AB%94%E9%A9%97/&#34;&gt;Polydice 的介紹&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Git and Jun</title>
+      <link>https://blog.simplypatrick.com/posts/2011/06-17-git-and-jun/</link>
+      <pubDate>Fri, 17 Jun 2011 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2011/06-17-git-and-jun/</guid>
+      <description>&lt;p&gt;大家一般知道 &lt;a href=&#34;http://en.wikipedia.org/wiki/Git_(software)&#34;&gt;Git&lt;/a&gt; 的發明者是 Linus Torvalds，但是實際上假如你常查閱 git help 的話，你會發現 Junio C Hamano 這個名字出現的次數實在比 Linus 多很多。如果說 Linus 是 Git 之父，Jun 應該就是 Git 之母了。&lt;/p&gt;
+&lt;p&gt;Jun 目前在 Google 工作，Android 或是 Chrome OS 都選擇用 Git 也算是支持自家人了。下面是他的在 &lt;a href=&#34;http://google-opensource.blogspot.com/&#34;&gt;Open Source At Google&lt;/a&gt; &lt;a href=&#34;http://google-opensource.blogspot.com/2011/03/geek-time-with-junio-c-hamano.html&#34;&gt;接受訪談&lt;/a&gt;的影片：&lt;/p&gt;
+&lt;iframe width=&#34;854&#34; height=&#34;485&#34; src=&#34;//www.youtube.com/embed/qs_xS1Y6nGc&#34; frameborder=&#34;0&#34; allowfullscreen&gt;&lt;/iframe&gt;
+&lt;p&gt;附記：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Google 內部用的 VCS 應該不是秘密吧，聽說是修改過的 Perforce。&lt;/li&gt;
+&lt;li&gt;訪問者啕侃了一下 Jun 為什麼 Git 這麼&lt;del datetime=&#34;2011-06-16T16:57:32+00:00&#34;&gt;難用&lt;/del&gt;不好學。 XD&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Encounter with the 20th Century Microelectronics</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-11-24-377/</link>
+      <pubDate>Fri, 24 Nov 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-11-24-377/</guid>
+      <description>&lt;p&gt;11/27: 加了演講投影片的連結&lt;/p&gt;
+&lt;p&gt;今天公司請了&lt;a href=&#34;http://www.sinica.edu.tw/as/fellow/math/Simon-M-Sze.html&#34;&gt;施敏&lt;/a&gt;教授來演講『 Encounter with the 20th Century Microelectronics』，施教授不時幽默地猛打自己的廣告，給了大家許多笑點，但實際演講的內容也非常精采，讓人印象深刻的就是他的五個故事及五個體會：&lt;/p&gt;
+&lt;p&gt;以下摘自: IEEE Student Branch at National Taiwan University, Newsletter, April 2004 ■ NUMBER 2&lt;/p&gt;
+&lt;p&gt;故事一：施敏教授提到他年輕時，做有關於 Dielectric Constant 的實驗，發現所得的數值總
+和文獻上所記載的 Dielectric Constant 不同，那時，心中有許多疑惑，然而，仍然
+很堅信自己的實驗結果是對的，後來，發表了一篇有關於 Dielectric Constant 的文
+章，自那篇 Paper 開始，往後做相關研究的人，都採用施敏教授所提的 Dielectric
+Constant。
+體會一：不要盲從專家的結論。&lt;/p&gt;
+&lt;p&gt;故事二：博士畢業後，到 AT&amp;amp;T Bell Laboratories 工作，因為主管的因素，未能很順利的升
+遷，因此，決定開始寫“Physics of Semiconductor Devices”一書，這一本書，深深影
+響了全世界從事微電子領域的人，在 ISI Press 之中，引用超過 13000 次以上。
+體會二：不要因為一些挫折而心灰意懶，殊不知這些挫折會帶來意想不到的機遇。&lt;/p&gt;
+&lt;p&gt;故事三：施敏教授回臺灣之後，與林培元先生、王常裕先生、邱在新先生成立了國內第一家
+半導體公司－環宇電子公司，雖然後來並未繼續經營，但是栽培了許多重要的人，
+例如羅益強先生、魏哲和教授都是環宇電子公司草創之初的人員。
+體會三：某方面是失敗了，但另一面可能有更大的收穫。&lt;/p&gt;
+&lt;p&gt;故事四：臺灣在發展微電子產業之初，國內有許多反對的聲音，當時的孫運璿部長堅持這個
+決定，後來立法院及國民大會都同意了這項決定。因為當年的堅持，臺灣的微電子
+產業開始蓬勃發展起來，時至今日，臺灣在微電子領域，佔有非常重要的地位。
+體會四：要有先見及信心，如果正確的事，不要因為太多人反對而改變。&lt;/p&gt;
+&lt;p&gt;故事五：西元 1967 年，施敏先生發明了“非揮發記憶體”，這在微電子的歷史中，佔有非常
+重要的地位，“非揮發記憶體”為 20 世紀，四大半導體元件的一。今日，所有可攜
+式的電子產品(如手機)，都不可缺少這個元件。
+體會五：要實現你的目標，最重要是要有好奇心，要對自己正在做的事感興趣，而且要勤奮
+工作。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Management By Objectives</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-10-11-344/</link>
+      <pubDate>Wed, 11 Oct 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-10-11-344/</guid>
+      <description>&lt;p&gt;原來 MBO 就是杜拉克搞出來的：&lt;/p&gt;
+&lt;blockquote&gt;
+觀點4：目標管理與自我控制　Management by Object and Self Controls
+在杜拉克的「發明清單」中，最常被提及、或許也可說是最重要及影響最深遠的一個概念，就是目標管理（management by objectives）；而透過目標管理，經理人便能做到自我控制（self-control），訂定更高的績效目標和更宏觀的願景。不過，杜拉克也認為，由於企業績效要求的是每一項工作都必須以達到企業整體目標為目標，因此經理人在訂定目標時，還必須反映企業需要達到的目標，而不只是反映個別主管的需求。
+&lt;p&gt;目標管理之所以能促使經理人達到自我控制，是因為這個方式改變了管理高層監督經理人工作的常規，改由上司與部屬共同協商出一個彼此均同意的績效標準，進而設立工作目標，並且放手讓實際負責日常運作的經理人達成既定目標。乍看之下，目標管理和自我控制假設人都想要負責、有貢獻和獲得成就，而非僅是聽命行事的被動者。然而，雖然經理人有權、也有義務發展出達成組織績效的諸多目標，但是杜拉克也認為高階主管仍需保留對於目標的同意權。&lt;/p&gt;
+&lt;p&gt;這種「上對下」的思維，使得目標管理到了 1980 年代初期，開始陷入陰影，有些人則認為這樣的管理方式太過理性與僵硬，因為&lt;strong&gt;如果所有的指令最終仍舊來自於最上面的少數高階主管，將使得真正了解市場與產品的一般員工產生無力感&lt;/strong&gt;。例如，品質管理大師戴明（W. Edward Deming）便將杜拉克所說的「目標」解讀為「配額」（quota），認為那就好像「交通警察每天都要開出一定數量的違規罰單」。&lt;/p&gt;
+&lt;p&gt;杜拉克自己在往後也修正了自己的看法，主張透過減少組織決策層級與賦權（empowerment），將決策權交還給員工。甚至到了 1990 年代，他還自嘲目標管理只是一個工具而已，並無法解救管理上的效率不彰。他說，「&lt;strong&gt;當你清楚知道目標為何時，目標管理才會奏效管用，但十次裡面有九次，人們根本就不知道目標為何&lt;/strong&gt;。」&lt;/p&gt;
+&lt;p&gt;雖然目標管理遭受批評，但是這個概念和賦予員工決策權並非全然對立，因為&lt;strong&gt;他在主張高階主管應該要為部屬訂定目標的同時，也鼓勵部屬有權決定如何達成目標&lt;/strong&gt;，其目的乃是在於剔除全面的控制與監督，對於經理人將重心從努力工作、提升專業，轉移至專注於提升生產力與產出，極有貢獻。&lt;/p&gt;
+&lt;p&gt;資料來源：&lt;a href=&#34;http://www.managertoday.com.tw/&#34;&gt;Manager Today 經理人月刊&lt;/a&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;為什麼公司不把早就流於形式的 MBO 廢掉呢？&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>On New Web Applications...</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-08-21-336/</link>
+      <pubDate>Mon, 21 Aug 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-08-21-336/</guid>
+      <description>&lt;p&gt;Joel 跟 Paul Graham 分別對一些新興 web application 的看法：&lt;/p&gt;
+&lt;p&gt;&lt;a title=&#34;Joel on Software&#34; href=&#34;http://www.joelonsoftware.com/items/2006/02/08.html&#34;&gt;Joel on Software - Too Many Ajax Calendars&lt;/a&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+They&#39;re building calendar companies to sell to Yahoo!, which, for some reason, has given up on the old concept of hiring programmers to write code, and is going with this new age concept of buying entire companies on the hopes that they might contain a good programmer or two, which, by the way, is a sure sign of trouble for a technology company.
+&lt;/blockquote&gt;
+&lt;p&gt;&lt;a href=&#34;http://paulgraham.infogami.com/blog/kiko&#34;&gt;Paul Graham - The Kiko Affair&lt;/a&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+Google may be even more dangerous than Microsoft, because unlike Microsoft it&#39;s the favorite of technically minded users. When Microsoft launched an application to compete with yours, the first users they&#39;d get would alway be the least sophisticated-- the ones who just used whatever happened to be already installed on their computer. But a startup that tries to compete with Google will have to fight for the early adopters that startups can ordinarily treat as their birthright.
+&lt;/blockquote&gt;
+&lt;p&gt;結論是：如果你不能像 &lt;a href=&#34;http://www.youtube.com&#34;&gt;YouTube&lt;/a&gt; 有自己獨特的經營方式，跟 Google 硬碰硬或是等著被收購都不是個明智的選擇。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>New Stuff for Programtic Programmers</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-02-26-313/</link>
+      <pubDate>Sun, 26 Feb 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-02-26-313/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://www.pragmaticprogrammer.com/titles/index.html&#34;&gt;Pragmatic Bookshelf&lt;/a&gt; 又有一些新書了：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.amazon.com/gp/product/0976694026%3ftag=kalsey-20%26link_code=xm2%26camp=2025%26dev-t=D3N456YOPQ5G79&#34;&gt;Behind Closed Doors: Secrets of Great Management (Pragmatic Programmers)&lt;/a&gt; by Johanna Rothman, Esther Derby&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.amazon.com/gp/product/0974514047%3ftag=kalsey-20%26link_code=xm2%26camp=2025%26dev-t=D3N456YOPQ5G79&#34;&gt;Ship it! A Practical Guide to Successful Software Projects&lt;/a&gt; by Jared Richardson, William Gwaltney&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.amazon.com/gp/product/0976694018%3ftag=kalsey-20%26link_code=xm2%26camp=2025%26dev-t=D3N456YOPQ5G79&#34;&gt;My Job Went to India: 52 Ways to Save Your Job (Pragmatic Programmers)&lt;/a&gt; by Chad Fowler&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這三本似乎蠻有趣的，評價也不錯。我應該會買下來，趁著最近離職的空檔讀一讀。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>.NET Performance Tuning</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-09-23-292/</link>
+      <pubDate>Fri, 23 Sep 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-09-23-292/</guid>
+      <description>&lt;p&gt;我向來相信 managed code 可以讓 programmer 把事情做的更快更好，但這一切美好事物的背後是要付出其他代價的，因此這次去 PDC 特別挑了 Rico Mariani 主講的兩個 session 來聽：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://216.55.183.63/pdc2005/slides/FUNL04_Mariani.ppt&#34;&gt;FUNL04 Tips &amp;amp; Tricks: Writing Performant Managed Code&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://216.55.183.63/pdc2005/slides/FUNL05_Mariani.ppt&#34;&gt;FUNL05 Tips &amp;amp; Tricks: Common Memory Management Pitfalls and Profiling for Managed Applications&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;如果你問 Rico &amp;ldquo;在開始 performance tuning 之前，最重要的三件準備工作是什麼？&amp;quot;，他的答案肯定是 &amp;ldquo;measure, measure, measure&amp;rdquo;。這幾乎是每個專家、每本書都會跟你強調的重點，但是很多 programmer 卻總是喜歡憑自己的直覺判斷來決定怎麼做，似乎他們就是刻意或者下意識地忘掉這件事，為什麼？因為 measure 實在是件麻煩事，有時甚至不可能做到。相反地，如果有一些工具程式的輔助，measure &amp;amp; performance tuning 可以是件頗有趣的事。除此之外，因為 managed code 有 metadata 可以輔助這些工具的分析，做起來其實比 native code 的 tuning 容易多了。&lt;/p&gt;
+&lt;p&gt;這兩場 session 都蠻短的，Rico 並沒有足夠的時間能夠用實際的例子 demo 怎麼使用這些工具並分析其結果，所以我就拿自己寫的一些程式來練習使用 vadump 及 SOS，我向來認為花點時間熟悉這些基本的工具使用可以在將來幫你省下更多的時間。&lt;/p&gt;
+&lt;p&gt;Rico 已經&lt;a href=&#34;http://channel9.msdn.com/wiki/default.aspx/Channel9.RicoM&#34;&gt;將他的文章整理在 Channel9&lt;/a&gt;。你也可以參考 Mike Taulty 的《&lt;a href=&#34;http://mtaulty.com/blog/(1eobxu45ssmiih55w5hu5qeu)/archive/2004/08/06/628.aspx&#34;&gt;More on debugging with SOS.DLL&lt;/a&gt;》或是 John Robbins 的《&lt;a href=&#34;http://msdn.microsoft.com/msdnmag/issues/05/03/Bugslayer/default.aspx&#34;&gt;Mini Dump Snapshots and the New SOS&lt;/a&gt;》。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>9/12 The Sleepy Day</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-09-13-287/</link>
+      <pubDate>Tue, 13 Sep 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-09-13-287/</guid>
+      <description>&lt;p&gt;&amp;ldquo;C++ Internals&amp;rdquo;
+Jim Hogg, Stan Lippman, Bob Davidson, Brandon Bray
+This is the talk that only the C++ Product Unit could give, and they&amp;rsquo;re here to give it.  While understanding the internals of C++ is fascinating from a purely intellectual perspective, the Visual C++ team has found the set of internal knowledge that will also help you become the expert C++ developer.  This talk will cover issues such as the C++ object model (managed and unmanaged), the complexity of app domains when the whole world is not managed, performance internals, and much much more.&lt;/p&gt;
+&lt;p&gt;今天改變主意去聽 C++ Internals 這個 session，但結果真是讓人失望。第一、主題太繁雜沒有重點，第二、主講人的表達技巧有待加強，第三、我的時差嚴重地發作，自從學校畢業後還是第一次要聽課又很想打瞌睡。&lt;/p&gt;
+&lt;p&gt;結果呢，我只好跳槽去聽最後一段的 &amp;ldquo;Framework Design Guidelines&amp;rdquo;，內容還不錯，真是後悔選錯了課程，結束後當然就是直接衝回旅館睡大覺。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Start a Startup</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-05-25-237/</link>
+      <pubDate>Wed, 25 May 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-05-25-237/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://www.joelonsoftware.com/&#34;&gt;Joel Spolsky&lt;/a&gt;, &lt;a href=&#34;http://software.ericsink.com/index.html&#34;&gt;Eric Sink&lt;/a&gt;, 及 &lt;a href=&#34;http://www.paulgraham.com/&#34;&gt;Paul Graham&lt;/a&gt; 這三個人有什麼共同點？&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;他們都是技術圈裡有名的 blogger 及 programmer。&lt;/li&gt;
+&lt;li&gt;比起一般人，他們顯然聰明許多。&lt;/li&gt;
+&lt;li&gt;&lt;b&gt;他們都創立了自己的軟體公司&lt;/b&gt;。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;事實上，我對他們的尊敬多半來自於第三點，原因是他們成功地做到了，而我卻連第一步都還不敢踏出。對我來說，創業最大的誘因是我可以用我認為對的方式及態度來做事，其次才是它有可能帶來的財富，當然最慘的下場可能是落的一文不值。另一方面，即將滿三十歲的我也怕這樣的熱情與精力會隨著年紀的增長而日漸消卻。&lt;/p&gt;
+&lt;p&gt;如果你也是對創業有興趣的軟體人，可以好好地讀讀這兩篇對我影響頗深的文章：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Guy Kawasaki 的《&lt;a href=&#34;http://metacool.typepad.com/metacool/files/1.01.ArtOfTheStart.pdf&#34;&gt;the Art of the Start&lt;/a&gt;》&lt;/li&gt;
+&lt;li&gt;Paul Graham 的《&lt;a href=&#34;http://www.paulgraham.com/start.html&#34;&gt;How to Start a Startup&lt;/a&gt;》&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;你絕對不能放棄，我對自己這麼說。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>The Ten Rules of Performance</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-03-31-229/</link>
+      <pubDate>Thu, 31 Mar 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-03-31-229/</guid>
+      <description>&lt;p&gt;Eric Gunnerson 的 &lt;a href=&#34;http://blogs.msdn.com/ericgu/archive/2005/03/23/401057.aspx&#34;&gt;Design for Performance vs. Tune for performance&lt;/a&gt;
+讓我想起之前讀過 Paul Vick 的這篇文章 &lt;a href=&#34;http://www.panopticoncentral.net/archive/2004/02/10/270.aspx&#34;&gt;The Ten Rules of Performance&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;我自己歸納了幾個了幾個重點:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Don&amp;rsquo;t guess, do profiling.&lt;/li&gt;
+&lt;li&gt;Fix performance problem as early as possible.&lt;/li&gt;
+&lt;li&gt;Performance should be designed in.&lt;/li&gt;
+&lt;li&gt;Memory access is more expensive than CPU cycle.&lt;/li&gt;
+&lt;li&gt;Develop a &amp;ldquo;performance culture&amp;rdquo; in the team/company.&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Jolt Awards 2005</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-03-21-227/</link>
+      <pubDate>Mon, 21 Mar 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-03-21-227/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://subversion.tigris.org/&#34;&gt;Subversion&lt;/a&gt; 拿下 Change and Configuration Management Tools 的首獎。毫無意外地，&lt;a href=&#34;http://www.eclipse.org/&#34;&gt;Eclipse&lt;/a&gt; 仍然蟬連 Languages and Development Environments 的寶座。&lt;/p&gt;
+&lt;p&gt;新增的 Test – Defect Tracking Tools 獎項則是由 &lt;a href=&#34;http://www.fogcreek.com/FogBugz/&#34;&gt;FogBugz&lt;/a&gt; 3.1 獲得，&lt;a href=&#34;http://www.joelonsoftware.com/&#34;&gt;Joel Spolsky&lt;/a&gt; 應該感到驕傲，因為他的書《&lt;a href=&#34;http://www.amazon.com/exec/obidos/ASIN/1590593898/002-0135896-3209660&#34;&gt;Joel on Software&lt;/a&gt;》及產品 FogBugz 同時都得獎了。&lt;p&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Exception Handling Best Practices in .NET</title>
+      <link>https://blog.simplypatrick.com/posts/2005/2005-03-12-225/</link>
+      <pubDate>Sat, 12 Mar 2005 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2005/2005-03-12-225/</guid>
+      <description>&lt;p&gt;Daniel Turini 寫的這篇《&lt;a href=&#34;http://dturini.blogspot.com/2005/02/exception-handling-best-practices-in.html&#34;&gt;Exception Handling Best Practices in .NET&lt;/a&gt;》相當不錯，內容正好跟 Brad Abrams 的《&lt;a href=&#34;http://blogs.msdn.com/brada/archive/2005/03/04/385531.aspx&#34;&gt;Exception handing and Memory Management&lt;/a&gt;》相呼應。&lt;/p&gt;
+&lt;p&gt;我不明白的是，為什麼 Brad Abrams 會認為 &amp;ldquo;catch (Exception e) is your friend&amp;rdquo;？ 因為 catch {&amp;hellip;} 中我所能想到最好的處理方式就是 &amp;ldquo;log the Exception, rethrow it, and let the program terminate&amp;rdquo;；如果不這樣做而把這個 Exception 忽略掉，反而會造成以後偵錯的困難。&lt;/p&gt;
+&lt;p&gt;有興趣的人可以參考 &lt;a href=&#34;http://groups-beta.google.com/group/microsoft.public.dotnet.framework/browse_thread/thread/85cdcd461d59e417/a07e9e93e09cbfa0#a07e9e93e09cbfa0&#34;&gt;Is &amp;ldquo;throw new Exception(&amp;hellip;)&amp;rdquo; a good practice&lt;/a&gt; 這個討論，我喜歡 David Levine 給我的答案。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>AccuRev</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-07-10-170/</link>
+      <pubDate>Sat, 10 Jul 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-07-10-170/</guid>
+      <description>&lt;p&gt;06 Oct 16: 由於 AccuRev 的網站資料有些更新，所以我就把這篇小改了一下，順便移除幾個已經失效的URL。&lt;/p&gt;
+&lt;p&gt;昨天好不容易有空把這一期的 IEEE Software 翻了一 下，發現2004 年的 &lt;A href=&#34;http://www.sdmagazine.com/jolts/&#34;&gt;Jolt Awards&lt;/A&gt; 出爐了，其中的 Change and Configuration Management Tools 獎項是由 &lt;A href=&#34;http://www.accurev.com/&#34;&gt;AccuRev 3.3.1&lt;/A&gt;抱走。&lt;/p&gt;
+&lt;p&gt;AccuRev 的獨特之處在於並非採用傳統的 file-based (如 CVS) 或是 branch-based (Perforce 或是 Subversion) 的思考方式，而是能反映實際工作流程的 &lt;a href=&#34;http://www.accurev.com/product/docs/AccuRev_Streams.pdf&#34;&gt;stream-based&lt;/a&gt; 系統。我建議可以參考&lt;a href=&#34;http://www.accurev.com/product/accurev_demo_new.swf&#34;&gt;這個 demo&lt;/a&gt; 來快速了解其設計概念。&lt;/p&gt;
+&lt;p&gt;其中我最欣賞的兩個特色是 Private Versions 的支援與特別的 Progressive Promotion；Private Versions 允許 programmer 保存自己的更改紀錄而不影響到其他人的工作；Progressive Promotion 則是允許程式碼的改動可以根據工作流程而發佈出來。我相信這樣的版本控制系統應該會慢慢地在市場占有一席之地，其後勢發展是值得注意的。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>The BASIC Programming Language</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-06-30-166/</link>
+      <pubDate>Wed, 30 Jun 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-06-30-166/</guid>
+      <description>&lt;p&gt;&amp;ldquo;It is practically impossible to teach good programming to students that have had a prior exposure to BASIC: as potential programmers they are mentally mutilated beyond hope of regeneration.&amp;rdquo; - Edsger Dijkstra&lt;/p&gt;
+&lt;p&gt;&amp;ldquo;Teaching BASIC should be a criminal offense.&amp;rdquo; - Edsger Dijkstra&lt;/p&gt;
+&lt;p&gt;&amp;ldquo;BASIC - A programming language. Related to certain social diseases in that those who have it will not admit it in polite company.&amp;rdquo;&lt;/p&gt;
+&lt;p&gt;&amp;ldquo;Real Programmers don&amp;rsquo;t write in BASIC. Actually, no programmers write in BASIC&amp;hellip; after age twelve.&amp;rdquo;&lt;/p&gt;
+&lt;p&gt;上面有關 BASIC 的評論是在 &lt;A href=&#34;http://wikiquote.org/&#34;&gt;Wikiquote&lt;/A&gt; 找到的。當然別太嚴肅地對待這些話，我想作者只是純粹幽默而誇張地表達了大多數人對於 BASIC 的看法。 &lt;BR&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Team System</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-06-02-157/</link>
+      <pubDate>Wed, 02 Jun 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-06-02-157/</guid>
+      <description>&lt;p&gt;&lt;A href=&#34;http://www.rational.com&#34;&gt;Rational&lt;/A&gt; 及其他軟體開發工具廠商注意了，因為 Microsoft 即將出招，那就是 &lt;A href=&#34;http://http://msdn.microsoft.com/vstudio/teamsystem/default.aspx&#34;&gt;Visual Studio 2005 Team System&lt;/A&gt;。&lt;/p&gt;
+&lt;p&gt;看了幾個 demo，Team System 跟 Visual Studio 的整合程度相當地高，整體上而言頗令人期待。與開發流程中的&lt;STRONG&gt;設計&lt;/STRONG&gt;、&lt;STRONG&gt;測試&lt;/STRONG&gt;、&lt;STRONG&gt;專案管理&lt;/STRONG&gt;及&lt;STRONG&gt;協同作業&lt;/STRONG&gt;的整合是這個產品的主題：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;代號『Whitehorse』的 &lt;A href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dnvsent/html/vsts-arch.asp&#34;&gt;Distributed Systems Design&lt;/A&gt;。&lt;/li&gt;
+&lt;li&gt;靜態程式分析工具: PREfix &amp;amp; PREfast，詳情可以參考本期 IEEE Software 的 《&lt;A href=&#34;http://research.microsoft.com/~larus/Papers/IEEE_SW_Righting_Software.pdf&#34;&gt;Righting Software&lt;/A&gt;》。&lt;/li&gt;
+&lt;li&gt;&lt;A href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dnvsent/html/vsts-pm.asp&#34;&gt;專案管理的工具&lt;/A&gt;&lt;/li&gt;
+&lt;li&gt;&lt;A href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dnvsent/html/vsts-team.asp&#34;&gt;增強的原始碼管理工具&lt;/A&gt;: 沒提到跟 Visual SourceSafe 的詳細差異，我期待能有一些令人驚訝的改進。&lt;/li&gt;
+&lt;li&gt;&lt;A href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dnvsent/html/vsts-test.asp&#34;&gt;整合的測試環境&lt;/A&gt;: Test-Driven Development 終於可以更簡單地實現。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;只是似乎少了一個 bug tracking system。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>英代爾管理之道</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-04-22-149/</link>
+      <pubDate>Thu, 22 Apr 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-04-22-149/</guid>
+      <description>&lt;p&gt;推薦一本好書《&lt;a href=&#34;http://www.ylib.com/search/ShowBook.asp?BookNo=H1211&#34;&gt;英代爾管理之道&lt;/a&gt;》(原名為 High Output Management)&lt;/p&gt;
+&lt;pre&gt;
+《英代爾管理之道》目錄序
+
+第一篇　早餐廚房
+
+第一章　生產的基本要素
+
+限制步驟／生產運作／複雜化／找出最佳解決方案／測試與驗貨／及早發現及早治療／以美國司法審判為例
+
+第二章　早餐工廠的管理
+
+建立指標／指標配對／黑箱子／控制產出／品質保證／產能／槓桿率
+
+第二篇　團隊合作
+
+第三章　管理槓桿率
+
+經理人的產出是什麼？／老爸，你在公司裡到底在幹嘛？／我的一天／管理活動的槓桿率／授權也是槓桿率／監督原則／增進管理活動的速度／你應該有多少個部屬？／干擾與突發狀況／解決良方
+
+第四章　會議
+
+過程導向會議／任務導向會議
+
+第五章　決策
+
+理想的決策模式／同儕團體症候群／努力求產出／實例應用
+
+第六章　規劃
+
+規劃流程／規劃流程的產出／目標管理／兩個歷史上的案例
+
+第三篇　團隊中的團隊
+
+第七章　早餐廚房進軍全國市場
+
+分店開張／集權或分權？／複雜性日增
+
+第八章　混血型組織
+
+二個極端的組織類型／混血型組織／ＡＢＣ電腦公司組織重整／其他例子
+
+第九章　雙重報告
+
+工廠警衛室該向誰報告？／同儕團體／讓混血型組織有效運作／二度空間組織
+
+第十章　控制行動的模式
+
+自由市場考量／契約義務／文化價值觀／經理人的角色／最適控制模式／實務應用
+
+第四篇　參賽者
+
+第十一章　激勵部屬
+
+基本生理需求／安全感／歸屬感與認同感／地位與尊重的需求／自我實現的需求／金錢及工作相關回饋／恐懼／競賽
+
+第十二章　工作相關成熟度
+
+工作相關成熟度／隨成熟度變化管理風格／生命相關成熟度／建立共同價值觀／管理風格與管理槓桿／好經理難為
+
+第十三章　績效評估
+
+為何費此周章？／決定部屬的績效／告知績效／正反兩面俱陳／衝突性評估／評估明日巨星／其他做法
+
+第十四章　兩件艱鉅的任務
+
+面試／我不幹了！
+
+第十五章　報酬
+
+工作相關回饋／績效獎金制度／底薪制度／陞遷／再回收
+
+第十六章　訓練部屬
+
+誰該負責？／注意事項
+
+最後的叮嚀
+
+生產／槓桿率／績效
+
+中英文名詞對照表
+&lt;/pre&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Real Sucks</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-04-20-147/</link>
+      <pubDate>Tue, 20 Apr 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-04-20-147/</guid>
+      <description>&lt;p&gt;&amp;ldquo;It used to be a great technology company, and now it&amp;rsquo;s a great marketing company,&amp;rdquo; &lt;a href=&#34;http://www.wired.com/news/print/0,1294,62617,00.html&#34;&gt;said MPR&amp;rsquo;s Barnes&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Real Player 是給我使用者經驗最糟的一個 Windows 程式，Real Networks 很明顯地是 &amp;ldquo;You can make money without doing evil.&amp;rdquo; 這條規則的反例。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Hard Reading on Garbage Collection</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-24-134/</link>
+      <pubDate>Tue, 24 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-24-134/</guid>
+      <description>&lt;p&gt;幾篇跟 CLR 的 garbage collection 有關的技術文章：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://blogs.msdn.com/cbrumme/archive/2004/02/20/77460.aspx&#34;&gt;Finalization&lt;/a&gt;, &lt;a href=&#34;http://blogs.msdn.com/cbrumme/&#34;&gt;Chris Brumme&lt;/a&gt; 對於 finalization 的機制做了深入的探討，包括 finalizer 帶來的成本、一些使用限制的緣由、及一些必須謹記在心的原則。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://blogs.gotdotnet.com/tristanc/permalink.aspx/db0f31c8-fd9e-48c6-8093-7879bfb06d77&#34;&gt;Dispose Idiom&lt;/a&gt;, &lt;a href=&#34;http://blogs.gotdotnet.com/tristanc/&#34;&gt;Tristan Cartony&lt;/a&gt; 提供了範例程式說明在各種情況下如何實作 Dispose Idiom。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://discuss.develop.com/archives/wa.exe?A2=ind0010A&amp;amp;L=DOTNET&amp;amp;P=R28572&amp;amp;I=3&#34;&gt;Resource management&lt;/a&gt;, Brian Harry 探討了如何在 garbage collection 的環境下實現 deterministic finalization。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.gotdotnet.com/team/libraries/whitepapers/resourcemanagement/resourcemanagement.aspx&#34;&gt;.NET Framework Resource Management&lt;/a&gt;  把所有的 type 根據管理資源的方式分成了 simple, finalizable, disposable, 及 disposable and finalizable (both) 四種類型，並且詳細地說明了各種類型適用的時機。除此之外，有幾個比較少被談到的主題也涵括在內，如 threading issues, versioning, resource collector pattern, IEnumerable with expensive resources。個人認為是蠻實用的一篇文章。&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Leaky Abstractions</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-05-126/</link>
+      <pubDate>Thu, 05 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-05-126/</guid>
+      <description>&lt;p&gt;Joel 總是能將事情解釋地比別人更好：《 &lt;a href=&#34;http://www.joelonsoftware.com/articles/LeakyAbstractions.html&#34;&gt;The Law of Leaky Abstractions&lt;/a&gt;》(&lt;a href=&#34;http://discuss.fogcreek.com/joelonsoftware/default.asp?cmd=show&amp;amp;ixPost=19200&#34;&gt;相關討論&lt;/a&gt;) 是 Joel 的文章中我最喜歡的幾篇之ㄧ。&lt;/p&gt;
+&lt;p&gt;寫過 Java 或是 .NET 程式的人大概都知道什麼是 garbage collection，甚至連 garbage collection 是什麼都不知道的人還是可以寫出一個正確無誤的程式。在這裡 garbage collection 就是一個簡化記憶體配置機制的抽象概念，這概念大大簡化了程式員要花在追蹤記憶體配置情況的心力；然而從此程式員就過著幸福快樂的日子了嗎？喔不&amp;hellip; 根據 The Law of Leaky Abstractions，garbage collection 在某些情況下反而會帶來更多問題。其中一個明顯的漏洞就是它的不可預期性，也就是你無法預期系統那時候會進行 garbage collection，因此這漏洞逼迫你要了解 garbage collection 的基本運作原理，並且要用&lt;a href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/cpguide/html/cpconimplementingdisposemethod.asp&#34;&gt;另外一個方法&lt;/a&gt;來彌補它。因此 garbage collection 帶給我們的並不是完美的世界，如果你不了解其中的運作原理，很容易誤入背後潛藏的陷阱而不自知。&lt;/p&gt;
+&lt;p&gt;所以最好的策略就是：&lt;b&gt;Try your best to know what&amp;rsquo;s under the hood.&lt;/b&gt;&lt;/p&gt;
+&lt;p&gt;附帶一提，對 .NET Framework 的 garbage collection 機制有興趣的人可以參考 Jeffrey Richter 的兩篇文章，《&lt;a href=&#34;http://msdn.microsoft.com/msdnmag/issues/1100/GCI/default.aspx&#34;&gt;Garbage Collection: Automatic Memory Management in the Microsoft .NET Framework&lt;/a&gt;》及《&lt;a href=&#34;http://msdn.microsoft.com/msdnmag/issues/1200/GCI2/default.aspx&#34;&gt;Garbage Collection-Part 2: Automatic Memory Management in the Microsoft .NET Framework&lt;/a&gt;》。&lt;/p&gt;
+&lt;p&gt;對於我們這些喜歡鑽研系統底層運作原理的人，感謝 The Law of Leaky Abstractions  讓我們在激烈的競爭之下還能混口飯吃。 :-)&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>.NET Performace Optimization</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-04-125/</link>
+      <pubDate>Wed, 04 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-04-125/</guid>
+      <description>&lt;p&gt;Several articles about .NET performace from Microsoft CLR Performance Team:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Gregor Noriskin, &lt;a href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dndotnet/html/highperfmanagedapps.asp&#34;&gt;Writing High-Performance Managed Applications : A Primer&lt;/a&gt;, MSDN.&lt;/li&gt;
+&lt;li&gt;Jan Gray, &lt;a HREF=&#34;http://msdn.microsoft.com/library/en-us/dndotnet/html/fastmanagedcode.asp&#34;&gt;Writing Faster Code: Knowing What Things Cost&lt;/a&gt;, MSDN.&lt;/li&gt;
+&lt;li&gt;Rico Mariani, &lt;a HREF=&#34;http://msdn.microsoft.com/library/en-us/dndotnet/html/dotnetgcbasics.asp&#34;&gt;Garbage Collector Basics and Performance Hints&lt;/a&gt;, MSDN.&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>A Conversation with Anders Hejlsberg</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-02-124/</link>
+      <pubDate>Mon, 02 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-02-124/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://www.artima.com/intv/generics.html&#34;&gt;Anders Hejlsberg 在 Bill Venners 及 Bruce Eckel 的專訪下暢談了 C# 的設計理念&lt;/a&gt;，一共有八篇訪文，我直接條列如下以方便點閱。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/csdes.html&#34;&gt;Part I: The C# Design Process&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/handcuffs.html&#34;&gt;Part II: The Trouble with Checked Exceptions&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/simplexity.html&#34;&gt;Part III: Delegates, Components, and Simplexity&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/nonvirtual.html&#34;&gt;Part IV: Versioning, Virtual, and Override&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/interop.html&#34;&gt;Part V: Contracts and Interoperability&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/abstract.html&#34;&gt;Part VI: Inappropriate Abstractions&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/generics.html&#34;&gt;Part VII: Generics in C#, Java, and C++&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.artima.com/intv/choices.html&#34;&gt;Part VIII: CLR Design Choices&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;訪問的內容篇篇精彩，我個人尤其佩服 Anders 設計 C# 時採行的務實 (pragmatic) 觀點。事實上，了解「一個程式語言為何被如此設計」消極地能避免語言特性的誤用，積極地能讓你寫出更好的程式。&amp;ldquo;Know Why&amp;rdquo; 絕對是精通一個語言的必經過程。&lt;/p&gt;
+&lt;p&gt;這裡是另外一篇更早的專訪 (08/01/2000)：&lt;a href=&#34;http://windows.oreilly.com/news/hejlsberg_0800.html&#34;&gt;Deep Inside C#: An Interview with Microsoft Chief Architect Anders Hejlsberg&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;再過一兩年等 C# 的規格穩定下來，不曉得 Anders 是否會寫一本 &amp;ldquo;The Design and Evolution of C#&amp;rdquo;?&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>軟體公司創業指南</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-02-02-122/</link>
+      <pubDate>Mon, 02 Feb 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-02-02-122/</guid>
+      <description>&lt;p&gt;我快變 Eric 的忠實讀者了：《&lt;a href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/dnsoftware/html/software01262004.asp&#34;&gt;Getting Started with Your Own Software Company&lt;/a&gt;》。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Make More Mistakes</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-01-08-114/</link>
+      <pubDate>Thu, 08 Jan 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-01-08-114/</guid>
+      <description>&lt;p&gt;&amp;ldquo;不畏懼失敗&amp;quot;是所有創業家的特質，而成功的創業家更能夠從失敗中學習；然而從技術人員出身的的創業家往往會陷入『技術至上』的迷思，忘記了他們現在從事的是真實世界的生意。Eric Sink 在 MSDN 的專欄文章《&lt;a title=&#34;Make More Mistakes&#34; href=&#34;http://msdn.microsoft.com/library/en-us/dnsoftware/html/software12292003.asp?frame=true&#34;&gt;Make More Mistakes&lt;/a&gt;》分享了他在創業過程中學到的教訓：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Be careful about fixed-bid projects.&lt;/li&gt;
+&lt;li&gt;Be careful about using bleeding-edge technologies.&lt;/li&gt;
+&lt;li&gt;Small ISVs should do software and stay out of real estate.&lt;/li&gt;
+&lt;li&gt;Investors don&amp;rsquo;t like low-margin business models.&lt;/li&gt;
+&lt;li&gt;A market with no competition ain&amp;rsquo;t.&lt;/li&gt;
+&lt;li&gt;The negative connotations of the word &amp;ldquo;middleman&amp;rdquo; are often deserved.&lt;/li&gt;
+&lt;li&gt;All contracts must be reviewed by an attorney. No exceptions.&lt;/li&gt;
+&lt;li&gt;Cash is supposed to flow from your customers to you, never the other way around.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://wesnerm.blogs.com/net_undocumented/2004/01/platform_vs_app.html&#34;&gt;Small ISVs should build apps, not platforms.&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>SCM 好書推薦</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-12-27-113/</link>
+      <pubDate>Sat, 27 Dec 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-12-27-113/</guid>
+      <description>&lt;p&gt;講到 svn，順便推薦一本不錯的書《&lt;a href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/0201741172/102-7370492-6512164?v=glance&#34;&gt;Software Configuration Management Patterns: Effective Teamwork, Practical Integration&lt;/a&gt;》，自己看 amazon.com 上面的評論吧。書中提到的 pattern 如 Integration Build, Task Level Commit, Codeline Policy, Release Line, Task Branch 等等在實務上都非常地有用。&lt;/p&gt;
+&lt;p&gt;一家軟體公司的專業與否往往看他們怎麼管理程式碼就可以看出來。身為程式員，你服務的公司做到了多少？我想絕大多數的台灣軟體公司都不及格。&amp;lt;sigh&amp;gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>學習</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-12-22-110/</link>
+      <pubDate>Mon, 22 Dec 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-12-22-110/</guid>
+      <description>&lt;p&gt;身為一位 software engineer，你有多久沒有買書了？&lt;/p&gt;
+&lt;p&gt;我尤其指跟 software  development 有關的書。在軟體業已經工作了四年的我很訝異地發現：大部分的人投資在技術書籍上的錢真的少的可憐。許多人的藉口都是『原文書太貴了』、『英文看不懂或是閱讀英文速度很慢』、『網路上找方法就好了，何必買書？』、『下班回家後就已經很累了，根本不想看書』。但我認為這些都是推託的藉口：原文書太貴？也沒看到你買中文書來看；英文能力不好？那你可能不太適合這個行業；網路可以找到所有的答案？網路上的知識都太零散了，沒辦法提供完整而有組織的學習；加班太累，沒時間讀？早點回家唸書，想想該怎麼有效率的工作，你就會發現不用每天加班了。&lt;/p&gt;
+&lt;p&gt;想要在這個產業成功，『積極學習』絶對是不二法門。我強力推薦 Eric 的短文《&lt;a title=&#34;Career Calculus&#34; href=&#34;http://software.ericsink.com/Career_Calculus.html&#34;&gt;Career Calculus&lt;/a&gt;》。你也可以參考 How to Keep Your Job。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>The Two Switches</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-11-20-91/</link>
+      <pubDate>Thu, 20 Nov 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-11-20-91/</guid>
+      <description>&lt;p&gt;一個有趣的易智題目： &lt;a title=&#34;Critical Section - The Two Switches&#34; href=&#34;http://w-uh.com/index.cgi/articles/030530-the_two_switches.html&#34;&gt;The Two Switches&lt;/a&gt;，在 &lt;a title=&#34;Critical Section - Moving Mount Fuji&#34; href=&#34;http://w-uh.com/noframes.cgi/articles/030524-moving_Mount_Fuji.html&#34;&gt;Moving Mount Fuji&lt;/a&gt; 可以找到更多類似的題目。喜歡出這些奇奇怪怪的題目來測試應徵者的公司中，最有名的就是 Microsoft 了，有興趣的可以看 &lt;a title=&#34;Microsoft Interview Questions&#34; href=&#34;http://www.sellsbrothers.com/fun/msiview/&#34;&gt;Microsoft Interview Questions&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;要進 MS 似乎不是件容易的事。 :-)&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>What does the customer want?</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-09-30-77/</link>
+      <pubDate>Tue, 30 Sep 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-09-30-77/</guid>
+      <description>&lt;p&gt;是的，顧客有時連他們想要什麼都說不清楚。&lt;/p&gt;
+&lt;p&gt;p166, Rapid Development, Steve McConnell&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;It is difficult to know whether you can build the product that the customer wants in the desired time frame until you have a detailed understanding of what the customer wants.&lt;br&gt;
+&lt;/blockquote&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Leading a Software Development Team</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-09-15-73/</link>
+      <pubDate>Mon, 15 Sep 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-09-15-73/</guid>
+      <description>&lt;p&gt;我非常喜歡 &lt;a href=&#34;http://www.btinternet.com/~trickyw/&#34;&gt;Richard Whitehead&lt;/a&gt; 的這本《&lt;a href=&#34;http://www.amazon.com/exec/obidos/tg/detail/-/0201675269/ref=ase_rwhitehead-20/103-7892394-1234203?v=glance&amp;amp;s=books&#34;&gt;Leading a Software Development Team&lt;/a&gt;》，書中教導如何有效地管理一個軟體團隊，內容相當地有趣及易懂。在軟體業界，許多人往往是因為優異的技術能力被提升為主管，完全沒有管理經驗的人往往會適應不良，便萌生“還是單純地搞技術比較輕鬆 ”這種想法，而這本書就是這些菜鳥主管的救星啦。整本書以一問一答的方式來組織，瞧瞧下列的這幾個是不是一直困擾你很久的問題：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;ol&gt;
+&lt;li&gt;I&amp;rsquo;ve just been made team leader of a new project. Where do I start?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;6&#34;&gt;
+&lt;li&gt;I have to interview a job applicant. How do I go about it?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;8&#34;&gt;
+&lt;li&gt;How do I earn the respect of my team?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;14&#34;&gt;
+&lt;li&gt;How can I get a good job done when our procedures are so bad?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;19&#34;&gt;
+&lt;li&gt;When should I let someone do a thing their own way, and when should I make them do it my way?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;26&#34;&gt;
+&lt;li&gt;The customer keeps asking for changes and improvements. Can I really say &amp;ldquo;no&amp;rdquo;?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;30&#34;&gt;
+&lt;li&gt;My boss is useless. How can I put up with this?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;33&#34;&gt;
+&lt;li&gt;I have to take a decision, and it involves taking a significant risk. How can I decide whether to take the risk?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;34&#34;&gt;
+&lt;li&gt;Is &amp;ldquo;analysis&amp;rdquo; really necessary, or can I go straight into design?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;ol start=&#34;38&#34;&gt;
+&lt;li&gt;The design of my project is in a mess. The architecture needs restructuring, but there no time to do it. What should I do?&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;一開始我還懷疑 Richard 對於這些問題是否能提出『實用』而『具體』的建議，看了之後便覺得他真的有兩把刷子。有人把 programmer 形容為高傲的貓 - 孤僻而不善群，要帶領一群脾氣古怪的貓的確需要一些技巧。如果你覺得  Steve McConnell 的 《&lt;a href=&#34;http://www.amazon.com/exec/obidos/ASIN/1556159005/qid=1063705181/sr=2-1/ref=sr_2_1/103-7892394-1234203&#34;&gt;Rapid Development&lt;/a&gt;》太沉重，那就試試看這本書吧。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>ISV</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-07-05-66/</link>
+      <pubDate>Sat, 05 Jul 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-07-05-66/</guid>
+      <description>&lt;p&gt;看完《&lt;a title=&#34;What is a Small ISV?&#34; href=&#34;http://software.ericsink.com/Small_ISV_Defined.html&#34;&gt;What is a Small ISV?&lt;/a&gt;》之後才知道，原來 VA Software 在 NASDAQ 的股票代號是 &lt;a href=&#34;http://finance.yahoo.com/q?s=LNUX&amp;amp;d=t&#34;&gt;LNUX&lt;/a&gt;，不過這是題外話。Eric 的重點是軟體供應商 (ISV)；ISV 通常的特色就是『小而美』並且在市場上有很明確的&lt;a href=&#34;http://software.ericsink.com/Positioning.html&#34;&gt;定位&lt;/a&gt;。怎麼樣才算是一個『小而美』的軟體公司？這問題似乎沒有一個固定的答案，不過我們可以從一些已經是現存的小公司來尋找一些蛛絲馬跡，例如 &lt;a href=&#34;http://www.perforce.com&#34;&gt;Perforce&lt;/a&gt; 就是我認為符合『小而美』原則的一家軟體公司。&lt;/p&gt;
+&lt;p&gt;Perforce 把公司的唯一產品 Perforce SCM 定位成 &amp;ldquo;the fast Software Configuration Management System&amp;rdquo;，如果你用過這套產品，你就會知道“他們真正了解客戶需要什麼，而且提出了相當優秀的解決方案”。小公司的經營並不允許做太多錯誤的決策，因此我想 Perforce 秉持著『選擇正確的事情，並把它做到最好』的策略就是其成功的最重要因素。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Eric.Weblog()</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-07-04-64/</link>
+      <pubDate>Fri, 04 Jul 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-07-04-64/</guid>
+      <description>&lt;p&gt;&lt;a title=&#34;Eric.Weblog()&#34; href=&#34;http://software.ericsink.com/index.html&#34;&gt;Eric.Weblog()&lt;/a&gt; 的內容正如它的副標題《Thoughts about .NET, version control, and business from yet another person who invented the Internet》，不過 another person who invented the Internet 指的是？&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>How to Keep Your Job</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-30-58/</link>
+      <pubDate>Mon, 30 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-30-58/</guid>
+      <description>&lt;p&gt;面對中國大陸廉價人力的競爭，台灣的軟體人才該如何因應？ Dave Thomas 的《&lt;a href=&#34;http://www.pragmaticprogrammer.com/talks/HowToKeepYourJob/HTKYJ.html&#34;&gt;How to Keep Your Job&lt;/a&gt;》提供了一些答案，畢竟美國也面臨類似的問題。&lt;/p&gt;
+&lt;p&gt;在這個變化快速的時代，想找一份鐵飯碗是不可能的事了，這篇文章值得一看。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>履歷</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-24-56/</link>
+      <pubDate>Tue, 24 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-24-56/</guid>
+      <description>&lt;p&gt;不管在哪一個行業，履歷是應徵者給人的第一印象，好的履歷更能讓你在眾多應徵者中脫穎而出，但似乎許多人都不懂得如何寫出讓未來的面試官印象深刻的履歷。《&lt;a href=&#34;http://www.oreillynet.com/pub/wlg/3251&#34;&gt;Applying for a Job II: Resumes&lt;/a&gt;》提供了一些方法教大家如何寫一份好的履歷〈尤其是軟體業〉，我認為內容相當中肯。&lt;/p&gt;
+&lt;p&gt;我本身因為工作的關係，有機會看到一些人力網站送來的履歷。我發現大多數人的最大問題就是內容沒有重點並且太過於平舖直述，無法突顯『為什麼你適合這份工作？』這個最重要的訊息。想找一份好工作，先花點時間在你的履歷上吧。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>The Life of a Project</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-18-53/</link>
+      <pubDate>Wed, 18 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-18-53/</guid>
+      <description>&lt;p&gt;朋友轉寄給我的一篇文章《&lt;a href=&#34;http://www.codeproject.com/gen/design/LifeOfProject_Issues_Day1.asp&#34;&gt;The Life of a Project - Issue Tracking: Day 1&lt;/a&gt; 》。&lt;/p&gt;
+&lt;p&gt;我想重點在於作者如何把一個構想 (idea) 經由分析思考而轉化成具體的需求 (requirements)。&lt;/p&gt;
+&lt;p&gt;Software Requirements Analysis and Management 其實是門很大的學問，有興趣的人我推薦 Karl E.  Wiegers 的《&lt;a href=&#34;http://www.amazon.com/exec/obidos/ASIN/0735618798/qid=1056474273/sr=2-1/ref=sr_2_1/102-4422313-7917720&#34;&gt;Software Requirements&lt;/a&gt;》當作入門書。在眾多軟體需求管理的書籍中，它至少讓我讀起來比較不會昏昏欲睡。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Interview</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-11-50/</link>
+      <pubDate>Wed, 11 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-11-50/</guid>
+      <description>&lt;p&gt;《&lt;a href=&#34;http://www.artima.com/wbc/interprog.html&#34;&gt;How to Interview a Programmer&lt;/a&gt;》如果你的公司要找好的 programmer 的話，可以參考這篇文章看看。如果我是面試官的話，下列可能是我的問題：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;請列出最近讀過的技術書籍，並陳述你的讀後心得。&lt;/li&gt;
+&lt;li&gt;請陳述你自認為精通的技術，並回答我所提出的疑問。&lt;/li&gt;
+&lt;li&gt;請陳述對某項技術的觀點或分析不同技術的優缺點。&lt;/li&gt;
+&lt;li&gt;請展示任何以前所寫過的程式碼來證明你的程式設計能力。&lt;/li&gt;
+&lt;li&gt;請批評這段程式碼，並提出任何改進的方法。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;或許你也想知道 &lt;a href=&#34;http://www.icanedu.net/asp/icannews/shownews.asp?newsid=256&#34;&gt;Microsoft 如何面試新人&lt;/a&gt;及&lt;a href=&#34;http://www.pconline.com.cn/pcjob/rs/ms/10301/129150.html&#34;&gt;另一個有趣的面試故事&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Manifesto for Agile Software Development</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-11-51/</link>
+      <pubDate>Wed, 11 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-11-51/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://agilemanifesto.org/&#34;&gt;Agile Manifesto&lt;/a&gt; 代表的是 Agile Software Development 的核心精神。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;We are uncovering better ways of developing software by doing it and helping others do it. Through this work we have come to value:&lt;br&gt;&lt;br&gt;- Individuals and interactions over processes and tools&lt;br&gt;- Working software over comprehensive documentation&lt;br&gt;- Customer collaboration over contract negotiation&lt;br&gt;- Responding to change over following a plan&lt;br&gt;&lt;br&gt;That is, while there is value in the items on the right, we value the items on the left more.&lt;br&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;翻成中文就是&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;- 重視『個體』與『互動』甚於『程序』與『工具』。&lt;br&gt;- 重視『軟體的正常運作』甚於『鉅細靡遺的文件』。&lt;br&gt;- 重視『與客戶的密切合作』甚於『合約的談判』。&lt;br&gt;- 重視『應變的能力』甚於『計畫的追隨』。&lt;br&gt;
+&lt;/blockquote&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>developer vs. programmer</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-06-09-45/</link>
+      <pubDate>Mon, 09 Jun 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-06-09-45/</guid>
+      <description>&lt;blockquote&gt;
+&lt;br&gt;Being a good developer in BCB requires that you remember you are a developer rather than a programmer - which is to say that you have responsibility for much more than the excellence of developed code. You are also responsible for the excellence of the design of the software and databases, the user interface, and for the reusability and maintainability of the result. And of course, an understanding and appreciation of the business context of your development effort is essential.&lt;br&gt;&lt;br&gt;&lt;a href=&#34;http://www.temporaldoorway.com/programming/cbuilder/philosophy/beingabetterprogrammer.htm&#34;&gt;Being A Better C++ Builder Developer&lt;/a&gt;&lt;br&gt;by Mark Cashman&lt;br&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Developer 應該要比 Programmer 看的更廣，更能綜觀全局。就我的觀察，大部分的 programmer 都太過侷限於自己熟悉的領域，甚少花時間去拓展自己專業知識的廣度，造成的結果就是對於許多問題的解決都採取了不恰當的方式，
+所謂『不洽當』指的是『就長期與通盤的考量而言，並非最佳』。&lt;/p&gt;
+&lt;p&gt;作者在這篇文章中對於 program design、UI design、及 database design 提出許多中肯及實用的建議；然而要做到這樣的程度，你需要的是『經驗』及『品味』。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Pair Programming</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-05-12-24/</link>
+      <pubDate>Mon, 12 May 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-05-12-24/</guid>
+      <description>&lt;p&gt;那麼 Robert Fulghum 的《All I Really Need to Know I Learned in Kindergarten 》怎麼又會跟 Extreme Programming 所提倡的 Pair Programming
+扯上關係呢？ 看看這篇曾經刊登於 Communications of the ACM 的文章《&lt;a href=&#34;http://collaboration.csc.ncsu.edu/laurie/Papers/Kindergarten.PDF&#34;&gt;All I Really Need to Know about Pair Programming I Learned In Kindergarten&lt;/a&gt;》吧。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;br&gt;Pair programming is a style of programming in which two programmers work side-by-side at one computer, continuously collaborating on the same design, algorithm, code or test. As discussed below, use of this practice has been demonstrated to improve productivity and quality of software products. Additionally, based on a survey(Williams 1999) of pair programmers (hereafter referred to as “the pair programming survey&#34;), 100% agreed that they had more confidence in their solution when pair programming than when they program alone. Likewise, 96% agreed that they enjoy their job more than when programming alone.&lt;br&gt;
+&lt;/blockquote&gt;
+
+</description>
+    </item>
+    
+    <item>
+      <title>Software Process Management</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-05-08-21/</link>
+      <pubDate>Thu, 08 May 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-05-08-21/</guid>
+      <description>&lt;p&gt;在 &lt;a href=&#34;http://www.processimpact.com/index.shtml&#34; title=&#34;Process Impact -- Software Process Improvement Consulting and Education&#34;&gt;Process Impact – Software Process Improvement Consulting and Education&lt;/a&gt; 可以找到許多 Karl Wiegers 的文章，對於 Software Process Management 有興趣的人值得一看。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

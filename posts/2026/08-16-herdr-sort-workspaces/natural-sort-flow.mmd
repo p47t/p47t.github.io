@@ -1,0 +1,56 @@
+flowchart TD
+    Start["natural_compare(lhs, rhs)"] --> Loop{"雙指標 i, j 尚未到底？"}
+
+    subgraph Branch ["每輪字元分塊比對"]
+        direction TB
+        IsDigit{"lhs[i] 與 rhs[j]<br/>皆為數字？"}
+        
+        NumBranch["<b>🔢 數字區塊比較</b><br/>1. 計算並跳過前導零<br/>2. 量測有效數字長度 (長者大)<br/>3. 等長則逐位比較數值<br/>4. 完全相同則記錄前導零 bias"]
+        
+        CharBranch["<b>🔤 非數字字元比較</b><br/>1. 轉小寫比對 (相異定勝負)<br/>2. 相同則記錄大小寫 bias"]
+        
+        IsDigit -- 是 --> NumBranch
+        IsDigit -- 否 --> CharBranch
+    end
+
+    Diff{"分塊是否相異？"}
+    
+    RetDiff["🛑 回傳分塊勝負結果 (-1 / +1)"]
+    Next["推進指標 i, j"]
+
+    subgraph EndCheck ["尾端長度與平手仲裁 (Loop 結束)"]
+        direction TB
+        LenCheck{"兩字串長度不同？"}
+        RetLen["長度較長者為大 (±1)"]
+        RetBias["回傳累積之 Bias (前導零 / 大小寫)<br/>若完全相同則回傳 0"]
+        
+        LenCheck -- 是 --> RetLen
+        LenCheck -- 否 --> RetBias
+    end
+
+    Loop -- 是 --> IsDigit
+    NumBranch --> Diff
+    CharBranch --> Diff
+
+    Diff -- 相異 --> RetDiff
+    Diff -- 相同 --> Next
+    Next --> Loop
+
+    Loop -- 否 (比對完畢) --> EndCheck
+
+    classDef startNode fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
+    classDef decisionNode fill:#431407,stroke:#fb923c,stroke-width:2px,color:#fff7ed;
+    classDef procNode fill:#1e293b,stroke:#94a3b8,stroke-width:1.5px,color:#f8fafc;
+    classDef retNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef retNegNode fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#fef2f2;
+
+    class Start startNode;
+    class Loop,IsDigit,Diff,LenCheck decisionNode;
+    class NumBranch,CharBranch,Next procNode;
+    class RetLen,RetBias retNode;
+    class RetDiff retNegNode;
+
+    style Branch fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#7dd3fc
+    style EndCheck fill:#111827,stroke:#34d399,stroke-width:1.5px,color:#6ee7b7
+
+    linkStyle default stroke:#38bdf8,stroke-width:2.5px,fill:none;

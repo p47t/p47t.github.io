@@ -1,0 +1,14 @@
+graph LR
+    subgraph 第一次 Decode
+        P1[Prompt: 1000 tokens] --> K1[Key 投影]
+        P1 --> V1[Value 投影]
+        K1 --> Cache1[寫入 KV Cache]
+        V1 --> Cache1
+    end
+    subgraph 之後每個新 Token
+        NT[新 Token: 1 個] --> KN[只算這 1 個的 K 和 V]
+        KN --> Cache2[追加到 KV Cache]
+        Cache1 -.-> Q[Query 用新 token<br/>對整個 cache 做 attention]
+        Cache2 -.-> Q
+        Q --> Next[預測下一個 token]
+    end

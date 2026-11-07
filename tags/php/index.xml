@@ -1,0 +1,461 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/php/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-10-27 23:55:00 -0700 -0700</updated>
+    
+    <item>
+      <title>PHP2Shell</title>
+      <link>https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/</link>
+      <pubDate>Tue, 27 Oct 2026 23:55:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;這週的資安新聞裡，最讓我停下來多看兩眼的是 PHP2Shell：PHP 核心引擎同時被揭露兩個可以遠端執行程式碼（RCE）的記憶體安全漏洞（CVE-2026-109618 與 CVE-2026-109619），CVSS v4.0 評分為 9.2，並於 2026 年 10 月 26 日正式被列入 CISA KEV（已知遭利用漏洞）清單。&lt;/p&gt;
+&lt;p&gt;我自己早就不寫 PHP 了，但這個事件有兩件事跟我們每個人都有關：一是漏洞躲在「應用程式碼寫得再乾淨也沒用」的執行引擎層；二是 AI 輔助的漏洞研究與防禦在此次事件中展現了關鍵影響。這篇文章就來拆解它的技術細節，最後整理成人類工程師與 AI agent 各自適用的防禦清單。&lt;/p&gt;
+&lt;div class=&#34;markdown-alert markdown-alert-note&#34;&gt;
+  &lt;div class=&#34;markdown-alert-title&#34;&gt;&lt;i class=&#34;fa fa-info-circle&#34;&gt;&lt;/i&gt;&lt;span&gt;&amp;nbsp;Note&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class=&#34;markdown-alert-content&#34;&gt;&lt;p&gt;本文依據 &lt;a href=&#34;https://thephp.foundation/blog/2026/10/21/todays-php-security-release-and-how-were-strengthening-php-security/&#34;&gt;PHP Foundation&lt;/a&gt;、&lt;a href=&#34;https://www.php.net/archive/2026.php#2026-10-21-5&#34;&gt;PHP 官方公告&lt;/a&gt;、&lt;a href=&#34;https://www.cisa.gov/known-exploited-vulnerabilities-catalog&#34;&gt;CISA KEV&lt;/a&gt;、&lt;a href=&#34;https://www.cyber.gc.ca/en/alerts-advisories/al26-026-critical-vulnerabilities-impacting-php-cve-2026-109618-cve-2026-109619&#34;&gt;加拿大資安中心（AL26-026）&lt;/a&gt; 以及 Calif、Wiz、Akamai、AWS 等單位的技術揭露整理。文中的攻擊鏈屬於概括性描述，實際利用細節會依 SAPI 架構、建置編譯選項與記憶體佈局而異。&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id=&#34;事件概觀&#34;&gt;事件概觀&lt;/h2&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;項目&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;CVE-2026-109618&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;CVE-2026-109619&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;類型&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;記憶體損壞（OOM 導致未完整初始化結構殘留）&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;use-after-free（跨請求殘留的全域狀態）&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;CVSS v4.0&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;9.2&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;9.2&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;觸發條件&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;不需驗證，透過 HTTP 請求觸發&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;不需驗證，需同一 worker 處理後續請求&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;SAPI / 觸發路徑&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;code&gt;mod_php&lt;/code&gt; 可在請求啟動失敗時觸發；FPM 需應用程式層執行路徑&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;需要同一 worker 存在殘留狀態的 producer 與存取該狀態的 consumer&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;em&gt;註：據 Wiz 等單位分析，早至 PHP 5.4 起的多個版本受其中至少一項問題影響。&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;受影響的執行環境包含 Apache &lt;code&gt;mod_php&lt;/code&gt;（風險最高）、PHP-FPM、php-cgi、FrankenPHP 與 LiteSpeed。&lt;/p&gt;
+&lt;p&gt;官方支援分支的修補版本為 8.5.12、8.4.27、8.3.36 與 8.2.35。針對已結束支援的 PHP 7.4、8.0 與 8.1，PHP 開發團隊本次提供了最小原始碼 backport 修補檔；各大 Linux 發行版與 LTS 維護商亦陸續發布對應的安全套件。&lt;/p&gt;
+&lt;h2 id=&#34;技術細節&#34;&gt;技術細節&lt;/h2&gt;
+&lt;h3 id=&#34;問題的根源zend_bailout-與-longjmp&#34;&gt;問題的根源：&lt;code&gt;zend_bailout&lt;/code&gt; 與 &lt;code&gt;longjmp&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;PHP 對每個請求都有 &lt;code&gt;memory_limit&lt;/code&gt; 這道資源配額限制。在受影響的舊版實作中，配額耗盡本身並不代表 heap 元資料已損壞，但 Zend Engine 會呼叫 &lt;code&gt;zend_bailout()&lt;/code&gt; 中斷目前執行流程。&lt;/p&gt;
+&lt;p&gt;在實作上，Zend Engine 使用 &lt;code&gt;zend_try&lt;/code&gt; 巨集保存當前的跳躍環境 &lt;code&gt;EG(bailout)&lt;/code&gt;，並在發生致命錯誤時由 &lt;code&gt;_zend_bailout()&lt;/code&gt; 呼叫 C 語言的 &lt;code&gt;longjmp&lt;/code&gt;，跳回目前生效的 &lt;code&gt;zend_try&lt;/code&gt; 邊界。&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;longjmp&lt;/code&gt; 的特性在於它直接恢復 CPU 暫存器與 stack pointer，完全不執行沿途 C 函式的收尾程式碼：沒有物件解構、沒有 refcount 遞減，也不會把進行到一半的資料結構復原。更關鍵的是，跳回 bailout 邊界後，依 SAPI 架構與失敗發生的階段，後續仍可能進入請求收尾與釋放（request shutdown）流程。此時的清理程式碼仍然假設內部所有結構都是完整且合法的狀態，因而埋下記憶體損壞的隱患。&lt;/p&gt;
+&lt;p&gt;以下示意未修補版本中一種典型的 OOM 失敗路徑；後續是否執行 request shutdown 或保留 worker 行程，會依不同 SAPI 架構而異：&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/bailout-flow.svg&#34; alt=&#34;bailout-flow.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;官方在修補時重構了錯誤處理架構：將一般 OOM 轉為在虛擬機安全點（VM safe point）處理的 soft OOM；若記憶體用量嚴重超出安全門檻，則直接以 &lt;code&gt;_exit()&lt;/code&gt; 終止行程（hard OOM），避免在不一致狀態下繼續運作。&lt;/p&gt;
+&lt;h3 id=&#34;cve-2026-109618oom-時的未完整初始化狀態&#34;&gt;CVE-2026-109618：OOM 時的未完整初始化狀態&lt;/h3&gt;
+&lt;p&gt;第一個漏洞發生在內部資料結構的建立過程中。例如在解析 multipart 請求與註冊欄位時，&lt;code&gt;HashTable&lt;/code&gt; 的 bucket 計數可能已經遞增，或是結構已被標記為使用中，隨後的鍵值或緩衝區記憶體配置卻遭遇 OOM。&lt;/p&gt;
+&lt;p&gt;此時 &lt;code&gt;zend_bailout()&lt;/code&gt; 的跳躍略過了錯誤恢復邏輯。隨後在 request shutdown 階段，引擎巡訪該資料結構時，看到標記為使用中或依賴計數走訪 bucket，便將未經正確初始化的殘留記憶體視為有效物件嘗試釋放或存取，進而引發記憶體損壞。&lt;/p&gt;
+&lt;h3 id=&#34;cve-2026-109619跨請求殘留的全域狀態&#34;&gt;CVE-2026-109619：跨請求殘留的全域狀態&lt;/h3&gt;
+&lt;p&gt;第二個漏洞涉及跨請求的生命週期管理。在 &lt;code&gt;mod_php&lt;/code&gt; 或 PHP-FPM 這類長壽命 worker 架構中，單一行程會依序處理大量請求。&lt;/p&gt;
+&lt;p&gt;若前一個請求因 &lt;code&gt;zend_bailout&lt;/code&gt; 提前中斷，或是 shutdown 階段在清理完全域狀態後又由非致命診斷邏輯寫入狀態，指向該請求內部記憶體的指標（如 session 內部結構或錯誤回溯指標）就可能殘留在全域變數中。&lt;/p&gt;
+&lt;p&gt;當請求結束、per-request 記憶體池被釋放後，該全域指標便成為懸空指標（dangling pointer）。一旦下一個由同一個 worker 處理的請求在重新初始化該狀態前讀取它，便會觸發典型的 use-after-free。若攻擊者能在下一個請求中控制記憶體佈局並佔用該釋放區塊，就有機會影響後續的間接呼叫。&lt;/p&gt;
+&lt;h3 id=&#34;攻擊面session-upload-progress-與請求前解析&#34;&gt;攻擊面：session upload progress 與請求前解析&lt;/h3&gt;
+&lt;p&gt;為什麼這組漏洞能不需應用程式漏洞就觸發？公開分析指出，關鍵在於 &lt;code&gt;session.upload_progress.enabled&lt;/code&gt; 在許多預設設定中為開啟狀態。當請求帶有相符的表單欄位（如 &lt;code&gt;PHP_SESSION_UPLOAD_PROGRESS&lt;/code&gt;）時，PHP 核心便會在解析 &lt;code&gt;multipart/form-data&lt;/code&gt; 時啟動進度追蹤。&lt;/p&gt;
+&lt;p&gt;這項解析工作發生在應用程式的 PHP 程式碼開始執行之前。&lt;/p&gt;
+&lt;p&gt;然而，不同 SAPI 的利用條件存在關鍵差異：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;在 &lt;code&gt;mod_php&lt;/code&gt; 架構下，請求啟動階段（request startup）若因 OOM 失敗，同行程仍會繼續執行 request shutdown，直接使用半初始化的結構，因此即使請求目標是空白 PHP 檔案或完全不處理上傳的端點，依然可能受到波及。&lt;/li&gt;
+&lt;li&gt;在 PHP-FPM 架構下，若在 startup 階段發生錯誤，child worker 通常會直接結束；已驗證的 FPM 攻擊路徑通常需要請求已成功啟動、並在應用程式層的執行過程中耗盡記憶體。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;此外，除了 session upload progress 之外，一般的多重欄位上傳在 &lt;code&gt;HashTable&lt;/code&gt; 配置時若遭遇 OOM，亦存在類似的不完整狀態問題。&lt;/p&gt;
+&lt;h3 id=&#34;概念性的利用流程&#34;&gt;概念性的利用流程&lt;/h3&gt;
+&lt;p&gt;依照公開的技術分析，一種概念性的利用流程大致如下（不同 SAPI 與目標環境的步驟有所差異）：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;透過特定記憶體洩漏或堆積排布探測行程位址，繞過 ASLR。&lt;/li&gt;
+&lt;li&gt;對目標伺服器發送精心構造的 multipart 請求（觸發 upload progress 或多欄位註冊）。&lt;/li&gt;
+&lt;li&gt;刻意使請求在特定資料結構尚未完成配置時超過 &lt;code&gt;memory_limit&lt;/code&gt;，觸發 &lt;code&gt;zend_bailout&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;針對後續請求進行堆積噴灑（heap spraying），將受控資料填入剛被釋放的懸空結構。&lt;/li&gt;
+&lt;li&gt;影響內部指標存取或函式指標（例如 &lt;code&gt;HashTable&lt;/code&gt; 的 &lt;code&gt;pDestructor&lt;/code&gt;），達成控制流程劫持並執行任意指令。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;要穩定完成整條攻擊鏈需要高度精準的記憶體對齊與 offset 計算。但亞馬遜威脅情報團隊在報告中指出，在公開揭露前便已在 MadPot 蜜罐系統中觀察到針對該漏洞的利用嘗試。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼應用程式碼難以阻擋&#34;&gt;為什麼應用程式碼難以阻擋&lt;/h3&gt;
+&lt;p&gt;傳統 web 安全著重於應用程式層面的「輸入驗證、參數化查詢、避免危險函式」。然而這兩個漏洞深植於 C 語言編寫的執行引擎內部。部分攻擊路徑可在應用程式碼執行之前觸發；其他路徑則依賴應用程式執行期間的狀態累積與錯誤觸發，但兩者都發生在 runtime 內部，無法單靠撰寫乾淨的業務邏輯來規避。&lt;/p&gt;
+&lt;p&gt;WAF 規則雖能過濾已知的特徵 payload，但難以完全覆蓋各種變形編碼與記憶體壓力觸發手法。最根本的防禦手段，只有更新 PHP 執行期本身。&lt;/p&gt;
+&lt;h2 id=&#34;用程式碼看懂-setjmp-與-longjmp&#34;&gt;用程式碼看懂 &lt;code&gt;setjmp&lt;/code&gt; 與 &lt;code&gt;longjmp&lt;/code&gt;&lt;/h2&gt;
+&lt;p&gt;文字描述「跳過清理」很抽象，不如直接看最小的 C 語言範例。以下為解說用之核心邏輯節錄，旨在呈現與 PHP2Shell 根因相同的控制流問題。完整的可編譯原始碼（包含 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/basic.c&#34;&gt;&lt;code&gt;basic.c&lt;/code&gt;&lt;/a&gt;、&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/volatile.c&#34;&gt;&lt;code&gt;volatile.c&lt;/code&gt;&lt;/a&gt;、&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/leak.c&#34;&gt;&lt;code&gt;leak.c&lt;/code&gt;&lt;/a&gt;、&lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/uaf.c&#34;&gt;&lt;code&gt;uaf.c&lt;/code&gt;&lt;/a&gt; 與 &lt;a href=&#34;https://blog.simplypatrick.com/posts/2026/10-27-php2shell-cves/fixed.c&#34;&gt;&lt;code&gt;fixed.c&lt;/code&gt;&lt;/a&gt;）已直接附於本文目錄中，讀者可透過 GCC 與 AddressSanitizer 直接編譯、重現與檢驗。&lt;/p&gt;
+&lt;h3 id=&#34;運作原理&#34;&gt;運作原理&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;setjmp&lt;/code&gt; 與 &lt;code&gt;longjmp&lt;/code&gt; 是 C 標準函式庫提供的非區域跳躍（non-local jump）機制，能在函式呼叫鏈中直接跨層跳回先前的儲存點。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;setjmp(env)&lt;/code&gt;：將當前 CPU 暫存器（以 x86-64 為例，包含 callee-saved 暫存器、stack pointer 與 instruction pointer）保存至 &lt;code&gt;jmp_buf&lt;/code&gt;。初次呼叫時回傳 0。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;longjmp(env, val)&lt;/code&gt;：還原這些暫存器，使控制流程直接回到 &lt;code&gt;setjmp&lt;/code&gt; 的位置。此時 &lt;code&gt;setjmp&lt;/code&gt; 再次回傳，回傳值為 &lt;code&gt;val&lt;/code&gt;（若傳入 0 則回傳 1）。&lt;/li&gt;
+&lt;li&gt;沿途跳過的 stack frames 不會執行任何清理邏輯。此外，它不會備份或還原 stack 與 heap 上的記憶體內容，亦不會撤銷任何已產生的副作用。&lt;/li&gt;
+&lt;/ul&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;setjmp.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;stdio.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; jmp_buf bailout_env;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;deep&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; depth) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (depth &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  deep: fatal condition, jumping out&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;longjmp&lt;/span&gt;(bailout_env, &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);          &lt;span style=&#34;color:#75715e&#34;&gt;/* never returns */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;printf&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  deep: depth=%d, entering&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, depth);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;deep&lt;/span&gt;(depth &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;printf&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  deep: depth=%d, cleanup runs&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, depth);   &lt;span style=&#34;color:#75715e&#34;&gt;/* skipped! */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;setjmp&lt;/span&gt;(bailout_env) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {       &lt;span style=&#34;color:#75715e&#34;&gt;/* first return: 0 */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;run request&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;deep&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;request finished normally&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {                              &lt;span style=&#34;color:#75715e&#34;&gt;/* returns again: 1 */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;bailout: back at the top&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;執行結果：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;run request
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deep: depth=0, entering
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deep: depth=1, entering
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deep: depth=2, entering
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  deep: fatal condition, jumping out
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;bailout: back at the top&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;可以看到 &lt;code&gt;cleanup runs&lt;/code&gt; 從未執行。這正對應了 &lt;code&gt;zend_bailout()&lt;/code&gt; 的行為：遇到致命狀況跳回 bailout 邊界時，中間各層函式的收尾程式碼均被略過。&lt;/p&gt;
+&lt;h3 id=&#34;使用上的幾個陷阱&#34;&gt;使用上的幾個陷阱&lt;/h3&gt;
+&lt;p&gt;這組 API 存在數個與語言標準相關的未定義行為與平台細節：&lt;/p&gt;
+&lt;h4 id=&#34;區域變數的值不保證保留&#34;&gt;區域變數的值不保證保留&lt;/h4&gt;
+&lt;p&gt;依據 C11 標準（§7.13.2.1），在呼叫 &lt;code&gt;setjmp&lt;/code&gt; 的函式內，若具有 automatic storage duration 的區域變數在 &lt;code&gt;setjmp&lt;/code&gt; 與 &lt;code&gt;longjmp&lt;/code&gt; 之間被修改，且未宣告為 &lt;code&gt;volatile&lt;/code&gt;，則跳躍後其值為不確定值（indeterminate）。&lt;/p&gt;
+&lt;p&gt;此程式刻意讀取 indeterminate 的 automatic 變數，依 C11 標準（§7.13.2.1 與附錄 J.2）屬於未定義行為；以下在 GCC &lt;code&gt;-O2&lt;/code&gt; 下的執行結果僅為特定編譯器與最佳化選項下的一次觀察，即使在同一工具鏈下亦不能依賴其一致性：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;setjmp.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;stdio.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;main&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    jmp_buf env;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; plain &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;volatile&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; safe &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;setjmp&lt;/span&gt;(env) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        plain &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;; safe &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;longjmp&lt;/span&gt;(env, &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;printf&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;plain=%d  safe=%d&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;\n&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;&lt;/span&gt;, plain, safe);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在 GCC &lt;code&gt;-O2&lt;/code&gt; 下執行結果：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;plain=0  safe=1&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h4 id=&#34;呼叫-setjmp-的函式不能已經返回&#34;&gt;呼叫 &lt;code&gt;setjmp&lt;/code&gt; 的函式不能已經返回&lt;/h4&gt;
+&lt;p&gt;若呼叫 &lt;code&gt;setjmp&lt;/code&gt; 的函式已經 return，該 stack frame 便已消滅。此時對其 &lt;code&gt;jmp_buf&lt;/code&gt; 呼叫 &lt;code&gt;longjmp&lt;/code&gt; 為嚴重的未定義行為，極易導致 stack 損壞與崩潰。&lt;/p&gt;
+&lt;h4 id=&#34;c-非平凡-destructor-與未定義行為&#34;&gt;C++ 非平凡 destructor 與未定義行為&lt;/h4&gt;
+&lt;p&gt;依據 C++ 標準規範，若以 &lt;code&gt;longjmp&lt;/code&gt; 跳過具有非平凡 destructor（non-trivial destructor）的 automatic 物件，而該物件原本在例外堆疊回溯（stack unwinding）時會被解構，則該跳躍具有未定義行為。RAII 機制在此完全無法提供安全保證。&lt;/p&gt;
+&lt;h4 id=&#34;signal-mask-的保存&#34;&gt;signal mask 的保存&lt;/h4&gt;
+&lt;p&gt;標準的 &lt;code&gt;setjmp&lt;/code&gt; / &lt;code&gt;longjmp&lt;/code&gt; 不保證保存與還原 signal mask。在 POSIX 環境中，若需在跳躍時保留信號遮罩，應改用 &lt;code&gt;sigsetjmp(env, savemask)&lt;/code&gt;（&lt;code&gt;savemask != 0&lt;/code&gt;）與 &lt;code&gt;siglongjmp&lt;/code&gt;。&lt;/p&gt;
+&lt;h3 id=&#34;問題如何被引入標記為使用中卻還沒配置完&#34;&gt;問題如何被引入：標記為使用中，卻還沒配置完&lt;/h3&gt;
+&lt;p&gt;第一個典型錯誤對應 CVE-2026-109618 的「先標記、後配置」。此處示範的是狀態殘留（state leak），而非單純的記憶體洩漏：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; active; &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;buf; } &lt;span style=&#34;color:#66d9ef&#34;&gt;session_t&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;session_t&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;g_session;               &lt;span style=&#34;color:#75715e&#34;&gt;/* process-wide, survives requests */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;handle_request&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;name) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_session &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;tracked_alloc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;g_session);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_session&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;active &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;                 &lt;span style=&#34;color:#75715e&#34;&gt;/* (1) marked active FIRST */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_session&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;buf &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; NULL;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_session&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;buf &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;tracked_alloc&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;64&lt;/span&gt;);    &lt;span style=&#34;color:#75715e&#34;&gt;/* (2) may longjmp away here */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;strncpy&lt;/span&gt;(g_session&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;buf, name, &lt;span style=&#34;color:#ae81ff&#34;&gt;63&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_session&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;buf[&lt;span style=&#34;color:#ae81ff&#34;&gt;63&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;\0&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;若 &lt;code&gt;tracked_alloc&lt;/code&gt; 在配額用盡時觸發 &lt;code&gt;longjmp&lt;/code&gt;，且恰好在第 (2) 行失敗：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[req-A] start
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  bailout: request aborted
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;after request 0: g_session-&amp;gt;active=1 buf=(nil)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code&gt;active&lt;/code&gt; 旗標已被設為 1，但 &lt;code&gt;buf&lt;/code&gt; 仍為空指標。後續若有任何清理或存取邏輯看到 &lt;code&gt;active == 1&lt;/code&gt; 便認定 &lt;code&gt;buf&lt;/code&gt; 有效，就會觸發解參考異常。&lt;/p&gt;
+&lt;h3 id=&#34;問題如何被引入跨請求殘留的懸空指標&#34;&gt;問題如何被引入：跨請求殘留的懸空指標&lt;/h3&gt;
+&lt;p&gt;第二個錯誤對應 CVE-2026-109619。下方示範使用 per-request arena 的模型，請求結束時整塊釋放，但全域指標 &lt;code&gt;g_upload&lt;/code&gt; 參照了 arena 內的物件：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;mem; &lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; used, cap; } &lt;span style=&#34;color:#66d9ef&#34;&gt;arena_t&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;arena_t&lt;/span&gt; arena;                      &lt;span style=&#34;color:#75715e&#34;&gt;/* per-request memory pool */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; jmp_buf bailout_env;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; { &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;on_close)(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;); &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; tag[&lt;span style=&#34;color:#ae81ff&#34;&gt;24&lt;/span&gt;]; } &lt;span style=&#34;color:#66d9ef&#34;&gt;upload_t&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;upload_t&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;g_upload;                 &lt;span style=&#34;color:#75715e&#34;&gt;/* process-wide, lives across requests */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;arena_alloc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; n) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;/* Invariant: arena.used &amp;lt;= arena.cap */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (n &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; arena.cap &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; arena.used) &lt;span style=&#34;color:#a6e22e&#34;&gt;longjmp&lt;/span&gt;(bailout_env, &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);   &lt;span style=&#34;color:#75715e&#34;&gt;/* quota exceeded */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;p &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; arena.mem &lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt; arena.used;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    arena.used &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; n;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; p;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;begin_request&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; limit) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (g_upload)                          &lt;span style=&#34;color:#75715e&#34;&gt;/* &amp;#34;flush the previous upload state&amp;#34; */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;on_close&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag); &lt;span style=&#34;color:#75715e&#34;&gt;/* (3) trusts g_upload blindly */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    arena.mem &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;calloc&lt;/span&gt;(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, limit);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;!&lt;/span&gt;arena.mem) &lt;span style=&#34;color:#a6e22e&#34;&gt;longjmp&lt;/span&gt;(bailout_env, &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    arena.cap &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; limit;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    arena.used &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_upload&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; payload) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;arena_alloc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;g_upload);     &lt;span style=&#34;color:#75715e&#34;&gt;/* (1) allocated from the arena */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;on_close &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; legit_close;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;strncpy&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;progress&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag) &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag[&lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag) &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;\0&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;arena_alloc&lt;/span&gt;(payload);                         &lt;span style=&#34;color:#75715e&#34;&gt;/* OOM here =&amp;gt; longjmp */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;finish_request&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;) {                &lt;span style=&#34;color:#75715e&#34;&gt;/* normal path only */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;on_close&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; NULL;                              &lt;span style=&#34;color:#75715e&#34;&gt;/* (2) reset ... only on this path */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;name, &lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; limit, &lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; payload) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;setjmp&lt;/span&gt;(bailout_env) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;begin_request&lt;/span&gt;(limit);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_upload&lt;/span&gt;(payload);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;finish_request&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  bailout: finish_request() skipped&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (arena.mem) &lt;span style=&#34;color:#a6e22e&#34;&gt;free&lt;/span&gt;(arena.mem);               &lt;span style=&#34;color:#75715e&#34;&gt;/* request shutdown frees the arena */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;memset&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;arena, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt; arena);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;正常情況下，&lt;code&gt;finish_request()&lt;/code&gt; 會將 &lt;code&gt;g_upload&lt;/code&gt; 重設為 &lt;code&gt;NULL&lt;/code&gt;。然而在 OOM 時，&lt;code&gt;longjmp&lt;/code&gt; 跳過了 &lt;code&gt;finish_request()&lt;/code&gt;。以三個連續請求模擬（正常請求、觸發 OOM 的請求、後續正常請求），使用同目錄下完整提供的 &lt;code&gt;uaf.c&lt;/code&gt; 並以 AddressSanitizer 編譯執行：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;gcc -g -O0 -fsanitize&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;address -o uaf uaf.c &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; ./uaf&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;輸出結果：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 1: normal]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  close(progress)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 2: attacker exceeds the limit]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  bailout: finish_request() skipped
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 3: innocent victim]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;=================================================================
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ERROR: AddressSanitizer: heap-use-after-free on address 0x7546f95e0080
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;READ of size 8 at 0x7546f95e0080 thread T0
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    #0 in begin_request uaf.c:25
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    #1 in run uaf.c:48
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    #2 in main uaf.c:65&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;其因果鏈展示了生命週期管理的失效：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;請求 2 因 &lt;code&gt;longjmp&lt;/code&gt; 提前中斷，&lt;code&gt;g_upload&lt;/code&gt; 未被清空。&lt;/li&gt;
+&lt;li&gt;請求 2 的收尾釋放了 arena，&lt;code&gt;g_upload&lt;/code&gt; 成為懸空指標。&lt;/li&gt;
+&lt;li&gt;請求 3 由同一個 worker 處理，&lt;code&gt;begin_request&lt;/code&gt; 未經重新驗證即存取 &lt;code&gt;g_upload&lt;/code&gt;，觸發 heap-use-after-free。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在真實攻擊中，若攻擊者能在釋放後、存取前透過受控配置填入惡意位址，該函式指標呼叫便可能演變為控制流程劫持。&lt;/p&gt;
+&lt;h3 id=&#34;修正單一出口與最後才發布&#34;&gt;修正：單一出口與最後才發布&lt;/h3&gt;
+&lt;p&gt;修正的核心原則在於：改變架構，讓所有路徑（無論正常或異常）共用單一收尾邏輯，並將全域狀態的發布延後至所有易失敗操作完成之後：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;end_request&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;) {                   &lt;span style=&#34;color:#75715e&#34;&gt;/* the single exit, ALL paths */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; NULL;                              &lt;span style=&#34;color:#75715e&#34;&gt;/* request-scoped globals reset here */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (arena.mem) &lt;span style=&#34;color:#a6e22e&#34;&gt;free&lt;/span&gt;(arena.mem);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;memset&lt;/span&gt;(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;arena, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt; arena);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_upload&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; payload) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;upload_t&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;u &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;arena_alloc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;u);         &lt;span style=&#34;color:#75715e&#34;&gt;/* build a local first */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    u&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;on_close &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; legit_close;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;strncpy&lt;/span&gt;(u&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;progress&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(u&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag) &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    u&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag[&lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(u&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag) &lt;span style=&#34;color:#f92672&#34;&gt;-&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;\0&amp;#39;&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;arena_alloc&lt;/span&gt;(payload);                         &lt;span style=&#34;color:#75715e&#34;&gt;/* may bail out: g_upload untouched */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    g_upload &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; u;                                 &lt;span style=&#34;color:#75715e&#34;&gt;/* publish LAST */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;char&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;name, &lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; limit, &lt;span style=&#34;color:#66d9ef&#34;&gt;size_t&lt;/span&gt; payload) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;setjmp&lt;/span&gt;(bailout_env) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;begin_request&lt;/span&gt;(limit);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;parse_upload&lt;/span&gt;(payload);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;on_close&lt;/span&gt;(g_upload&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;tag);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#a6e22e&#34;&gt;puts&lt;/span&gt;(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;  bailout&amp;#34;&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;end_request&lt;/span&gt;();                                &lt;span style=&#34;color:#75715e&#34;&gt;/* runs whether we bailed out or not */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;使用同目錄下完整提供的 &lt;code&gt;fixed.c&lt;/code&gt;，再次透過 AddressSanitizer 編譯驗證：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 1: normal]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  close(progress)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 2: attacker exceeds the limit]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  bailout
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[request 3: innocent victim]
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  close(progress)&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;測試乾淨通過無誤。這項範例具體落實了兩項原則：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;最後才發布：在區域指標 &lt;code&gt;u&lt;/code&gt; 完成所有配置與初始化後，才賦值給全域變數 &lt;code&gt;g_upload&lt;/code&gt;。若中途失敗，全域狀態不受污染。&lt;/li&gt;
+&lt;li&gt;單一出口：無論正常執行或發生 bailout，&lt;code&gt;end_request&lt;/code&gt; 均必定執行，確保跨請求狀態獲得一致清理。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這些原則在後面「如何避免在自己的程式裡重蹈覆轍」一節中亦會進一步推廣至通用架構。&lt;/p&gt;
+&lt;h2 id=&#34;發現的過程ai-輔助研究與協調修補&#34;&gt;發現的過程：AI 輔助研究與協調修補&lt;/h2&gt;
+&lt;p&gt;此事件的發現歷程依據 PHP Foundation 與相關研究單位的時間線記錄如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;2026 年 8 月 11 日，Calif 透過 AI 輔助分析通報了相關 OOM 錯誤路徑問題。&lt;/li&gt;
+&lt;li&gt;2026 年 8 月 24 日，Wiz 亦獨立發現了延伸的利用向量並通報 PHP 安全團隊。&lt;/li&gt;
+&lt;li&gt;2024 年其實已有靜態稽核指出 PHP 在 OOM 處理時存在非典型邏輯，但當時並未證明其危害。現代 AI 工具的長處，正在於能串接分散的狀態錯誤並輔助推導出端到端的驗證鏈。&lt;/li&gt;
+&lt;li&gt;10 月 20 日，相關漏洞資訊在公開管道提前流出，促使原訂 10 月 22 日發布的協調修補提前於 10 月 21 日正式公開。&lt;/li&gt;
+&lt;li&gt;在公開發布前，AWS 的 MadPot 蜜罐系統即已監測到早期的利用嘗試。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;值得注意的是，現有公開研究足以證明 AI 能有效協助資安研究員分析程式碼與建構測試 PoC，但目前尚無公開證據顯示野外攻擊者已普遍採用 AI 自動化發動入侵。不過可以預見的是，這類工具的普及可能進一步壓縮漏洞修補的時間窗口。&lt;/p&gt;
+&lt;h2 id=&#34;給人類工程師的防禦實務&#34;&gt;給人類工程師的防禦實務&lt;/h2&gt;
+&lt;h3 id=&#34;第一優先更新-php&#34;&gt;第一優先：更新 PHP&lt;/h3&gt;
+&lt;p&gt;最有效的防禦是直接升級 PHP 執行環境至修補版本：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;PHP 8.5 請升至 8.5.12 以上&lt;/li&gt;
+&lt;li&gt;PHP 8.4 請升至 8.4.27 以上&lt;/li&gt;
+&lt;li&gt;PHP 8.3 請升至 8.3.36 以上&lt;/li&gt;
+&lt;li&gt;PHP 8.2 請升至 8.2.35 以上&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;對於使用容器環境的團隊，僅更新應用程式碼不會改變底層映像。必須重新拉取基礎映像（base image）、重新建置並重新部署。&lt;/p&gt;
+&lt;p&gt;此外，在主機或容器內執行 &lt;code&gt;php -v&lt;/code&gt; 僅能確認 CLI 執行檔版本；必須針對實際提供對外服務的 SAPI（例如 PHP-FPM pool、Apache &lt;code&gt;mod_php&lt;/code&gt;）確認其二進位版本、啟用之擴充套件與載入的 &lt;code&gt;php.ini&lt;/code&gt; 設定，並重啟對應的服務行程。&lt;/p&gt;
+&lt;p&gt;針對使用 PHP 7.4、8.0 與 8.1 等已 EOL 版本的系統，若短期內無法升級主版本，應優先套用官方提供的 backport 原始碼修補檔，或升級由 Linux 發行版（如 Ubuntu Pro、Debian LTS）維護的回補套件。&lt;/p&gt;
+&lt;h3 id=&#34;暫時緩解措施&#34;&gt;暫時緩解措施&lt;/h3&gt;
+&lt;p&gt;若無法立即完成版本更新，可透過設定縮小曝險面：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-ini&#34; data-lang=&#34;ini&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; 關閉 session upload progress（除非應用程式明確需要）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;session.upload_progress.enabled&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;0&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; 關閉致命錯誤回溯（僅適用於 PHP 8.5 以上版本）&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;fatal_error_backtraces&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;0&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;針對這兩項設定需注意以下要點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;必須在 &lt;code&gt;php.ini&lt;/code&gt; 或 SAPI pool 設定檔中配置並重啟 worker，確保在任何請求處理前即已生效；無法依賴應用程式執行期的 &lt;code&gt;ini_set()&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fatal_error_backtraces&lt;/code&gt; 僅存在於 PHP 8.5 及更新版本，舊版無此設定項。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;session.upload_progress.enabled = 0&lt;/code&gt; 僅關閉了其中一個常見入口，若應用程式接受其他大型 multipart 上傳，底層 &lt;code&gt;HashTable&lt;/code&gt; 配置仍可能因記憶體耗盡而觸發類似問題。&lt;/li&gt;
+&lt;li&gt;官方針對 CVE-2026-109618 的另一項緩解建議是將 PHP &lt;code&gt;memory_limit&lt;/code&gt; 設為 &lt;code&gt;-1&lt;/code&gt;。這能移除 PHP 配額耗盡這個可被精確計算的觸發點，但底層系統配置（如 &lt;code&gt;mmap&lt;/code&gt;）若失敗仍可能觸發 bailout。此外，應以管理層設定強制套用並重啟 worker，確認沒有個別設定恢復有限額度；若轉由作業系統層級管控記憶體，應使用 cgroup 記憶體上限，避免使用 &lt;code&gt;LimitAS=&lt;/code&gt; 或 &lt;code&gt;LimitDATA=&lt;/code&gt;（對應 &lt;code&gt;RLIMIT_AS&lt;/code&gt; / &lt;code&gt;RLIMIT_DATA&lt;/code&gt;），因為後者會導致系統呼叫配置直接失敗，反而再次落入脆弱路徑。但需注意 cgroup 記憶體限制可能導致 worker，甚至同群組中的其他行程被系統強制終止，需評估請求中斷與服務可用性；這仍不能取代版本修補。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;縱深防禦&#34;&gt;縱深防禦&lt;/h3&gt;
+&lt;p&gt;除了執行環境修補，建議在基礎架構層落實以下防禦：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;縮短 worker 壽命：在 PHP-FPM 中將 &lt;code&gt;pm.max_requests&lt;/code&gt; 設為 1，可切斷同一 child worker 接續處理下一個請求的利用路徑（但無法防禦單一請求內的狀態損壞，且會帶來顯著的行程建立開銷）；一般情況下設定較小的數值，能有效縮短殘留狀態的存活窗口。&lt;/li&gt;
+&lt;li&gt;淘汰 &lt;code&gt;mod_php&lt;/code&gt;：避免使用與 Apache 共用行程空間的 &lt;code&gt;mod_php&lt;/code&gt;，改採獨立行程架構的 PHP-FPM，並按站台配置隔離的 pool 與執行帳號。&lt;/li&gt;
+&lt;li&gt;系統層級權限限縮：透過 seccomp 過濾系統呼叫、以 AppArmor 或 SELinux 限制存取路徑，並透過容器隔離命名空間，同時於網路層配置嚴格的 egress 規則。&lt;/li&gt;
+&lt;li&gt;請求大小與結構限制：即使請求未宣告 &lt;code&gt;Content-Length&lt;/code&gt;（如 chunked 傳輸），反向代理與伺服器端仍須限制實際接收與解碼後的請求總量，並針對 multipart 中的 part 數量、內部 header 長度、欄位總數與巢狀深度設定上限（例如 Nginx 的 &lt;code&gt;client_max_body_size&lt;/code&gt; 僅能限制整體 body 大小，仍需搭配內部欄位數與解析限制）。&lt;/li&gt;
+&lt;li&gt;異常指標監控：監控 &lt;code&gt;Allowed memory size exhausted&lt;/code&gt; 錯誤頻率突增、worker 異常崩潰（segfault）次數，以及 PHP 行程是否有衍生非預期子行程（如 &lt;code&gt;/bin/sh&lt;/code&gt;、&lt;code&gt;curl&lt;/code&gt;）的行為。&lt;/li&gt;
+&lt;li&gt;全面清點資產：清查內部所有正在運行的 PHP 服務，包含邊緣系統與內部管理工具，避免因遺漏舊版環境而產生防禦缺口。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;給-ai-agent-的防禦實務&#34;&gt;給 AI agent 的防禦實務&lt;/h2&gt;
+&lt;p&gt;在本次事件中，AI agent 展現了不同面向的應用，以下針對三種角色分別探討防禦要點：&lt;/p&gt;
+&lt;h3 id=&#34;維運與開發助手&#34;&gt;維運與開發助手&lt;/h3&gt;
+&lt;p&gt;當 agent 負責協助伺服器管理、相依性更新或部署作業時：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;要求驗證實際服務環境：指示 agent 檢視實際運作中的 SAPI 與設定輸出（如檢驗當前 FPM pool 或檢查套件修訂號），而非單純讀取靜態的 &lt;code&gt;Dockerfile&lt;/code&gt; 或 &lt;code&gt;composer.json&lt;/code&gt; 即判定修補完成。&lt;/li&gt;
+&lt;li&gt;先提出評估再請求核准：要求 agent 於執行更新前列出所有受影響主機、容器名稱及當前版本，並在重大變更前維持人類確認機制。&lt;/li&gt;
+&lt;li&gt;查證設定項版本相容性：避免 agent 盲目將新版設定（如 &lt;code&gt;fatal_error_backtraces&lt;/code&gt;）套用至不支援的舊版本，應要求其以實際運作中的 SAPI 與 pool 設定確認有效性，CLI 輸出僅作為輔助參考。&lt;/li&gt;
+&lt;li&gt;最小權限憑證原則：限制 agent 取得的 API token 與 SSH 金鑰權限範圍與存續時間，降低憑證外洩衝擊。&lt;/li&gt;
+&lt;li&gt;將外部資安資訊視為不可信輸入：資安分析、PoC 腳本或技術討論可能隱含針對 agent 的 prompt injection。指派任務時應明訂「只分析、不執行」原則，禁止 agent 直接在非受控環境嘗試執行 PoC 程式碼。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;程式碼審查者&#34;&gt;程式碼審查者&lt;/h3&gt;
+&lt;p&gt;當運用 AI 進行安全性原始碼審查時：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;聚焦錯誤處理與跨請求狀態：指示 agent 特別審視記憶體配置失敗路徑、bailout 或例外發生時的清理邏輯，以及全域或靜態變數在請求結束時是否被徹底重設。&lt;/li&gt;
+&lt;li&gt;要求產出可重現的檢驗資產：要求 agent 針對疑點提供最小可重現測試、fault injection 腳本或 fuzzing harness，以客觀驗證取代純文字推論。&lt;/li&gt;
+&lt;li&gt;隔離驗證環境：所有涉及潛在脆弱性驗證的動作，皆應於拋棄式沙箱環境內執行。&lt;/li&gt;
+&lt;li&gt;人類專業複核：保持審查紀律，agent 的報告作為假設參考，由資深工程師確認問題真實性與修補方案。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;防禦保護目標&#34;&gt;防禦保護目標&lt;/h3&gt;
+&lt;p&gt;若 AI agent 系統本身之後台、排程或外圍服務採用 PHP 建置，該服務若遭入侵亦可能波及整體 agent 平台。應落實網路分區與微隔離架構，將 agent 核心模型服務、憑證儲存庫與 web 前端徹底切隔，降低橫向移動的機會與影響範圍。&lt;/p&gt;
+&lt;h2 id=&#34;如何避免在自己的程式裡重蹈覆轍&#34;&gt;如何避免在自己的程式裡重蹈覆轍&lt;/h2&gt;
+&lt;p&gt;從 PHP2Shell 的根本成因出發，若在開發自研 runtime、框架或長壽命服務，可借鏡以下工程原則。&lt;/p&gt;
+&lt;h3 id=&#34;設計層不要讓提早離開破壞不變量&#34;&gt;設計層：不要讓提早離開破壞不變量&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;非區域跳躍前維持狀態一致：若架構中使用 &lt;code&gt;longjmp&lt;/code&gt;、例外或 &lt;code&gt;panic&lt;/code&gt;，務必遵守「兩階段提交」原則。先在區域變數完成所有記憶體配置與欄位初始化，確認無失敗可能後，最後才發布至全域狀態或標記為有效。&lt;/li&gt;
+&lt;li&gt;善用結構化資源管理：優先採用具語言層面保障的機制（如 C++ RAII 在作用域結束時解構、Rust 的 &lt;code&gt;Drop&lt;/code&gt;、Go 在函式返回時執行的 &lt;code&gt;defer&lt;/code&gt;）。若使用 Rust 需留意 &lt;code&gt;panic=abort&lt;/code&gt; 不會進行 stack unwinding；使用 Go 則需注意 &lt;code&gt;os.Exit&lt;/code&gt; 會略過 &lt;code&gt;defer&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;區域配置器（arena）隔離：為單一請求配置專屬 arena，請求結束時整塊釋放。但必須嚴格禁止 request-owned 指標逸出至長壽命全域結構中；若確有暫存需要，必須在釋放 arena 前主動撤銷所有外部參照。&lt;/li&gt;
+&lt;li&gt;明確界定全域狀態生命週期：嚴格列管所有全域與靜態變數，明確規範在請求異常終止時的重設機制，並納入常態審查清單。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;驗證層專門測試錯誤路徑&#34;&gt;驗證層：專門測試錯誤路徑&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;針對配置器進行 fault injection：在測試套件中模擬記憶體配置失敗，遍歷各配置點，檢驗在提早中斷時系統狀態是否依然一致。&lt;/li&gt;
+&lt;li&gt;針對協定解析器進行 fuzzing：對所有在身分驗證與核心業務邏輯前執行的協定解析器、上傳剖析器進行專項 fuzzing，並於嚴格的記憶體配額限制下測試邊界行為。&lt;/li&gt;
+&lt;li&gt;整合 sanitizer 工具鏈：於 CI 環境常態啟用 AddressSanitizer（偵測 use-after-free、buffer overflow 與 double free）、UndefinedBehaviorSanitizer（偵測各類未定義行為）與 MemorySanitizer（追蹤未初始化記憶體讀取）。需注意 ASan 與 MSan 記憶體模型互斥，應拆分至不同的 CI 建置任務中執行。&lt;/li&gt;
+&lt;li&gt;請求邊界狀態對比：在整合測試中，於每個請求結束後自動檢查全域狀態是否復歸初始值，及早攔截狀態殘留問題。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;語言與架構層縮小爆炸半徑&#34;&gt;語言與架構層：縮小爆炸半徑&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;高風險解析模組優先採用記憶體安全語言：處理不可信輸入的模組（如協定與上傳剖析）優先以 Rust 或 Go 開發，降低記憶體管理失誤機率。&lt;/li&gt;
+&lt;li&gt;啟用二進位強化編譯旗標：全面開啟 PIE、full RELRO、stack canary、&lt;code&gt;_FORTIFY_SOURCE&lt;/code&gt; 與控制流完整性（CFI）防護，提高漏洞利用門檻。&lt;/li&gt;
+&lt;li&gt;權限分離架構：負責解析外部複雜輸入的處理程序應獨立為低權限行程，避免與敏感憑證或核心業務資料庫共用行程權限。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;流程層提升修補反應速度&#34;&gt;流程層：提升修補反應速度&lt;/h3&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;面向&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;實務做法&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;資產清點&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;維護完整的軟體物料清單（SBOM），精準掌握各服務使用的 runtime 與其詳細修訂版本&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;部署演練&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;建立標準化的緊急升級作業流程，包含映像檔重建、逐步部署與快速回復舊版本機制&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;生命週期追蹤&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;定期檢視所有相依元件的 EOL 期限，及早規畫主版本升級路線&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;情資追蹤&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;訂閱 CISA KEV 與相關上游安全性公告，將已遭野外利用之威脅列為最高修補等級&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;把-ai-放進稽核流程但維持驗證紀律&#34;&gt;把 AI 放進稽核流程，但維持驗證紀律&lt;/h3&gt;
+&lt;p&gt;AI agent 可用來補足傳統靜態分析的盲點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;專責審核例外路徑與狀態清理：讓 agent 聚焦於極端錯誤處理與資源回收流程，並要求提供可重現之測試程式碼。&lt;/li&gt;
+&lt;li&gt;沙箱安全邊界：所有涉及安全性驗證之動作一律於隔離沙箱執行。&lt;/li&gt;
+&lt;li&gt;提高稽核頻率：將 AI 輔助分析整合至重要變更與版本發布流程中，常態性掃描潛在狀態管理問題。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;小結&#34;&gt;小結&lt;/h2&gt;
+&lt;p&gt;PHP2Shell 這組漏洞給我們幾個實際的借鏡：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;longjmp&lt;/code&gt; 這一類非區域跳躍機制本身很常見，但如果在跳躍時沒有把內部狀態復原或安全隔離，在長壽命 worker 運行環境中就容易破壞資料一致性，累積成高危漏洞。&lt;/li&gt;
+&lt;li&gt;預設啟用的功能特性（如 session upload progress）往往會在不知不覺中擴大攻擊面，不用的功能主動關閉，始終是穩健的維運習慣。&lt;/li&gt;
+&lt;li&gt;執行引擎層級的弱點無法透過應用程式碼完全防堵，保持執行環境與底層函式庫即時更新，永遠是資安防禦的第一線。&lt;/li&gt;
+&lt;li&gt;AI 工具普及加速了漏洞挖掘與利用鏈合成的節奏，防禦方也該建立自動化測試與嚴謹的驗證流程，讓安全修補能跑在潛在威脅之前。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;若目前維運之環境中仍有運行 PHP 服務，建議立即核對實際提供服務之 runtime 版本與設定狀態，確認已落實修補或相應的緩解措施。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

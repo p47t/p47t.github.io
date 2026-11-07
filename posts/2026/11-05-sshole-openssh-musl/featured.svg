@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-labelledby="title desc">
+  <title id="title">*sshole: OpenSSH on musl libc 認證繞過</title>
+  <desc id="desc">解析 OpenSSH 防計時攻擊與 musl SHA-crypt 256 位元組限制碰撞造成的認證繞過漏洞</desc>
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#16161e"/>
+      <stop offset="50%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+
+    <!-- Accent Bar Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f7768e"/>
+      <stop offset="35%" stop-color="#ff9e64"/>
+      <stop offset="70%" stop-color="#bb9af7"/>
+      <stop offset="100%" stop-color="#7dcfff"/>
+    </linearGradient>
+
+    <!-- Glow Gradients -->
+    <linearGradient id="redGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0.03"/>
+    </linearGradient>
+    <linearGradient id="greenGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0.03"/>
+    </linearGradient>
+
+    <!-- Subtle Grid Background -->
+    <pattern id="bgGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#414868" stroke-width="0.5" stroke-opacity="0.2"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="675" fill="url(#bgGrad)"/>
+  <rect width="1200" height="675" fill="url(#bgGrid)"/>
+
+  <!-- Top-left Accent Bar -->
+  <rect x="50" y="46" width="130" height="4" rx="2" fill="url(#accentGrad)"/>
+
+  <!-- Title & Subtitle -->
+  <g font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, 'Microsoft JhengHei', sans-serif">
+    <text x="50" y="104" font-size="36" font-weight="700" fill="#c0caf5">*sshole: OpenSSH on musl libc 認證繞過</text>
+    <text x="52" y="142" font-size="18" fill="#7dcfff">46 年歷史交會 · 密碼長度 257–1024 位元組 · 密碼欄位為 * 帳號的認證繞過</text>
+  </g>
+
+  <!-- Left Card: Terminal Simulation -->
+  <g transform="translate(50, 172)">
+    <!-- Terminal Outer Frame -->
+    <rect width="525" height="410" rx="12" fill="#1f2335" stroke="#414868" stroke-width="1.5"/>
+    <!-- Titlebar -->
+    <rect width="525" height="42" rx="12" fill="#24283b"/>
+    <rect y="30" width="525" height="12" fill="#24283b"/>
+    <circle cx="22" cy="21" r="6" fill="#f7768e"/>
+    <circle cx="42" cy="21" r="6" fill="#e0af68"/>
+    <circle cx="62" cy="21" r="6" fill="#9ece6a"/>
+    <text x="262" y="27" font-family="'Source Code Pro', Consolas, monospace" font-size="13" fill="#a9b1d6" text-anchor="middle">流程示意 — ssh alpine@target-host</text>
+
+    <!-- Terminal Content -->
+    <g transform="translate(24, 68)" font-family="'Source Code Pro', Consolas, monospace" font-size="13.5" line-height="1.5">
+      <!-- Prompt 1 -->
+      <text x="0" y="0" fill="#7aa2f7">$ <tspan fill="#c0caf5">ssh -o PasswordAuthentication=yes alpine@10.0.0.42</tspan></text>
+      <!-- Password Prompt -->
+      <text x="0" y="28" fill="#a9b1d6">alpine@10.0.0.42's password: <tspan fill="#e0af68">AAAA... [257–1024 bytes]</tspan></text>
+
+      <!-- Success Banner -->
+      <g transform="translate(0, 52)">
+        <rect width="477" height="60" rx="8" fill="url(#greenGlow)" stroke="#9ece6a" stroke-width="1.2"/>
+        <text x="16" y="25" font-size="13.5" font-weight="bold" fill="#9ece6a">Welcome to Alpine Linux 3.20 (musl libc)!</text>
+        <text x="16" y="47" font-size="12" fill="#c0caf5">Kernel 6.6-lts on x86_64 / sshd: OpenSSH 9.7p1 (without PAM)</text>
+      </g>
+
+      <!-- Prompt 2: id command -->
+      <text x="0" y="142" fill="#7aa2f7">alpine:~$ <tspan fill="#c0caf5">id</tspan></text>
+      <text x="0" y="166" fill="#9ece6a" font-weight="bold">uid=1000(alpine) gid=1000(alpine) groups=1000(alpine),10(wheel)</text>
+
+      <!-- Prompt 3: shadow check -->
+      <text x="0" y="202" fill="#7aa2f7">alpine:~$ <tspan fill="#c0caf5">doas grep '^alpine:' /etc/shadow</tspan></text>
+      <text x="0" y="226" fill="#f7768e" font-weight="bold">alpine:*:19842:0:99999:7:::</text>
+      <text x="38" y="246" font-size="11.5" fill="#ff9e64">└─ 密碼欄位為 "*"（透過 doas 提權檢視）</text>
+
+      <!-- Explanatory note at bottom of terminal -->
+      <g transform="translate(0, 274)">
+        <rect width="477" height="42" rx="6" fill="rgba(125, 207, 255, 0.12)" stroke="#7dcfff" stroke-width="1"/>
+        <text x="14" y="26" font-family="Segoe UI, sans-serif" font-size="12" fill="#7dcfff">ℹ 流程示意：無 PAM、shadow 為 * 且具連線權限時觸發認證成功</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Right Card: Collision Cascade -->
+  <g transform="translate(605, 172)">
+    <!-- Code Window Outer Frame -->
+    <rect width="545" height="410" rx="12" fill="#1f2335" stroke="#414868" stroke-width="1.5"/>
+    <!-- Titlebar -->
+    <rect width="545" height="42" rx="12" fill="#24283b"/>
+    <rect y="30" width="545" height="12" fill="#24283b"/>
+    <text x="24" y="27" font-family="Segoe UI, sans-serif" font-size="14" font-weight="600" fill="#bb9af7">漏洞碰撞鏈分析 (Vulnerability Cascade)</text>
+    <text x="521" y="27" font-family="'Source Code Pro', monospace" font-size="12" fill="#565f89" text-anchor="end">auth-passwd.c</text>
+
+    <!-- Code Steps -->
+    <g transform="translate(24, 60)" font-family="'Source Code Pro', Consolas, monospace">
+      
+      <!-- Step 1 -->
+      <g transform="translate(0, 0)">
+        <rect width="497" height="46" rx="6" fill="#16161e" stroke="#414868" stroke-width="1"/>
+        <text x="14" y="28" font-size="13" fill="#7dcfff">pw_password = <tspan fill="#f7768e" font-weight="bold">"*"</tspan>;</text>
+        <text x="210" y="28" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6">// 1980 Unix: /etc/passwd 特殊標記</text>
+      </g>
+
+      <!-- Step 2 -->
+      <g transform="translate(0, 56)">
+        <rect width="497" height="46" rx="6" fill="#16161e" stroke="#414868" stroke-width="1"/>
+        <text x="14" y="28" font-size="13" fill="#7dcfff">salt = <tspan fill="#bb9af7">pick_salt()</tspan>;</text>
+        <text x="210" y="28" font-family="Segoe UI, sans-serif" font-size="12" fill="#a9b1d6">// 2016 OpenSSH 防計時攻擊借用 salt</text>
+      </g>
+
+      <!-- Step 3 -->
+      <g transform="translate(0, 112)">
+        <rect width="497" height="52" rx="6" fill="#16161e" stroke="#ff9e64" stroke-width="1.2"/>
+        <text x="14" y="24" font-size="13" fill="#7dcfff">hash = <tspan fill="#ff9e64">crypt(pw_len_300, salt)</tspan>;</text>
+        <text x="14" y="44" font-family="Segoe UI, sans-serif" font-size="11" fill="#e0af68">└─ 2012 musl: SHA-crypt 長度 &gt;256 位元組失敗，回傳 <tspan font-family="monospace" font-weight="bold" fill="#f7768e">"*"</tspan></text>
+      </g>
+
+      <!-- Step 4: Collision Highlight Box -->
+      <g transform="translate(0, 174)">
+        <rect width="497" height="74" rx="8" fill="url(#redGlow)" stroke="#f7768e" stroke-width="1.8"/>
+        <text x="16" y="28" font-size="15" font-weight="bold" fill="#f7768e">strcmp(hash, pw_password) == 0</text>
+        <text x="16" y="52" font-size="13" font-weight="bold" fill="#c0caf5">➔ strcmp(<tspan fill="#f7768e">"*"</tspan>, <tspan fill="#f7768e">"*"</tspan>) == 0 <tspan fill="#9ece6a">【比對吻合，認證通過】</tspan></text>
+      </g>
+
+      <!-- Step 5: Summary conclusion -->
+      <g transform="translate(0, 258)">
+        <rect width="497" height="68" rx="6" fill="#16161e" stroke="#565f89" stroke-width="1"/>
+        <text x="16" y="24" font-family="Segoe UI, sans-serif" font-size="12" font-weight="bold" fill="#7dcfff">OpenSSH 10.6p2 修補：</text>
+        <text x="16" y="44" font-family="'Source Code Pro', monospace" font-size="12" fill="#9ece6a">strlen(pw_password) &gt;= MIN_PASSWORD_HASH_LEN</text>
+        <text x="16" y="60" font-family="Segoe UI, sans-serif" font-size="11" fill="#a9b1d6">明確要求雜湊長度至少為 4，並以 freezero 妥善管理記憶體</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom Area: Tech Tags & Branding -->
+  <g transform="translate(50, 628)">
+    <!-- Tag 1: OpenSSH -->
+    <rect x="0" y="-18" width="95" height="32" rx="6" fill="rgba(125, 207, 255, 0.15)" stroke="#7dcfff" stroke-width="1.2"/>
+    <text x="47" y="3" font-family="'Source Code Pro', monospace" font-size="13" fill="#7dcfff" text-anchor="middle">OpenSSH</text>
+
+    <!-- Tag 2: musl libc -->
+    <rect x="107" y="-18" width="95" height="32" rx="6" fill="rgba(255, 158, 100, 0.15)" stroke="#ff9e64" stroke-width="1.2"/>
+    <text x="154" y="3" font-family="'Source Code Pro', monospace" font-size="13" fill="#ff9e64" text-anchor="middle">musl libc</text>
+
+    <!-- Tag 3: Alpine Linux -->
+    <rect x="214" y="-18" width="115" height="32" rx="6" fill="rgba(158, 206, 106, 0.15)" stroke="#9ece6a" stroke-width="1.2"/>
+    <text x="271" y="3" font-family="'Source Code Pro', monospace" font-size="13" fill="#9ece6a" text-anchor="middle">Alpine Linux</text>
+
+    <!-- Tag 4: Auth Bypass -->
+    <rect x="341" y="-18" width="115" height="32" rx="6" fill="rgba(247, 118, 142, 0.15)" stroke="#f7768e" stroke-width="1.2"/>
+    <text x="398" y="3" font-family="'Source Code Pro', monospace" font-size="13" fill="#f7768e" text-anchor="middle">Auth Bypass</text>
+
+    <!-- Tag 5: OpenSSH 10.6p2 -->
+    <rect x="468" y="-18" width="145" height="32" rx="6" fill="rgba(187, 154, 247, 0.15)" stroke="#bb9af7" stroke-width="1.2"/>
+    <text x="540" y="3" font-family="'Source Code Pro', monospace" font-size="13" fill="#bb9af7" text-anchor="middle">OpenSSH 10.6p2</text>
+  </g>
+
+  <!-- Branding bottom-right -->
+  <text x="1150" y="632" font-family="Segoe UI, sans-serif" font-size="16" fill="rgba(255, 255, 255, 0.45)" text-anchor="end">
+    blog.simplypatrick.com
+  </text>
+</svg>

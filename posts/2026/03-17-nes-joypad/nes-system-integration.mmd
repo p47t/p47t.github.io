@@ -1,0 +1,18 @@
+graph TD
+    ROM[iNES ROM] --> Mapper[Mapper<br/>bank switching]
+    Mapper --> Bus[CPU Bus]
+    Mapper --> PPU[PPU]
+    Bus --> CPU[6502 CPU]
+
+    subgraph CompositeBusIo
+        PpuBusIo[PPU Bus I/O<br/>catch-up ticking]
+        JP1[Joypad 1]
+        JP2[Joypad 2]
+    end
+
+    Bus -->|I/O delegate| CompositeBusIo
+    PpuBusIo --> PPU
+
+    CPU_CYC[cpu_cycles<br/>Rc Cell u64] -.->|shared| CPU
+    CPU_CYC -.->|shared| PpuBusIo
+    PPU_CYC[ppu_cycles<br/>Rc Cell u64] -.->|shared| PpuBusIo

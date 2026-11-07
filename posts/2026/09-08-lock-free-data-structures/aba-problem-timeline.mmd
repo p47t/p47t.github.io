@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant T1 as 執行緒 1 (T1)
+    participant Stack as 共享狀態 (head)
+    participant T2 as 執行緒 2 (T2)
+
+    Note over Stack: head 指向 A<br/>A.next = B, B.next = C
+    T1->>Stack: 讀取 head = A
+    T1->>T1: 讀取 next = A.next (值為 B)
+    Note over T1: T1 被作業系統 Context Switch 掛起！<br/>(暫停在 CAS 執行前)
+
+    T2->>Stack: 執行 pop() 成功取出 A
+    T2->>Stack: 執行 pop() 成功取出 B
+    Note over Stack: 此時 head 指向 C
+    T2->>T2: 將節點 A 重新利用或修改
+    T2->>Stack: 執行 push(A) (A.next 設為 C)
+    Note over Stack: 目前 head 重新指向 A！<br/>但拓撲已變成 A -> C
+
+    Note over T1: T1 被喚醒，準備執行 CAS！
+    T1->>Stack: CAS(head, expected=A, desired=B)
+    Note over Stack,T1: 檢查 head 目前值為 A，與 expected 相等！<br/>CAS 宣告成功！將 head 設為 B！
+    Note over Stack: 災難降臨：<br/>head 被指向了已被釋放或移走的 B！<br/>節點 C 永久遺失，引發記憶體損毀！
