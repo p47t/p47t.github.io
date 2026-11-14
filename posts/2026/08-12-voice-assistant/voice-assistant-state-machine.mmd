@@ -1,0 +1,29 @@
+%%{init: { 'themeVariables': { 'fontSize': '16px', 'subGraphTitleFontSize': '18px' } }}%%
+flowchart TD
+    subgraph Listening ["1. State::Listening (背景監聽)"]
+        direction TD
+        A1["cpal 麥克風音訊擷取 (16kHz 重採樣)"] --> A2["WebRTC APM (降噪 NS + AGC2 增益)"]
+        A2 --> A3["openWakeWord (1280 樣本視窗比對)"]
+    end
+
+    subgraph Recording ["2. State::Recording (使用者口述錄音)"]
+        direction TD
+        B1["10ms 視窗計算 RMS 音訊能量"] --> B2["終端機即時繪製彩色音量波形條"]
+        B2 --> B3["VAD 判定: 靜音 > 1.5s 或 時間 > 8.0s"]
+    end
+
+    subgraph Processing ["3. State::Processing (Gemma-4 多模態推論)"]
+        direction TD
+        C1["寫入錄音至 temp_query.wav"] --> C2["Gemma-4 Multimodal Projector (Audio Embedding)"]
+        C2 --> C3["llama-cpp-4 (Vulkan GPU 加速串流生成)"]
+    end
+
+    subgraph Speaking ["4. State::Speaking (語音反饋與重置)"]
+        direction TD
+        D1["Windows PowerShell System.Speech 語音朗讀"] --> D2["清空音訊緩衝區 & 防範自激迴音"]
+    end
+
+    A3 -->|"偵測到喚醒詞 (High Beep)"| Recording
+    B3 -->|"錄音完成 (Low Beep)"| Processing
+    C3 -->|"推論完成"| Speaking
+    D2 -->|"恢復背景監聽"| Listening

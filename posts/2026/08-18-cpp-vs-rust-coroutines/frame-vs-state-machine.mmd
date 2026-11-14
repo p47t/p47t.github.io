@@ -1,0 +1,32 @@
+flowchart LR
+    subgraph CP_Mem["⚡ C++ Coroutine Frame (動態配置)"]
+        direction TB
+        CF1["🏷️ 函式指標 (Resume / Destroy Fn)"]
+        CF2["🎯 promise_type 實例 (結果、Continuation 指標)"]
+        CF3["💾 捕獲之函式參數與跨暫停點區域變數"]
+        CF4["🔢 狀態機暫停點索引 (Suspend Index)"]
+        CF_Note["📌 <b>預設配置於 Heap (operator new)</b><br/>可透過 HALO 最佳化內聯至 Stack (Best-Effort)"]
+        CF1 --- CF2 --- CF3 --- CF4 --- CF_Note
+    end
+
+    subgraph RS_Mem["🦀 Rust 匿名 State Machine (編譯期確定)"]
+        direction TB
+        RF1["🏷️ Variant 0 (初始狀態)"]
+        RF2["⏸️ Variant 1 (暫停點 1 + 局部變數)"]
+        RF3["⏸️ Variant 2 (暫停點 2 + 局部變數)"]
+        RF4["🔢 Discriminant 標籤 (Tag)"]
+        RF_Note["📌 <b>編譯期確定大小 (Zero Heap 保證)</b><br/>大小由最大 Variant 決定 (空間可能膨脹)"]
+        RF1 --- RF2 --- RF3 --- RF4 --- RF_Note
+    end
+
+    CP_Mem ~~~ RS_Mem
+
+    classDef cppMem fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef rustMem fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef itemNode fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#1e293b;
+    classDef noteNode fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,stroke-dasharray:3 3,color:#334155;
+
+    class CP_Mem cppMem;
+    class RS_Mem rustMem;
+    class CF1,CF2,CF3,CF4,RF1,RF2,RF3,RF4 itemNode;
+    class CF_Note,RF_Note noteNode;

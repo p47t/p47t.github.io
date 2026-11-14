@@ -1,0 +1,862 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>GhosPTT 終端機實驗 - 以 WebGPU 與 libghostty-vt 打造現代 PTT，探索三十年老派 BBS 的 WebAssembly 整合架構</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-07-ghosptt-webgpu-terminal/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=acb7736f167fb9b8b57f6af3dfb6c99c" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-07-ghosptt-webgpu-terminal/"/>
+  <meta property="og:title" content="GhosPTT 終端機實驗 - 以 WebGPU 與 libghostty-vt 打造現代 PTT，探索三十年老派 BBS 的 WebAssembly 整合架構"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-11-07 00:00:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="c"/>
+  
+  <meta property="og:article:tag" content="zig"/>
+  
+  <meta property="og:article:tag" content="webgpu"/>
+  
+  <meta property="og:article:tag" content="ghostty"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">264</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">35</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c">c <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">32</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/11-06-libghostty-modern-c-library/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            libghostty 1.0 與現代 C 函式庫的設計修養
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">GhosPTT 終端機實驗</h1>
+      
+      <div class="post-subtitle">以 WebGPU 與 libghostty-vt 打造現代 PTT，探索三十年老派 BBS 的 WebAssembly 整合架構</div>
+      
+      <div class="post-meta">
+        <span class="post-date">November 7, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/c"><span class="label label-primary">c</span></a>
+        
+        <a href="/tags/zig"><span class="label label-primary">zig</span></a>
+        
+        <a href="/tags/webgpu"><span class="label label-primary">webgpu</span></a>
+        
+        <a href="/tags/ghostty"><span class="label label-primary">ghostty</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/11-07-ghosptt-webgpu-terminal/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>在上一篇探討 <a href="/posts/2026/11-07-ghosptt-webgpu-terminal//posts/2026/11-06-libghostty-modern-c-library/">libghostty 1.0 的 C 函式庫設計修養</a> 中，我們深入剖析了 <a href="https://mitchellh.com">Mitchell Hashimoto</a> 如何透過嚴格的 C ABI、不透明控制代碼與自訂記憶體配置器，打造出能跨越作業系統與語言邊界的現代虛擬終端核心。在它的建置管線中，有一條非常引人注目的路徑：能夠直接輸出 <code>wasm32-freestanding</code> 的獨立 <a href="https://webassembly.org/">WebAssembly</a> 產物。</p>
+<p>這次我把 <code>libghostty-vt</code> 編譯成 WebAssembly，再搭配 <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API">WebGPU</a> 繪製它輸出的終端狀態。GhosPTT 是這項實驗的原型專案；選擇 PTT 作為題材，是想觀察 Big5、ANSI 與字元寬度在這套組合下會遇到哪些整合挑戰。</p>
+<p>若要真正驗證一個現代虛擬終端引擎（VT emulator）的實力，單純的 shell 提示字元往往不足以暴露出邊界問題。我們需要一個足夠複雜、充滿高密度字元排版、特殊轉義控制碼與歷史相容包袱的測試場景。對台灣的軟體開發者來說，最深植人心的經典終端應用，莫過於擁有三十年歷史的 <a href="https://www.ptt.cc/">PTT（批踢踢實業坊）</a>——它融合了嚴苛的 80×24 ANSI 雙位元組色塊藝術、歷史遺留的雙色字編碼、<a href="https://www.unicode.org/reports/tr11/">東亞字元寬度不明確（East Asian Ambiguous）</a> 問題，以及高頻率的畫面重繪，是檢驗 <code>libghostty-vt</code> 解析能力與狀態機嚴謹度的極佳試煉場。</p>
+<p>在此必須先明確釐清專案定位：官方以 HTML5 打造的 <a href="https://term.ptt.cc"><code>term.ptt.cc</code></a> 歷經多年淬鍊，具備成熟穩定的連線架構與普及的社群基礎；GhosPTT（專案原始碼收錄於 <a href="https://github.com/p47t/ghosptt"><code>ghosptt</code></a>）的初衷並非為了取代官方網頁版，而是一個純粹的技術 prototype 與開源展示，核心目標是探索：當我們將工業級的 C/<a href="https://ziglang.org/">Zig</a> 終端核心（<code>ghostty-vt.wasm</code>）作為 headless engine 搬上現代 Web，能激盪出什麼樣的架構想像與技術可能？</p>
+<p>透過 GhosPTT，我們嘗試以 <code>libghostty-vt</code> 為底層中樞，向上銜接 WebGPU 實例化繪製管線、以片元數學幾何避免依賴字型度量所造成的 ANSI 色塊接縫、疊加復古 CRT 著色器，並補齊 Big5-UAO 補完計畫支援、Telnet 閒置保活、響應式視窗縮放與貼圖燈箱導覽等現代 Web 互動。這篇文章將完整拆解 GhosPTT 的設計與實作細節，聊聊如何以現代圖形與 WebAssembly 技術，為老派終端核心打造一場具體且紮實的技術演示。</p>
+<h2 id="先玩再說線上即時體驗">先玩再說：線上即時體驗</h2>
+<p>講再多架構理論，都不如直接在瀏覽器裡親自摸摸看。下方為透過 Cloudflare Workers 與 WebGPU / Canvas 2D 雙渲染引擎驅動的 GhosPTT 即時展示：</p>
+<iframe
+  title="GhosPTT 線上即時展示"
+  src="https://ghosptt.simplypatrick.workers.dev"
+  style="width: 100%; height: 820px; border: 1px solid #2a2a37; border-radius: 8px; background: #0c0c0f;"
+  loading="lazy"
+  allow="clipboard-read; clipboard-write; fullscreen">
+</iframe>
+<div class="markdown-alert markdown-alert-tip">
+  <div class="markdown-alert-title"><i class="fa fa-lightbulb-o"></i><span>&nbsp;Tip</span>
+  </div>
+  <div class="markdown-alert-content"><ul>
+<li><strong>操作方式</strong> - 點擊終端機畫面即可取得鍵盤焦點，可使用方向鍵與 Enter 瀏覽 PTT；若在行動裝置或想快速嘗試，亦可直接點擊頂部快捷按鈕（免打字登入 <code>guest</code>、方向鍵導航、切換 WebGPU / Canvas 2D 渲染器與 CRT 著色器開關）。</li>
+<li><strong>獨立視窗體驗</strong> - 若需要更大的閱讀空間或習慣使用全螢幕快捷鍵，也可以直接開啟獨立頁面 <a href="https://ghosptt.simplypatrick.workers.dev">ghosptt.simplypatrick.workers.dev</a>。</li>
+</ul></div>
+</div><h2 id="架構全景wasm-核心通訊管線與雙渲染引擎">架構全景：WASM 核心、通訊管線與雙渲染引擎</h2>
+<p>要在瀏覽器中以 <code>libghostty-vt</code> 驅動高密度的 PTT 串流展示，必須串聯網路通訊、字元編碼解碼、終端機狀態機與硬體加速繪圖四大層級：</p>
+
+
+  
+    <img src="/posts/2026/11-07-ghosptt-webgpu-terminal/architecture.svg" alt="architecture.svg" class="img-responsive post-image">
+  
+
+<p>整個資料流由左至右、由上而下清晰分工：</p>
+<ol>
+<li><strong>連線與邊緣代理</strong> - 瀏覽器透過 WebSocket 連線至同源的 <code>/bbs</code> 路徑。生產環境由部署於邊緣的 <a href="https://workers.cloudflare.com/">Cloudflare Workers</a> 轉送 WebSocket 並注入合規的 <code>Origin: https://term.ptt.cc</code> 標頭；同時實作定期 <code>TELNET IAC NOP</code>（<code>0xFF 0xF1</code>）心跳保活機制，降低長文閱覽時因長時間無資料傳輸帶來的連線逾時斷線風險；本機開發時則由 <a href="https://vite.dev/">Vite</a> plugin 直接以 <code>tls.connect</code> 連向 <code>ws.ptt.cc</code> 並指定 <code>ALPNProtocols: ['http/1.1']</code>，跨越官方網關的來源與協定防護。</li>
+<li><strong>通訊協定與編碼解析管線</strong> - PTT 伺服器傳回的二進位位元組串流首先進入狀態機過濾 Telnet IAC 指令，在收到 <a href="https://datatracker.ietf.org/doc/html/rfc1073"><code>IAC DO NAWS</code></a> 時自動回覆 80×24 視窗大小。接著載入 256 KiB 二進位表支援 <a href="https://zh.wikipedia.org/wiki/Unicode%E8%A3%9C%E5%AE%8C%E8%A8%88%E7%95%AB">Big5-UAO 2.50（Unicode 補完計畫）</a> 涵蓋簡體字、日文假名與特殊符號，並由 <code>PttBig5StreamDecoder</code> 處理雙色字（DBCS 中斷 ANSI）跨封包拼接與 Mode 2027 寬度對齊。</li>
+<li><strong>WebAssembly 終端核心</strong> - 乾淨的字串餵入 891 KiB 的 <code>ghostty-vt.wasm</code>。這正是本次技術展示的終端狀態核心：由 <code>libghostty-vt</code> 獨立維護 80×24 畫面網格、屬性矩陣、游標移動與文字選取，前端完全不需要自行手寫容易出錯的終端狀態機，體現了 headless 終端函式庫的模組化優勢。</li>
+<li><strong>硬體加速雙渲染引擎</strong> - 前端從 WASM 提取畫面快照後，WebGPU 實例化繪製管線（Instanced Quad）以單一 draw call 完成背景色塊、動態 CJK 字形紋理圖集（atlas，基準尺寸為 2048×2048）與純數學幾何 ANSI 色塊運算，再透過第二階段片元著色器疊加復古 CRT 曲面、掃描線與鄰近像素光暈（不支援 WebGPU 的裝置則自動降級至 <a href="https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D">Canvas 2D</a>），並具備 5:3 視窗自適應縮放。</li>
+<li><strong>現代 Web 互動增強層</strong> - 畫面上即時識別出超連結，當滑鼠懸停於 <a href="https://imgur.com/">Imgur</a> 或圖片網址時彈出浮窗預覽，點擊進入全螢幕燈箱與文章相簿模式，並於燈箱開啟時讓出方向鍵操作；同時維護 UAO/Big5 逆向編碼表，確保中文、日文與符號剪貼簿貼上可正常送往 PTT。</li>
+</ol>
+<h2 id="webassembly-整合透過型別清單減少-c-abi-硬編碼">WebAssembly 整合：透過型別清單減少 C ABI 硬編碼</h2>
+<p>在 WebAssembly 與 JavaScript / TypeScript 的互通實作中，最繁瑣且脆弱的環節莫過於結構體的記憶體對齊與欄位位移（field offset）。若手動在前端宣告 offset 數值，只要編譯器旗標或核心結構稍有調整，記憶體讀寫就會立刻錯位。</p>
+<p><code>libghostty-vt</code> 在這次整合中使用的一項設計，就在於它在唯讀資料段中內嵌了一份由編譯期反射生成的 JSON 型別清單。在 GhosPTT 啟動時（<code>src/ghostty-wasm.ts</code>），我們不需要依賴任何 <a href="https://emscripten.org/">Emscripten</a> 或外部綁定生成器，直接以原生 WebAssembly API 載入模組：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">GhosttyVtTerminal</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">async</span> <span style="color:#a6e22e">create</span>(<span style="color:#a6e22e">wasmUrl</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;./ghostty-vt.wasm&#39;</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Promise</span>&lt;<span style="color:#f92672">GhosttyVtTerminal</span>&gt; {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">response</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">fetch</span>(<span style="color:#a6e22e">wasmUrl</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">ok</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">throw</span> <span style="color:#66d9ef">new</span> Error(<span style="color:#e6db74">`HTTP </span><span style="color:#e6db74">${</span><span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">status</span><span style="color:#e6db74">}</span><span style="color:#e6db74"> loading </span><span style="color:#e6db74">${</span><span style="color:#a6e22e">wasmUrl</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">wasmBytes</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">response</span>.<span style="color:#a6e22e">arrayBuffer</span>();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">utf8Decoder</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">TextDecoder</span>(<span style="color:#e6db74">&#39;utf-8&#39;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">wasmModule</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">await</span> <span style="color:#a6e22e">WebAssembly</span>.<span style="color:#a6e22e">instantiate</span>(<span style="color:#a6e22e">wasmBytes</span>, {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">env</span><span style="color:#f92672">:</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">log</span><span style="color:#f92672">:</span> (<span style="color:#a6e22e">ptr</span>: <span style="color:#66d9ef">number</span>, <span style="color:#a6e22e">len</span>: <span style="color:#66d9ef">number</span>) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">exp</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">wasmModule</span>.<span style="color:#a6e22e">instance</span>.<span style="color:#a6e22e">exports</span> <span style="color:#66d9ef">as</span> <span style="color:#a6e22e">GhosttyWasmExports</span>;
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">bytes</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Uint8Array</span>(<span style="color:#a6e22e">exp</span>.<span style="color:#a6e22e">memory</span>.<span style="color:#a6e22e">buffer</span>, <span style="color:#a6e22e">ptr</span>, <span style="color:#a6e22e">len</span>);
+</span></span><span style="display:flex;"><span>          <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">log</span>(<span style="color:#e6db74">&#39;[ghostty-vt]&#39;</span>, <span style="color:#a6e22e">utf8Decoder</span>.<span style="color:#a6e22e">decode</span>(<span style="color:#a6e22e">bytes</span>));
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">exports</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">wasmModule</span>.<span style="color:#a6e22e">instance</span>.<span style="color:#a6e22e">exports</span> <span style="color:#66d9ef">as</span> <span style="color:#a6e22e">GhosttyWasmExports</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 從 WASM 唯讀資料段讀取 NUL 結尾的 JSON ABI 描述
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">jsonPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_type_json</span>();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">memBytes</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Uint8Array</span>(<span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">memory</span>.<span style="color:#a6e22e">buffer</span>, <span style="color:#a6e22e">jsonPtr</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">nulIdx</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">memBytes</span>[<span style="color:#a6e22e">nulIdx</span>] <span style="color:#f92672">!==</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">nulIdx</span><span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">jsonStr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">utf8Decoder</span>.<span style="color:#a6e22e">decode</span>(<span style="color:#a6e22e">memBytes</span>.<span style="color:#a6e22e">subarray</span>(<span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">nulIdx</span>));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">layout</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">parse</span>(<span style="color:#a6e22e">jsonStr</span>) <span style="color:#66d9ef">as</span> <span style="color:#a6e22e">GhosttyTypeLayout</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">GhosttyVtTerminal</span>(<span style="color:#a6e22e">exports</span>, <span style="color:#a6e22e">layout</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過解析這份 JSON，多個核心結構體大小（<code>GhosttyRenderStateColors.size</code>、<code>GhosttyPoint.size</code> 等）與列舉值（<code>GhosttyTerminalOption.values</code>）在執行期取得。</p>
+<p>值得指出的是，作為驗證性質的原型實作，GhosPTT 目前仍假設執行於 32 位元 WASM 環境（指標大小為 4 位元組），且在掃描底層資料時保留了部分手動位移與位元遮罩運算（例如在 <code>src/ghostty-wasm.ts</code> 中讀取 <code>GhosttyPoint</code> 標記、選取範圍位移，以及解析行儲存格的樣式旗標）。型別清單的實務價值，在於省去了手動維護大量易碎的 C 結構體綁定程式碼，在原型開發效率與底層讀取效能之間取得良好平衡。</p>
+<h3 id="持久控制代碼與共用-scratch-緩衝區">持久控制代碼與共用 scratch 緩衝區</h3>
+<p>避免每影格重複跨越 WASM 邊界配置與釋放記憶體，降低配置器抖動與記憶體碎片。GhosPTT 在建構式中一次性配置所有持久控制代碼（opaque handle）與共用 scratch buffers：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 1. 建立 80x24 終端實例
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_alloc_opaque</span>();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">check</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_terminal_new</span>(<span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>, <span style="color:#a6e22e">COLS</span>, <span style="color:#a6e22e">ROWS</span>),
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;ghostty_terminal_new&#39;</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">termPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_take_opaque</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 建立渲染狀態與行迭代器
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">check</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_render_state_new</span>(<span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>),
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;ghostty_render_state_new&#39;</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">renderStatePtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_take_opaque</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">check</span>(
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_render_state_row_iterator_new</span>(<span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>),
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#39;ghostty_render_state_row_iterator_new&#39;</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">rowIterPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_take_opaque</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">opaqueSlotPtr</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ...（略去 row_cells 初始化）
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 預先配置可重複使用的結構體緩衝區
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">colorsSize</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">layout</span>.<span style="color:#a6e22e">types</span>.<span style="color:#a6e22e">GhosttyRenderStateColors</span>.<span style="color:#a6e22e">size</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">colorsPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_alloc</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">colorsSize</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">cursorSize</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">layout</span>.<span style="color:#a6e22e">types</span>.<span style="color:#a6e22e">GhosttyRenderStateCursor</span>.<span style="color:#a6e22e">size</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">cursorPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_alloc</span>(<span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">cursorSize</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">cellRawPtr</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">exports</span>.<span style="color:#a6e22e">ghostty_wasm_alloc</span>(<span style="color:#ae81ff">8</span>);</span></span></code></pre></div>
+
+<p>提取每一影格時，呼叫 <code>ghostty_render_state_update</code> 更新渲染狀態，再透過 <code>ghostty_render_state_row_iterator_next</code> 由上而下逐行掃描整個視區，依序讀取各列字元格資料，高效產生緊湊的渲染快照（snapshot）。</p>
+<h2 id="歷史遺產與標準相容雙色字與字元寬度的調解之道">歷史遺產與標準相容：雙色字與字元寬度的調解之道</h2>
+<p>PTT 是基於 Big5 繁體中文編碼與 <a href="https://en.wikipedia.org/wiki/VT100">DEC VT100</a> / ANSI 控制碼運作的純文字系統。當我們使用嚴格遵循現代標準的 <code>libghostty-vt</code> 作為終端引擎時，正好能展示現代 headless 核心如何與充滿歷史包袱的真實串流優雅協調。</p>
+<h3 id="雙色字dbcs-split-ansi-escape">雙色字（DBCS Split ANSI Escape）</h3>
+<p>在傳統 BBS 上，ANSI 美工為了在單一中文字的左右兩半塗上不同色彩（例如半藍半紅），創造出極其特殊的排版技巧：把 ANSI 顏色控制碼 <code>\x1b[...m</code> 硬生生插在 Big5 雙位元組（前導位元組 <code>0x81..0xFE</code> 與接續位元組 <code>0x40..0x7E, 0xA1..0xFE</code>）的中間！</p>
+<p>如果直接將 WebSocket 收到的二進位串流送進瀏覽器原生 <code>TextDecoder('big5')</code>，解碼器在讀取前導位元組後看到 <code>0x1b</code>，會判定前導位元組為不合法字元，直接輸出替代字元 <code>\ufffd</code>，畫面隨之錯位。</p>
+<p>GhosPTT 在 <code>src/big5.ts</code> 中實作了專屬的狀態機解碼器 <code>PttBig5StreamDecoder</code>。它會在串流中攔截前導位元組，檢測後續是否存在 ANSI 轉義序列，並在跨轉義序列後準確捕獲接續位元組完成解碼：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 2. Big5 前導位元組（0x81..0xFE）
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0x81</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">b</span> <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0xfe</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">j</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">interveningEscapes</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;&#39;</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">incomplete</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 收集夾在 Big5 前導與接續位元組中間的所有 ANSI 轉義控制碼
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">j</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">length</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">j</span>] <span style="color:#f92672">===</span> <span style="color:#ae81ff">0x1b</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">end</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">findAnsiEscapeEnd</span>(<span style="color:#a6e22e">buf</span>, <span style="color:#a6e22e">j</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">end</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">incomplete</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">let</span> <span style="color:#a6e22e">k</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">j</span>; <span style="color:#a6e22e">k</span> <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">end</span>; <span style="color:#a6e22e">k</span><span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">interveningEscapes</span> <span style="color:#f92672">+=</span> String.<span style="color:#a6e22e">fromCharCode</span>(<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">k</span>]);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">j</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">end</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">incomplete</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">j</span> <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">length</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 跨 WebSocket 封包邊界：保留未完成位元組至下一訊框
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">trail</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">j</span>];
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">isValidTrail</span> <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>    (<span style="color:#a6e22e">trail</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0x40</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">trail</span> <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0x7e</span>) <span style="color:#f92672">||</span> (<span style="color:#a6e22e">trail</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0xa1</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">trail</span> <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0xfe</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">isValidTrail</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> <span style="color:#a6e22e">ch</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;&#39;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 優先查詢 Big5-UAO 2.50 對應表
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">uaoB2U</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">code</span> <span style="color:#f92672">=</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">8</span>) <span style="color:#f92672">|</span> <span style="color:#a6e22e">trail</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">u</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">uaoB2U</span>[<span style="color:#a6e22e">code</span>];
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">u</span> <span style="color:#f92672">!==</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ch</span> <span style="color:#f92672">=</span> String.<span style="color:#a6e22e">fromCharCode</span>(<span style="color:#a6e22e">u</span>);
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 未在 UAO 表中則降級至原生解碼器
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">ch</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">pairBuf</span>[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">b</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">pairBuf</span>[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">trail</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">ch</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">pairDecoder</span>.<span style="color:#a6e22e">decode</span>(<span style="color:#a6e22e">pairBuf</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cp</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ch</span>.<span style="color:#a6e22e">codePointAt</span>(<span style="color:#ae81ff">0</span>) <span style="color:#f92672">??</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">w</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">codepointWidthFn</span>(<span style="color:#a6e22e">cp</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 重新排列：先輸出轉義序列，再輸出中文字元，必要時附加寬度補償字元
+</span></span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">out</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">interveningEscapes</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">ch</span> <span style="color:#f92672">+</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">===</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">?</span> <span style="color:#a6e22e">BIG5_WIDE_PAD</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#39;&#39;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">i</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">j</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">out</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">interveningEscapes</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">i</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">j</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>如此一來，既有的顏色樣式依然能夠依序生效，而雙位元組字元亦能完整復原。需要留意的是，由於中斷的轉義控制碼被提至字元前方生效，字元左右兩半目前會統一取用後段的 SGR 顏色，尚未做到單一字元逐半獨立著色，但已避免這類插入式 SGR 造成的字元解碼錯誤。</p>
+<h3 id="east-asian-ambiguous-寬度與-mode-2027">East Asian Ambiguous 寬度與 Mode 2027</h3>
+<p>另一個棘手問題是字元寬度。在 Big5 世界裡，所有雙位元組字元（包括色塊 <code>█</code>、<code>▊</code>、<code>▄</code>、幾何角 <code>◢</code>、<code>◣</code>、符號 <code>★</code>、線條 <code>─</code>、<code>│</code>）皆一律佔據 2 個終端機欄位（24px 寬度）。</p>
+<p>然而在現代 Unicode 標準中，這些符號被歸類為「東亞寬度不明確（East Asian Ambiguous）」，在多數標準終端模擬器中預設僅佔 1 個欄位（12px）。這會導致整張 ANSI art 嚴重錯位、向左坍塌。</p>
+<p>為了解決這個問題，GhosPTT 結合了 <a href="https://ghostty.org">Ghostty</a> 預設建議啟用的 <a href="https://gitlab.freedesktop.org/terminal-wg/specifications/-/issues/9">Mode 2027</a>（複合字元模式 / Grapheme Clustering）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#75715e">// 啟動終端時啟用 Mode 2027
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.<span style="color:#a6e22e">writeVt</span>(<span style="color:#e6db74">&#39;\x1b[?2027h&#39;</span>);</span></span></code></pre></div>
+
+<p>在 Mode 2027 下，Ghostty 會依據 Unicode 規範將基底字元與結合標記聚合成單一複合字元。我們在常數中定義了一個特殊的結合字元：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">BIG5_WIDE_PAD</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;\u0903&#39;</span>;</span></span></code></pre></div>
+
+<p><code>U+0903</code> 是天城文 Visarga（間隔記號）。解碼器透過呼叫 Ghostty 匯出的 <code>ghostty_unicode_codepoint_width(cp)</code> 函式計算字元寬度；當判定某個雙位元組字元寬度為 1 時，便在其後方附加 <code>BIG5_WIDE_PAD</code>。在 Mode 2027 下，Ghostty 會將兩者聚合成佔據 2 欄位寬度的複合圖元。這是原型階段為了因應目前 Ghostty 寬度計算邏輯所採取的相容策略，使雙位元組 ANSI 排版維持正確寬度；而在渲染輸出、字形紋理查詢與剪貼簿複製時，再透過正規表達式剔除該字元。</p>
+<h3 id="big5-uao-250-擴充字集支援">Big5-UAO 2.50 擴充字集支援</h3>
+<p>PTT 雖以傳統 Big5 為基礎，但在實際文章與推文中，使用者頻繁使用不在標準 Big5 範圍內的字元，例如簡體字（如「国」<code>0x83f6</code>）、日文假名（如「ぁ」<code>0xc6e7</code>）或特殊符號（如愛心「♥」<code>0x9dde</code>）。這些字元屬於 PTT 官方支援的 <a href="https://zh.wikipedia.org/wiki/Unicode%E8%A3%9C%E5%AE%8C%E8%A8%88%E7%95%AB">Big5-UAO（Unicode 補完計畫 2.50）</a> 擴充字集。</p>
+<p><a href="https://encoding.spec.whatwg.org/#big5">WHATWG Big5</a> 與 PTT 使用的 UAO 對照表並不完全相同；部分位元組可能解碼失敗輸出替代字元，也可能被解成另一個有效字元（例如 <code>0x9dde</code> 在 UAO 中代表「♥」，但在 WHATWG Big5 中則對應「鱅」）。因此原型優先使用 PTT 的對照表進行解碼。</p>
+<p>為支援 UAO 字元，GhosPTT 實作了 UAO 2.50 查表機制：</p>
+<ul>
+<li>透過獨立腳本（<code>scripts/build-uao.mjs</code>）直接從 <a href="https://github.com/ptt/pttbbs"><code>ptt/pttbbs</code></a> 官方儲存庫提取 <a href="https://github.com/ptt/pttbbs/blob/main/service/big5uao/table.go"><code>table.go</code></a>，預先產出兩張各含 65,536 個 <code>uint16</code> 的對照表（<code>b2u</code> 與 <code>u2b</code>），合併為 262,144 位元組（256 KiB）的二進位檔 <code>public/uao250.bin</code>。</li>
+<li>應用啟動時由 <code>initBig5Uao('./uao250.bin')</code> 載入記憶體。解碼串流時，<code>PttBig5StreamDecoder</code> 優先查詢 <code>uaoB2U</code>；若不在 UAO 表中，才降級交由原生 <code>TextDecoder('big5')</code> 處理。</li>
+<li>解碼後的 UAO 特殊字元同樣會進入 <code>ghostty_unicode_codepoint_width(cp)</code> 寬度驗證。例如當「♥」由 Ghostty 判定為寬度 1 時，解碼器依然會自動附加 <code>BIG5_WIDE_PAD</code>，依目前 Ghostty 行為在 Mode 2027 下補足兩欄寬度，維持 BBS 排版幾何。</li>
+</ul>
+<h3 id="telnet-iac-nop-閒置保活機制">Telnet IAC NOP 閒置保活機制</h3>
+<p>GhosPTT 的生產環境由 <a href="https://workers.cloudflare.com/">Cloudflare Workers</a> 轉送 WebSocket 連線至 PTT 網關。在 BBS 閱覽長篇好文或推文時，使用者往往超過數分鐘未敲擊鍵盤，長時間缺乏雙向資料傳輸容易增加邊緣網路逾時斷線的風險。</p>
+<p><a href="https://datatracker.ietf.org/doc/html/rfc854">RFC 854</a> 定義了 <code>TELNET IAC NOP</code>（<code>0xFF 0xF1</code>，No Operation）指令。PTT 的 BBS 伺服器在接收到 NOP 時會默默予以忽略，既不會改變終端游標位置，也不會更動畫面緩衝區內容。</p>
+<p>GhosPTT 在瀏覽器端（<code>src/ptt-client.ts</code>）與 Cloudflare Worker 代理（<code>worker/index.ts</code>）分別加入了應用層保活機制：每 10 秒檢查一次傳輸狀態，當偵測到連線閒置達 30 秒以上時，便在 WebSocket 資料通道中傳送 <code>TELNET_IAC_NOP</code> 位元組，降低長時間閱讀時的閒置斷線機率。</p>
+<h2 id="webgpu-硬體加速與無縫-ansi-色塊渲染">WebGPU 硬體加速與無縫 ANSI 色塊渲染</h2>
+<p>終端機看似只有文字，但在高 DPI 螢幕與高更新率下，每秒繪製大量的字形與色塊對 CPU 是不小的負擔。GhosPTT 實作了專屬的 WebGPU 渲染管線（<code>src/webgpu-renderer.ts</code>）。</p>
+<h3 id="instanced-quad-實例化管線">Instanced Quad 實例化管線</h3>
+<p>在 80×24 視窗中，總共有 1,920 個字元格。加上背景矩形、文字前景色與選取區域，GhosPTT 配置了一個最多容納 8,192 個實例的實例資料緩衝區。每個 instance 佔用 16 個 float（64 位元組，符合 16 位元組對齊規範）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-wgsl" data-lang="wgsl"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> InstanceInput {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">@location</span>(<span style="color:#ae81ff">0</span>) rect: vec4<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>,     <span style="color:#75715e">// x, y, w, h（物理像素）
+</span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">@location</span>(<span style="color:#ae81ff">1</span>) uvRect: vec4<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>,   <span style="color:#75715e">// u0, v0, u1, v1
+</span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">@location</span>(<span style="color:#ae81ff">2</span>) color: vec4<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>,    <span style="color:#75715e">// r, g, b, a
+</span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">@location</span>(<span style="color:#ae81ff">3</span>) kind: f32,           <span style="color:#75715e">// 0 = Solid, 1 = AtlasGlyph, 2 = CustomBlock
+</span></span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">@location</span>(<span style="color:#ae81ff">4</span>) codepoint: f32,      <span style="color:#75715e">// 自訂幾何圖元 Unicode 碼點
+</span></span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>在 WebGPU 渲染管線中，文字與背景色塊繪製集中在單一終端網格 pass（執行 <code>pass.draw(6, instanceCount)</code>）；若使用者開啟復古 CRT 效果，管線則會將網格結果先渲染至中介紋理，再透過第二個全螢幕後製 pass（<code>pass.draw(6, 1)</code>）疊加著色器特效。中英文字形快取於動態紋理圖集（texture atlas，基準尺寸為 2048×2048，並依視窗縮放、DPR 與 GPU 紋理限制調整），並搭配最近鄰採樣（nearest-neighbor）與物理像素對齊，即便在 Retina 螢幕上文字依然銳利清晰。</p>
+<p>為了改善深色背景上細抗鋸齒邊緣容易發虛的問題，片元著色器中特別加入了字幹補暗（stem darkening）伽瑪校正補償：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-wgsl" data-lang="wgsl"><span style="display:flex;"><span><span style="color:#75715e">// 修正深色背景下的透明字形遮罩邊緣
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">let</span> crispAlpha <span style="color:#f92672">=</span> pow(sample.a, <span style="color:#ae81ff">0.72</span>) <span style="color:#f92672">*</span> in.color.a;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">return</span> vec4<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>(in.color.rgb, crispAlpha);</span></span></code></pre></div>
+
+<h3 id="片元幾何消除-ansi-色塊接縫procedural-custom-blocks">片元幾何消除 ANSI 色塊接縫（Procedural Custom Blocks）</h3>
+<p>在許多基於 Canvas 2D 或 DOM 的終端渲染中，常見的微小瑕疵是 ANSI 色塊繪畫的接縫。許多字型所設計的色塊字元（<code>▁</code>–<code>█</code>、<code>▉</code>–<code>▏</code>、<code>▐</code>、<code>▔</code>、<code>▕</code>）或角落三角形（<code>◢</code>、<code>◣</code>、<code>◤</code>、<code>◥</code>），在字型度量（metrics）上往往無法精確填滿整個字元格，造成色塊之間出現微小的一像素縫隙。</p>
+<p>GhosPTT 對支援的色塊碼點改用幾何覆蓋計算，完全不依賴字型繪製色塊，改在 <a href="https://www.w3.org/TR/WGSL/">WGSL</a> 片元著色器中進行純數學幾何分析：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-wgsl" data-lang="wgsl"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> evalCustomBlock(cp: u32, p: vec2<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>) -&gt; f32 {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 下方 1/8 .. 8/8 色塊：U+2581 (▁) .. U+2588 (█)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0x2581u</span> <span style="color:#f92672">&amp;&amp;</span> cp <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0x2588u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> eighths <span style="color:#f92672">=</span> f32(cp <span style="color:#f92672">-</span> <span style="color:#ae81ff">0x2580u</span>) <span style="color:#f92672">/</span> <span style="color:#ae81ff">8.0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> select(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>, p.y <span style="color:#f92672">&gt;=</span> (<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> eighths));
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 左側 7/8 .. 1/8 色塊：U+2589 (▉) .. U+258F (▏)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0x2589u</span> <span style="color:#f92672">&amp;&amp;</span> cp <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0x258Fu</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">let</span> eighths <span style="color:#f92672">=</span> f32(<span style="color:#ae81ff">8u</span> <span style="color:#f92672">-</span> (cp <span style="color:#f92672">-</span> <span style="color:#ae81ff">0x2588u</span>)) <span style="color:#f92672">/</span> <span style="color:#ae81ff">8.0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> select(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>, p.x <span style="color:#f92672">&lt;=</span> eighths);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 右半色塊：U+2590 (▐)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x2590u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> select(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>, p.x <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0.5</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 上方 1/8 色塊：U+2594 (▔)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x2594u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> select(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>, p.y <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0.125</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 右側 1/8 色塊：U+2595 (▕)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x2595u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> select(<span style="color:#ae81ff">0.0</span>, <span style="color:#ae81ff">1.0</span>, p.x <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0.875</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// 角落三角形搭配平滑抗鋸齒（實際邊界過渡寬度隨 quad 尺寸與 DPR 改變）：U+25E2 (◢), U+25E3 (◣), U+25E4 (◤), U+25E5 (◥)
+</span></span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> aa <span style="color:#f92672">=</span> <span style="color:#ae81ff">0.025</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x25E2u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ◢ 右下角：x + y &gt;= 1.0
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> smoothstep(<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> aa, <span style="color:#ae81ff">1.0</span> <span style="color:#f92672">+</span> aa, p.x <span style="color:#f92672">+</span> p.y);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x25E3u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ◣ 左下角：y &gt;= x
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> smoothstep(<span style="color:#f92672">-</span>aa, aa, p.y <span style="color:#f92672">-</span> p.x);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x25E4u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ◤ 左上角：x + y &lt;= 1.0
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> smoothstep(<span style="color:#ae81ff">1.0</span> <span style="color:#f92672">-</span> aa, <span style="color:#ae81ff">1.0</span> <span style="color:#f92672">+</span> aa, p.x <span style="color:#f92672">+</span> p.y);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (cp <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x25E5u</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ◥ 右上角：x &gt;= y
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> smoothstep(<span style="color:#f92672">-</span>aa, aa, p.x <span style="color:#f92672">-</span> p.y);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0.0</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過在片元著色器中計算幾何覆蓋，色塊邊緣能緊貼字元格邊界，避免傳統字型渲染在拼接時容易出現的接縫細紋。除了 WebGPU，Canvas 2D 降級路徑（<code>src/renderer.ts</code> 中的 <code>drawCustomBlockGlyph</code>）也同樣採用幾何路徑（<code>fillRect</code> 與 <code>Path2D</code>）繪製色塊，維持乾淨的繪製體驗。</p>
+<h3 id="復古-crt-著色器">復古 CRT 著色器</h3>
+<p>為重現舊時代映像管螢幕的氛圍，渲染管線設計了可隨時切換的後製處理 pass（<code>fs_post</code>）。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-wgsl" data-lang="wgsl"><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> warpCrtUv(uv: vec2<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>) -&gt; vec2<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> centered <span style="color:#f92672">=</span> uv <span style="color:#f92672">*</span> <span style="color:#ae81ff">2.0</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">1.0</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> offset <span style="color:#f92672">=</span> centered.yx <span style="color:#f92672">/</span> vec2<span style="color:#f92672">&lt;</span>f32<span style="color:#f92672">&gt;</span>(<span style="color:#ae81ff">6.5</span>, <span style="color:#ae81ff">5.5</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">let</span> warped <span style="color:#f92672">=</span> centered <span style="color:#f92672">+</span> centered <span style="color:#f92672">*</span> offset <span style="color:#f92672">*</span> offset;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> warped <span style="color:#f92672">*</span> <span style="color:#ae81ff">0.5</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">0.5</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過 <code>warpCrtUv</code> 模擬球面桶狀畸變（barrel distortion），並在採樣時引入空間上的橫向 RGB 色差（chromatic aberration）、正弦掃描線（scanlines）、鄰近像素光暈（local glow）與周邊暗角（vignette）。需要說明的是，此著色器著重於重現單格空間上的映像管幾何感與掃描紋理，並未額外模擬時間維度上的螢光粉動態殘影（temporal persistence）。</p>
+<h2 id="現代-web-體驗注入經典-bbs">現代 Web 體驗注入經典 BBS</h2>
+<p>除了底層終端渲染的高規格，GhosPTT 在前端操作體驗上也融入了現代化設計。</p>
+<h3 id="懸停縮圖預覽與貼文相簿導覽">懸停縮圖預覽與貼文相簿導覽</h3>
+<p>在 PTT 看文時，文章與推文裡常充滿各類圖片連結（特別是 <a href="https://imgur.com/">Imgur</a>）。傳統上使用者必須逐一點開網址在新分頁查看，體驗破碎。</p>
+<p>GhosPTT 實作了全自動的 URL 掃描與圖片正規化（<code>src/image-preview.ts</code>）：</p>
+<ul>
+<li><strong>懸停即時預覽</strong> (popover preview) - 滑鼠移到圖片網址上方時，自動抓取並顯示懸停縮圖卡片，不干擾終端閱讀。</li>
+<li><strong>全螢幕燈箱模式</strong> (lightbox viewer) - 點擊網址直接展開高畫質燈箱。</li>
+<li><strong>貼文相簿模式</strong> (post gallery navigation) - 閱讀文章時，GhosPTT 會在翻頁過程中持續累計曾出現在終端畫面上的圖片網址。使用者只要進入任一張燈箱，就能用鍵盤左右鍵（<code>←</code> / <code>→</code>）像幻燈片一樣連續翻閱已瀏覽的所有圖片；當畫面偵測到回到主功能表或看板列表的特定提示字串時，便會自動重置相簿清單，關閉燈箱時亦無縫返還終端機鍵盤焦點。</li>
+</ul>
+<h3 id="響應式等比例縮放與燈箱鍵盤控制">響應式等比例縮放與燈箱鍵盤控制</h3>
+<p>PTT 終端機受限於 80×24 字元格的嚴格佈局（960×576 邏輯像素）。在行動裝置螢幕、高 DPR 筆電或 4K 螢幕上，若是固定像素寬高，容易造成畫面超出邊界或文字縮得過小。</p>
+<p>GhosPTT 在 <code>src/main.ts</code> 中透過 <a href="https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver"><code>ResizeObserver</code></a> 監聽主畫面容器（<code>.terminal-stage</code>），動態計算出維持 5:3 等比例的最大縮放係數（scale），並將 Canvas 物理尺寸同步調整為 <code>960 * scale * dpr</code> 與 <code>576 * scale * dpr</code>。實體尺寸會四捨五入取整數；WebGPU 後端另依 GPU texture limit 限制有效像素密度，避免大型視窗或高 DPR 超出裝置能力。同時在 <code>src/terminal-layout.ts</code> 中提供幾何對齊與座標轉換函式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">clientPointToCell</span>(<span style="color:#a6e22e">canvas</span>: <span style="color:#66d9ef">HTMLCanvasElement</span>, <span style="color:#a6e22e">x</span>: <span style="color:#66d9ef">number</span>, <span style="color:#a6e22e">y</span>: <span style="color:#66d9ef">number</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">rect</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">canvas</span>.<span style="color:#a6e22e">getBoundingClientRect</span>();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">col</span>: <span style="color:#66d9ef">Math.max</span>(<span style="color:#ae81ff">0</span>, Math.<span style="color:#a6e22e">min</span>(<span style="color:#a6e22e">COLS</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, Math.<span style="color:#a6e22e">floor</span>((<span style="color:#a6e22e">x</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">rect</span>.<span style="color:#a6e22e">left</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">COLS</span> <span style="color:#f92672">/</span> (<span style="color:#a6e22e">rect</span>.<span style="color:#a6e22e">width</span> <span style="color:#f92672">||</span> <span style="color:#ae81ff">1</span>)))),
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">row</span>: <span style="color:#66d9ef">Math.max</span>(<span style="color:#ae81ff">0</span>, Math.<span style="color:#a6e22e">min</span>(<span style="color:#a6e22e">ROWS</span> <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, Math.<span style="color:#a6e22e">floor</span>((<span style="color:#a6e22e">y</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">rect</span>.<span style="color:#a6e22e">top</span>) <span style="color:#f92672">*</span> <span style="color:#a6e22e">ROWS</span> <span style="color:#f92672">/</span> (<span style="color:#a6e22e">rect</span>.<span style="color:#a6e22e">height</span> <span style="color:#f92672">||</span> <span style="color:#ae81ff">1</span>)))),
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過 <code>clientPointToCell</code> 座標轉換，滑鼠點擊與 URL 懸停偵測能在一般縮放與 DPR 變動下精確映射至 80×24 的終端行列。</p>
+<p>此外，當使用者開啟圖片全螢幕燈箱時，終端隱藏輸入區（<code>#imeInput</code>）的 <code>keydown</code> 處理函式會檢查燈箱開啟狀態，若為燈箱模式則呼叫 <code>preventDefault()</code> 並提前返回，不再向 PTT 送出按鍵碼，讓方向鍵（<code>←</code> / <code>→</code>）與 <code>Esc</code> 專注於燈箱圖片切換與關閉。</p>
+<h3 id="逆向編碼表支援-uao-中日文與符號貼上">逆向編碼表支援 UAO 中日文與符號貼上</h3>
+<p>PTT 僅接受 Big5 位元組輸入。為了讓使用者能順利貼上剪貼簿內容或透過輸入法輸入，GhosPTT 實作了雙層編碼查表機制（<code>src/big5.ts</code>）：</p>
+<ol>
+<li><strong>優先查詢 UAO 2.50 逆向表</strong> - 當已載入 <code>uao250.bin</code> 時，系統直接透過 <code>uaoU2B</code> 查詢 Unicode 字元對應的 Big5 位元組。這使得貼上的文字即使包含簡體字、日文假名或特殊符號，也能正確編碼送出。</li>
+<li><strong>原生 Big5 查表降級</strong> - 若未載入 UAO 表或字元不在 UAO 範圍內，則延遲初始化（lazy initialization）瀏覽器原生 <code>TextDecoder('big5')</code> 建立的 Big5 對應表進行補底。不在支援字集內的字元則直接忽略。</li>
+</ol>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span><span style="color:#66d9ef">export</span> <span style="color:#66d9ef">function</span> <span style="color:#a6e22e">encodeStringToBig5</span>(<span style="color:#a6e22e">str</span>: <span style="color:#66d9ef">string</span>)<span style="color:#f92672">:</span> <span style="color:#a6e22e">Uint8Array</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">normalized</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">str</span>.<span style="color:#a6e22e">replace</span>(<span style="color:#e6db74">/\r\n/g</span>, <span style="color:#e6db74">&#39;\r&#39;</span>).<span style="color:#a6e22e">replace</span>(<span style="color:#e6db74">/\n/g</span>, <span style="color:#e6db74">&#39;\r&#39;</span>);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">out</span>: <span style="color:#66d9ef">number</span>[] <span style="color:#f92672">=</span> [];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">const</span> <span style="color:#a6e22e">ch</span> <span style="color:#66d9ef">of</span> <span style="color:#a6e22e">normalized</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">cp</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">ch</span>.<span style="color:#a6e22e">codePointAt</span>(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">cp</span> <span style="color:#f92672">===</span> <span style="color:#66d9ef">undefined</span>) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">cp</span> <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0x80</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">out</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">cp</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">uaoU2B</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">cp</span> <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0xffff</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">b5</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">uaoU2B</span>[<span style="color:#a6e22e">cp</span>];
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">b5</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0xff</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">out</span>.<span style="color:#a6e22e">push</span>((<span style="color:#a6e22e">b5</span> <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">8</span>) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span>, <span style="color:#a6e22e">b5</span> <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">b5</span> <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">out</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">b5</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">big5</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">getUnicodeToBig5Map</span>().<span style="color:#66d9ef">get</span>(<span style="color:#a6e22e">ch</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">big5</span> <span style="color:#f92672">!==</span> <span style="color:#66d9ef">undefined</span>) {
+</span></span><span style="display:flex;"><span>      <span style="color:#a6e22e">out</span>.<span style="color:#a6e22e">push</span>((<span style="color:#a6e22e">big5</span> <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">8</span>) <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span>, <span style="color:#a6e22e">big5</span> <span style="color:#f92672">&amp;</span> <span style="color:#ae81ff">0xff</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> <span style="color:#a6e22e">Uint8Array</span>(<span style="color:#a6e22e">out</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>當使用者貼上或輸入字串時，系統會先將換行符號（<code>\r\n</code> 或 <code>\n</code>）依照 Telnet BBS 協定慣例正規化為單一 <code>\r</code>，接著將 Unicode 字元即時轉碼為 Big5 位元組送往 PTT，讓中日文與符號輸入流暢自然。</p>
+<h2 id="結語以經典舞台驗證現代終端核心的整合潛力">結語：以經典舞台驗證現代終端核心的整合潛力</h2>
+<p>GhosPTT 最初的原動力，是為了驗證 Mitchell Hashimoto 所設計的 <code>libghostty</code> 函式庫在 WebAssembly 環境下的整合能力。透過 PTT 這個充滿歷史特色、排版規則嚴苛的真實展示場景，我們實證了 <code>libghostty-vt</code> 作為 headless 終端核心的優勢：它能在瀏覽器中維持精確的虛擬終端狀態，並給予前端繪圖管線（WebGPU、自訂著色器、CRT 後製）高度的發揮彈性。</p>
+<p>這項原型展示了現代終端技術跳脫單一獨立應用的可能性：不需要重新撰寫易錯的終端狀態機，就能將專業級的虛擬終端解析能力嵌入專屬的前端介面中。</p>
+<p>如果你也對 <code>libghostty</code> 的跨平台能力或 WebAssembly 整合感到好奇，歡迎參考 GhosPTT 的開源實作，一同探索現代終端引擎的更多技術可能性。</p>
+<h2 id="相關參考資料">相關參考資料</h2>
+<ul>
+<li><strong>專案原始碼</strong> - <a href="https://github.com/p47t/ghosptt"><code>github.com/p47t/ghosptt</code></a></li>
+<li><strong>libghostty-vt 1.0 發布說明</strong> - <a href="https://mitchellh.com/writing/libghostty-1-0">Mitchell Hashimoto: Libghostty 1.0</a></li>
+<li><strong>Ghostty 終端機專案</strong> - <a href="https://ghostty.org">ghostty.org</a> / <a href="https://github.com/ghostty-org/ghostty"><code>ghostty-org/ghostty</code></a></li>
+<li><strong>pttbbs 伺服器原始碼</strong> - <a href="https://github.com/ptt/pttbbs"><code>ptt/pttbbs</code></a> 與 <a href="https://github.com/ptt/pttbbs/blob/main/service/big5uao/table.go">UAO 對照表 (<code>table.go</code>)</a></li>
+<li><strong>W3C WebGPU 與 WGSL 規範</strong> - <a href="https://www.w3.org/TR/webgpu/">W3C WebGPU</a> 與 <a href="https://www.w3.org/TR/WGSL/">W3C WebGPU Shading Language (WGSL)</a></li>
+<li><strong>字元標準與編碼規格</strong> - <a href="https://www.unicode.org/reports/tr11/">Unicode Standard Annex #11 (East Asian Width)</a> 與 <a href="https://encoding.spec.whatwg.org/#big5">WHATWG Encoding Standard (Big5)</a></li>
+<li><strong>Telnet 協定標準</strong> - <a href="https://datatracker.ietf.org/doc/html/rfc854">RFC 854 (Telnet Protocol Specification)</a> 與 <a href="https://datatracker.ietf.org/doc/html/rfc1073">RFC 1073 (Telnet Window Size Option)</a></li>
+</ul>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+flowchart TD
+    subgraph HumanPhase["人類工程師核心主導"]
+        H1["<div style='width:460px; padding:4px 8px 8px 8px; line-height:1.4;'><b>架構設計與狀態機定義</b><br/>• 定義無鎖拓撲、CAS 不變量與 SMR 回收策略</div>"]
+    end
+
+    subgraph AIPhase["AI 協同分析與測試生成 (LLM Augmented)"]
+        direction LR
+        A1["<div style='width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;'><b>對抗性代碼審查</b><br/>• 弱記憶體重排推演<br/>• 構造極限 ABA 交錯</div>"]
+        A2["<div style='width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;'><b>驗證套件生成</b><br/>• 自動產出 Loom 測試<br/>• 轉譯 TLA+ / GenMC 規格</div>"]
+        A1 -.- A2
+    end
+
+    subgraph VerifyPhase["確定性形式驗證 (Formal Verification)"]
+        direction LR
+        V1["<div style='width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;'><b>Loom / GenMC 窮舉</b><br/>• 探索所有並行排程狀態<br/>• 捕捉百萬分之一時序 Bug</div>"]
+        V2["<div style='width:225px; padding:4px 6px 8px 6px; text-align:left; line-height:1.3;'><b>TSan 動態競爭偵測</b><br/>• 記憶體存取插樁分析<br/>• 攔截底層 Data Race</div>"]
+        V1 -.- V2
+    end
+
+    HumanPhase --> AIPhase
+    AIPhase --> VerifyPhase
+    VerifyPhase --> Result{"形式驗證結果？"}
+
+    Result -->|通過驗證| Deploy["<div style='width:250px; padding:4px 8px 8px 8px; line-height:1.4;'><b>★ 具備數學保證的生產級實作</b><br/>通過全狀態空間探索與壓力測試</div>"]
+    Result -->|發現反例| Fix["<div style='width:250px; padding:4px 8px 8px 8px; line-height:1.4;'><b>反例日誌分析 (Trace Analysis)</b><br/>AI 解讀報錯時序，輔助定位修補</div>"]

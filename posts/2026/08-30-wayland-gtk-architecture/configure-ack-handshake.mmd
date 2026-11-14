@@ -1,0 +1,16 @@
+sequenceDiagram
+    autonumber
+    participant Comp as Compositor (Mutter / KWin)
+    participant Client as GTK Client
+
+    Note over Comp: 使用者拉動視窗或最大化
+    Comp->>Client: xdg_toplevel.configure(1024, 768, [maximized])
+    Comp->>Client: xdg_surface.configure(serial=1234)
+
+    Note over Client: 1. 根據新尺寸重新排版 UI<br/>2. 繪製 1024x768 的新 Buffer
+
+    Client->>Comp: xdg_surface.ack_configure(serial=1234)
+    Client->>Comp: wl_surface.attach(new_buffer)
+    Client->>Comp: wl_surface.commit()
+
+    Note over Comp: Compositor 確認序號匹配<br/>原子性（Atomic）更新畫面上屏

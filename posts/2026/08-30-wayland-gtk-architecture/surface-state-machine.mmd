@@ -1,0 +1,14 @@
+flowchart TD
+    subgraph G_Client["Client 操作請求"]
+        REQ_OPS["attach / damage / scale / frame<br/>(可多次累積呼叫)"]
+    end
+
+    subgraph G_State["wl_surface 狀態機"]
+        ST_PENDING["待處理狀態 (Pending State)<br/>暫存所有變更，對螢幕無任何影響"]
+        ST_CURRENT["當前狀態 (Current State)<br/>Compositor 實際拿來合成上屏的狀態"]
+    end
+
+    REQ_OPS -->|暫存變更至| ST_PENDING
+    BTN_COMMIT["wl_surface.commit 呼叫"] -->|"原子性觸發 (Atomically Applied)"| ST_PENDING
+    ST_PENDING -->|套用所有變更| ST_CURRENT
+    ST_CURRENT -->|Compositor 讀取| COMP_RENDER["Compositor 畫面混成與渲染"]

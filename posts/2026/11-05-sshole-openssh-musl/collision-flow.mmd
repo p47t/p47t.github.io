@@ -1,0 +1,12 @@
+flowchart TD
+    A["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>攻擊者嘗試登入密碼欄位為 * 的帳號</span><br/><span style='font-weight:normal;'>輸入長度 257–1024 位元組之密碼，目標為 shadow 標記為 * 之帳號</span></div>"]
+    B["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>OpenSSH 借用其他帳號的 salt</span><br/><span style='font-weight:normal;'>為了防禦 CVE-2016-6210 計時列舉攻擊，借用 bob 的 SHA-512 salt 消耗運算時間</span></div>"]
+    C["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>musl sha512crypt 觸發 256 位元組上限</span><br/><span style='font-weight:normal;'>為了防禦 hash DoS，musl 將輸入長度限制在 256 位元組內，超長直接視為計算失敗</span></div>"]
+    D["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>musl 失敗時回傳特殊字串 *</span><br/><span style='font-weight:normal;'>2012 年為了避免呼叫端因 NULL 解參考崩潰，musl 決定在錯誤時改傳回 *</span></div>"]
+    E["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>strcmp(*, *) == 0 ➔ 認證通過！</span><br/><span style='font-weight:normal;'>shadow 欄位的 * 與錯誤傳回的 * 完全吻合，成功通過密碼比對</span></div>"]
+    A --> B --> C --> D --> E
+    style A width:580px;
+    style B width:580px;
+    style C width:580px;
+    style D width:580px;
+    style E width:580px;

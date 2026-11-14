@@ -1,0 +1,49 @@
+sequenceDiagram
+    autonumber
+    actor Client as 📱 Downstream Client
+    participant Reactor as 📡 Tokio Mio Reactor (epoll)
+    participant Exec as ⚙️ Tokio Executor (Run Queue)
+    participant Parent as 🦀 Root Future (handle_request)
+    participant Child as 🦀 Leaf Future (stream_request)
+    participant Upstream as 🦙 Upstream LLM (Ollama/vLLM)
+
+    Note over Reactor,Parent: 【Pull 1: 連線就緒 ➜ 排入佇列 ➜ 自頂向下發起首次 Poll】
+    Client->>Reactor: POST /v1/chat/completions (stream: true)
+    Reactor->>Exec: waker.wake() ➜ 將 Task 推入 Run Queue
+    Exec->>Parent: 1. Executor 呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Parent: 解析請求 & 路由比對
+    Parent->>Child: 2. 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child->>Upstream: 發送 HTTP POST 請求至上游 LLM
+    Child->>Reactor: 3. poll_read() 未就緒 ➜ 註冊 cx.waker() 至 Reactor
+    Child-->>Parent: 4. 回傳 Poll::Pending (原路沿呼叫鏈向上返回)
+    deactivate Child
+    Parent-->>Exec: 5. 回傳 Poll::Pending (Task 讓出 Worker 執行緒)
+    deactivate Parent
+
+    Note over Reactor,Child: 【Pull 2: 上游 Token 就緒 ➜ 再次從根節點遍歷重評估 O(D)】
+    Upstream-->>Reactor: 傳送 SSE Token Chunk (epoll_wait 喚醒)
+    Reactor->>Exec: waker.wake() ➜ Task 重新放回 Run Queue
+    Exec->>Parent: 1. Executor 再次呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Child: 2. 狀態機轉發 ➜ 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child->>Upstream: 3. poll_read() 成功讀取 Token Chunk (Poll::Ready)
+    Child->>Client: 即時轉發 SSE Chunk
+    deactivate Child
+    Parent-->>Exec: 4. 再次返回 Poll::Pending (等待下一個 Chunk)
+    deactivate Parent
+
+    Note over Reactor,Parent: 【Pull 3: 串流結束 ➜ 向上回傳 Poll::Ready(()) 完成任務】
+    Upstream-->>Reactor: SSE [DONE] / EOF
+    Reactor->>Exec: waker.wake()
+    Exec->>Parent: 1. Executor 呼叫 Root Future::poll(cx)
+    activate Parent
+    Parent->>Child: 2. 遞迴呼叫 stream_request.poll(cx)
+    activate Child
+    Child-->>Parent: 3. 串流完畢，回傳 Poll::Ready(())
+    deactivate Child
+    Parent->>Client: 結束 HTTP 回應
+    Parent-->>Exec: 4. 頂層回傳 Poll::Ready(()) (Task 完成並銷毀)
+    deactivate Parent

@@ -1,0 +1,193 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/openssh/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-11-05 19:18:00 -0800 -0800</updated>
+    
+    <item>
+      <title>OpenSSH on musl 的 *sshole 認證繞過漏洞</title>
+      <link>https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/</link>
+      <pubDate>Thu, 05 Nov 2026 19:18:00 -0800</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;今天在 Hacker News 上看到一個標題只有一個字（還帶著一顆星號）的項目：&lt;code&gt;*sshole&lt;/code&gt;。點進去閱讀 &lt;a href=&#34;https://sshhole.com&#34;&gt;sshhole.com&lt;/a&gt; 與作者公開的技術細節，這場跨越數十年的軟體架構演進與邊界條件重疊，相當值得深入探討。&lt;/p&gt;
+&lt;p&gt;這項漏洞的運作機制十分特殊：在基於 musl libc 且未啟用 PAM 的 Linux 系統（例如 Alpine Linux、OpenWrt、以及 Buildroot 與 Yocto 建置環境）上，當系統開啟密碼認證且 &lt;code&gt;pick_salt()&lt;/code&gt; 選中 SHA-crypt salt 時，若目標帳號在 &lt;code&gt;/etc/shadow&lt;/code&gt; 中的密碼欄位被設定為 &lt;code&gt;*&lt;/code&gt;（原本用意是停用密碼認證），攻擊者輸入長度介於 &lt;strong&gt;257 至 1024 位元組&lt;/strong&gt;的密碼，便可能成功通過密碼雜湊比對。&lt;/p&gt;
+&lt;p&gt;在實際影響層面上，能否完成登入仍取決於 OpenSSH 其他存取控制與認證要求：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;對於 &lt;code&gt;root&lt;/code&gt; 帳號，OpenSSH 預設的 &lt;code&gt;PermitRootLogin prohibit-password&lt;/code&gt; 會阻斷密碼認證，因此只有在管理者明確設定 &lt;code&gt;PermitRootLogin yes&lt;/code&gt; 時才會直接暴露 root 登入。&lt;/li&gt;
+&lt;li&gt;但對於一般系統帳號（例如僅允許 SSH 金鑰登入的部署帳號、LDAP 整合帳號，或是 Alpine 雲端映像預設的 &lt;code&gt;alpine&lt;/code&gt; 帳號），只要密碼欄位為 &lt;code&gt;*&lt;/code&gt; 且無其他認證方法限制（如 &lt;code&gt;AuthenticationMethods&lt;/code&gt;），便能通過密碼驗證登入。而在許多雲端映像中，預設使用者通常具備免密碼 &lt;code&gt;doas&lt;/code&gt; 提權權限，攻擊者登入後即可取得完整系統控制權。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;更具工程啟發性的是背後的成因：這不是緩衝區溢位或記憶體損壞，而是多個看似合理、各自出於防禦考量的設計，在歷經 46 年的軟體演進後，於特定條件下產生了預期之外的行為碰撞。&lt;/p&gt;
+&lt;h2 id=&#34;六行虛擬碼說明比對邏輯&#34;&gt;六行虛擬碼說明比對邏輯&lt;/h2&gt;
+&lt;p&gt;作者在專案的說明文件中以六行虛擬碼總結了認證比對的流程：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;pw_password &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;*&amp;#34;&lt;/span&gt;                          &lt;span style=&#34;color:#75715e&#34;&gt;# 目標帳號在 shadow 裡為 &amp;#34;*&amp;#34;，代表不接受密碼認證&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;salt &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; NULL                                &lt;span style=&#34;color:#75715e&#34;&gt;# &amp;#34;*&amp;#34; 長度過短，無法作為合法的 salt&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;salt &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pick_salt()                         &lt;span style=&#34;color:#75715e&#34;&gt;# OpenSSH 為防計時攻擊，借用有效帳號 bob 的 &amp;#34;$6$abc$&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;hash &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; crypt(&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;AAAA…x300&amp;#34;&lt;/span&gt;, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;$6$abc$&amp;#34;&lt;/span&gt;)       &lt;span style=&#34;color:#75715e&#34;&gt;# musl SHA-crypt 遇長度 &amp;gt; 256 位元組失敗，回傳 &amp;#34;*&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;strcmp(hash, pw_password) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;             &lt;span style=&#34;color:#75715e&#34;&gt;# strcmp(&amp;#34;*&amp;#34;, &amp;#34;*&amp;#34;) == 0 -&amp;gt; 比對吻合！&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;                                   &lt;span style=&#34;color:#75715e&#34;&gt;# 通過認證&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;當比對邏輯走到 &lt;code&gt;strcmp(&amp;quot;*&amp;quot;, &amp;quot;*&amp;quot;) == 0&lt;/code&gt; 時，認證便宣告通過。&lt;/p&gt;
+&lt;p&gt;原本在 Unix 傳統中用來標記「不接受密碼認證」的特殊字元 &lt;code&gt;*&lt;/code&gt;（此處為字面值字串，並非萬用字元 wildcard），恰好與 musl libc 在密碼過長時回傳的錯誤替代值 &lt;code&gt;*&lt;/code&gt; 完全一致。&lt;/p&gt;
+&lt;p&gt;以下是該漏洞觸發流程的結構圖：&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/collision-flow.svg&#34; alt=&#34;collision-flow.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h2 id=&#34;跨越-46-年的歷史交會&#34;&gt;跨越 46 年的歷史交會&lt;/h2&gt;
+&lt;p&gt;要理解這個現象為何會發生，需要回顧幾個關鍵的歷史節點。&lt;/p&gt;
+&lt;h3 id=&#34;1980-年第一顆星號the-first-star&#34;&gt;1980 年：第一顆星號（The First Star）&lt;/h3&gt;
+&lt;p&gt;在早期 Unix 時代，使用者密碼的雜湊值直接儲存在所有使用者皆可讀取的 &lt;code&gt;/etc/passwd&lt;/code&gt; 中。&lt;/p&gt;
+&lt;p&gt;1980 年，Bill Joy 在 3BSD 的 &lt;code&gt;/etc/passwd&lt;/code&gt; 裡，為系統內建的 &lt;code&gt;daemon&lt;/code&gt; 帳號填入了 &lt;code&gt;*&lt;/code&gt; 作為密碼欄位。&lt;/p&gt;
+&lt;p&gt;由於當時 Unix 使用的 DES 雜湊格式固定產出長度為 13 的特定字元集字串，單一字元的 &lt;code&gt;*&lt;/code&gt; 絕不可能對應到任何合法的密碼輸入。自此，「在密碼欄位填入 &lt;code&gt;*&lt;/code&gt; 代表此帳號不接受密碼登入」成為 Unix 與 Linux 系統廣泛採納的慣例。&lt;/p&gt;
+&lt;h3 id=&#34;1990-年代openssh-的字串比對與-posix-規範&#34;&gt;1990 年代：OpenSSH 的字串比對與 POSIX 規範&lt;/h3&gt;
+&lt;p&gt;到了 1990 年代，密碼雜湊被移至僅限管理者讀取的 &lt;code&gt;/etc/shadow&lt;/code&gt;。當使用者透過 SSH 嘗試密碼登入時，OpenSSH 會呼叫系統提供的 &lt;code&gt;crypt(3)&lt;/code&gt; 函式：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;encrypted_password &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;crypt&lt;/span&gt;(password, shadow_hash);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;strcmp&lt;/span&gt;(encrypted_password, shadow_hash) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#75715e&#34;&gt;// 登入成功
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;若目標帳號的 &lt;code&gt;shadow_hash&lt;/code&gt; 是 &lt;code&gt;*&lt;/code&gt;，正常計算出來的雜湊字串（例如現代常用的 SHA-512 雜湊 &lt;code&gt;$6$...&lt;/code&gt;）絕不可能等於單一字元 &lt;code&gt;*&lt;/code&gt;，比對自然失敗。&lt;/p&gt;
+&lt;p&gt;但 POSIX 標準（The Single UNIX Specification）對 &lt;code&gt;crypt()&lt;/code&gt; 規範了錯誤處理：若 &lt;code&gt;crypt()&lt;/code&gt; 無法執行（例如傳入的 salt 指定了不支援的演算法），必須回傳空指標（&lt;code&gt;NULL&lt;/code&gt;）。&lt;/p&gt;
+&lt;p&gt;歷史上部分應用程式在呼叫 &lt;code&gt;crypt()&lt;/code&gt; 後未檢查是否為 &lt;code&gt;NULL&lt;/code&gt;，便直接將指標傳入 &lt;code&gt;strcmp()&lt;/code&gt;，導致空指標解參考引發程式異常終止（segfault）。&lt;/p&gt;
+&lt;h3 id=&#34;2012-年musl-決定讓-crypt-不再回傳-null&#34;&gt;2012 年：musl 決定讓 crypt 不再回傳 NULL&lt;/h3&gt;
+&lt;p&gt;輕量化 C 函式庫 musl 的維護者在 2012 年 8 月 9 日提交了一筆修補（&lt;a href=&#34;https://git.musl-libc.org/cgit/musl/commit/?id=b3c4cc12&#34;&gt;commit b3c4cc12&lt;/a&gt;）。&lt;/p&gt;
+&lt;p&gt;為避免呼叫端因未檢查 &lt;code&gt;NULL&lt;/code&gt; 而崩潰，musl 決定在 &lt;code&gt;crypt()&lt;/code&gt; 發生錯誤時回傳一個特殊字串，而非 &lt;code&gt;NULL&lt;/code&gt;。在當時的 DES 實作中，選用的特殊字串為 &lt;code&gt;&amp;quot;*&amp;quot;&lt;/code&gt;。&lt;/p&gt;
+&lt;div class=&#34;markdown-alert markdown-alert-note&#34;&gt;
+  &lt;div class=&#34;markdown-alert-title&#34;&gt;&lt;i class=&#34;fa fa-info-circle&#34;&gt;&lt;/i&gt;&lt;span&gt;&amp;nbsp;Note&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class=&#34;markdown-alert-content&#34;&gt;&lt;p&gt;musl 開發者當時也考慮過安全性。在該次 commit 針對 DES 的實作中加入了一道保護：若傳入的 salt 開頭正是 &lt;code&gt;*&lt;/code&gt;，為了避免與目標欄位比對成功，函式會改為回傳 &lt;code&gt;&amp;quot;x&amp;quot;&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; (setting[&lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;]&lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt;&lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#39;*&amp;#39;&lt;/span&gt;) &lt;span style=&#34;color:#f92672&#34;&gt;?&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;x&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;:&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;*&amp;#34;&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這項防護建立在一個前提之上：比對用的目標雜湊與傳給 &lt;code&gt;crypt()&lt;/code&gt; 的 salt 來自同一個來源。&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;&lt;h3 id=&#34;2012-年20-天後musl-sha-crypt-加上-256-位元組上限&#34;&gt;2012 年（20 天後）：musl SHA-crypt 加上 256 位元組上限&lt;/h3&gt;
+&lt;p&gt;在改用特殊錯誤回傳值的 20 天後（2012 年 8 月 29 日，&lt;a href=&#34;https://git.musl-libc.org/cgit/musl/commit/?id=88bf5a8a&#34;&gt;commit 88bf5a8a&lt;/a&gt;），musl 新增了 SHA-256 與 SHA-512 的雜湊支援。&lt;/p&gt;
+&lt;p&gt;由於 SHA-crypt 包含多輪運算，為避免攻擊者藉由超長密碼耗盡伺服器 CPU 資源引發阻斷服務（hash DoS），內部實作加上了長度檢查：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;/* 等價示意：musl 內部 sha512crypt helper */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (&lt;span style=&#34;color:#a6e22e&#34;&gt;strlen&lt;/span&gt;(key) &lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;256&lt;/span&gt;) &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;當密碼長度超過 256 位元組時，內部的 &lt;code&gt;sha512crypt()&lt;/code&gt; 會放棄計算並回傳失敗（0）；外層的 &lt;code&gt;__crypt_sha512()&lt;/code&gt; 接到失敗後，便遵循 musl 的錯誤慣例，將回傳結果設為 &lt;code&gt;&amp;quot;*&amp;quot;&lt;/code&gt;，最後由公開的 &lt;code&gt;crypt()&lt;/code&gt; 傳回給呼叫端。&lt;/p&gt;
+&lt;p&gt;此項 256 位元組長度上限是 musl SHA-crypt 的專屬實作，並非所有 libc 或所有雜湊演算法皆有相同限制。&lt;/p&gt;
+&lt;h3 id=&#34;2016-年openssh-修補計時攻擊借用鄰居的-salt&#34;&gt;2016 年：OpenSSH 修補計時攻擊（借用鄰居的 salt）&lt;/h3&gt;
+&lt;p&gt;2016 年 7 月，OpenSSH 針對帳號列舉問題釋出了安全性修補（CVE-2016-6210）。&lt;/p&gt;
+&lt;p&gt;在修補前，OpenSSH 面對不存在的帳號時使用的是帶有 Blowfish 前綴的偽造密碼資料；若系統不支援該演算法，驗證會迅速失敗，而真實存在的帳號則需耗費時間計算 SHA-512 雜湊。攻擊者可藉由失敗路徑與計算延遲的差異，推測帳號是否存在。&lt;/p&gt;
+&lt;p&gt;OpenSSH 的修補邏輯為：若使用者不存在，或目標帳號的密碼欄位沒有合法的 salt（例如欄位僅為 &lt;code&gt;*&lt;/code&gt;），&lt;code&gt;sshd&lt;/code&gt; 會透過 &lt;code&gt;pick_salt()&lt;/code&gt; 從系統中已有的有效使用者裡搜尋並快取一組可用的 salt（例如其他帳號的 SHA-512 salt），藉此完成一次標準雜湊計算，平衡各路徑的處理時間：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;salt &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;pick_salt&lt;/span&gt;(); &lt;span style=&#34;color:#75715e&#34;&gt;// 取得有效帳號的 &amp;#34;$6$xyz$...&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;encrypted_password &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;crypt&lt;/span&gt;(password, salt);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;strcmp&lt;/span&gt;(encrypted_password, pw_password) &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;; &lt;span style=&#34;color:#75715e&#34;&gt;// pw_password 依然是目標帳號的 &amp;#34;*&amp;#34;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;此設計的隱含假設是：傳入合法的 SHA-512 salt 後，&lt;code&gt;crypt()&lt;/code&gt; 計算產生的字串格式必然是以 &lt;code&gt;$6$&lt;/code&gt; 開頭的完整雜湊，絕不可能與只有單一字元的 &lt;code&gt;*&lt;/code&gt; 吻合。&lt;/p&gt;
+&lt;p&gt;兩項各自合理的假設在此處出現分歧：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;musl 認為錯誤時回傳 &lt;code&gt;*&lt;/code&gt; 不會造成威脅，因為如果 salt 本身以 &lt;code&gt;*&lt;/code&gt; 開頭，它會改傳 &lt;code&gt;&amp;quot;x&amp;quot;&lt;/code&gt;；但未預料到 OpenSSH 傳入的 salt 其實是借來的 &lt;code&gt;$6$...&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;OpenSSH 認為給定 &lt;code&gt;$6$&lt;/code&gt; 開頭的 salt，&lt;code&gt;crypt()&lt;/code&gt; 的輸出必然是以 &lt;code&gt;$6$&lt;/code&gt; 開頭的雜湊；但未預料到 musl 的 SHA-crypt 在密碼長度超過 256 位元組時會直接中斷並回傳 &lt;code&gt;*&lt;/code&gt;。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;2021-至-2022-年alpine-linux-的-root-密碼設定變更&#34;&gt;2021 至 2022 年：Alpine Linux 的 root 密碼設定變更&lt;/h3&gt;
+&lt;p&gt;若系統中沒有密碼欄位為 &lt;code&gt;*&lt;/code&gt; 的帳號，該路徑不會被觸發。然而 Alpine Linux 的歷史變更使得 &lt;code&gt;*&lt;/code&gt; 帳號在多數環境中普遍存在。&lt;/p&gt;
+&lt;p&gt;2019 年，Alpine 的 Docker 官方映像曾出現 root 密碼為空的情況（CVE-2019-5021），隨後官方將 root 密碼欄位改為 &lt;code&gt;!&lt;/code&gt; 進行鎖定。&lt;/p&gt;
+&lt;p&gt;然而在未啟用 PAM 的環境中，shadow 欄位為 &lt;code&gt;!&lt;/code&gt; 不僅會停用密碼，也會導致 SSH key 認證遭系統拒絕。對於依賴預先注入金鑰開機的雲端主機而言，這項限制影響了正常運作。&lt;/p&gt;
+&lt;p&gt;為了讓帳號在不接受密碼認證的同時仍能正常使用 SSH 金鑰登入，Alpine 在 2021 年 12 月（&lt;a href=&#34;https://gitlab.alpinelinux.org/alpine/aports/-/commit/fbe926af&#34;&gt;aports commit fbe926af&lt;/a&gt;，出貨於 Alpine 3.16）將 root 欄位自 &lt;code&gt;!&lt;/code&gt; 改為 &lt;code&gt;*&lt;/code&gt;。同時，雲端映像的建置腳本中預設的 &lt;code&gt;alpine&lt;/code&gt; 使用者也採用了 &lt;code&gt;*&lt;/code&gt; 標記。&lt;/p&gt;
+&lt;h3 id=&#34;2026-年ai-agent-差分測試發現異常&#34;&gt;2026 年：AI agent 差分測試發現異常&lt;/h3&gt;
+&lt;p&gt;這項邊界條件組合在系統中存在了多年。&lt;/p&gt;
+&lt;p&gt;依研究者 Özgün Kültekin 公開說明，其在探討 OpenSSH 與底層 libc 的邊界行為時，建立了包含 glibc、musl、PAM 啟用與停用等多種組合的差分測試矩陣，並利用 AI agent swarm 生成了 17,600 組邊界測試資料進行自動化比對。&lt;/p&gt;
+&lt;p&gt;測試結果顯示，在「musl + 無 PAM」的環境下，當輸入超過 256 位元組且不超過 OpenSSH 的 1024 位元組上限時，密碼欄位為 &lt;code&gt;*&lt;/code&gt; 的帳號會異常通過比對，該漏洞因而被發現。&lt;/p&gt;
+&lt;h2 id=&#34;檢查系統是否受影響&#34;&gt;檢查系統是否受影響&lt;/h2&gt;
+&lt;p&gt;該漏洞（社群通稱為 &lt;code&gt;*sshole&lt;/code&gt;）的觸發需要多項條件同時成立：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;底層為 musl libc&lt;/strong&gt; ：例如 Alpine Linux、OpenWrt、Buildroot、Yocto、postmarketOS（現由 Nura 社群維護）、Void Linux（musl 版本）。使用 glibc 的發行版不受影響。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;OpenSSH 未啟用 PAM&lt;/strong&gt; ：Alpine Linux 預設安裝的 &lt;code&gt;openssh-server&lt;/code&gt; 套件未包含 PAM 支援，或在設定中指定了 &lt;code&gt;UsePAM no&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;開啟了密碼認證&lt;/strong&gt; ：&lt;code&gt;sshd_config&lt;/code&gt; 中啟用了 &lt;code&gt;PasswordAuthentication yes&lt;/code&gt;（OpenSSH 預設值）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;存在密碼欄位為 &lt;code&gt;*&lt;/code&gt; 的帳號&lt;/strong&gt; ：例如在設定了 &lt;code&gt;PermitRootLogin yes&lt;/code&gt; 的環境中的 root 帳號，或是僅允許金鑰登入的部署帳號、具備 &lt;code&gt;doas&lt;/code&gt; 權限的雲端預設帳號（如 &lt;code&gt;alpine&lt;/code&gt;）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;系統中存在可供借用的 SHA-crypt salt&lt;/strong&gt; ：&lt;code&gt;pick_salt()&lt;/code&gt; 能夠在系統中搜尋到，並實際選中且快取來自 &lt;code&gt;$5$&lt;/code&gt; 或 &lt;code&gt;$6$&lt;/code&gt; 雜湊的 salt。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;輸入密碼長度介於 257 至 1024 位元組&lt;/strong&gt; ：需超過 musl SHA-crypt 的 256 位元組限制以觸發錯誤回傳，同時不能超過 OpenSSH 在 &lt;code&gt;auth-passwd.c&lt;/code&gt; 中定義的 &lt;code&gt;MAX_PASSWORD_LEN&lt;/code&gt;（1024 位元組）。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;官方專案提供了檢測指令：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;curl -sO https://raw.githubusercontent.com/oz9un/sshole/main/check.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;sudo sh check.sh&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h2 id=&#34;openssh-的修補方式&#34;&gt;OpenSSH 的修補方式&lt;/h2&gt;
+&lt;p&gt;依據 &lt;a href=&#34;https://www.openssh.org/releasenotes.html&#34;&gt;OpenSSH 10.6p2 發布說明&lt;/a&gt; 與 &lt;a href=&#34;https://github.com/openssh/openssh-portable/commit/4353fdc43ef646c43a8dda7025cc1a898caf1482&#34;&gt;上游修補 commit 4353fdc43&lt;/a&gt;，該問題已在 OpenSSH 10.6p2 中正式修正。核心驗證邏輯與記憶體管理修補節錄如下：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-diff&#34; data-lang=&#34;diff&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;--- a/auth-passwd.c
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+++ b/auth-passwd.c
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;@@ -68,6 +68,7 @@ extern login_cap_t *lc;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; #define DAY		(24L * 60 * 60) /* 1 day in seconds */
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; #define TWO_WEEKS	(2L * 7 * DAY)	/* 2 weeks in seconds */
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+#define MIN_PASSWORD_HASH_LEN	4
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; #define MAX_PASSWORD_LEN	1024
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;...
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;@@ -198,16 +200,20 @@ sys_auth_passwd(struct ssh *ssh, const char *password)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	struct passwd *pw = authctxt-&amp;gt;pw;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+	int ret;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	char *encrypted_password, *salt = NULL;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;...
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	/*
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	 * Authentication is accepted if the encrypted passwords
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	 * are identical.
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	 */
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;-	return encrypted_password != NULL &amp;amp;&amp;amp;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+	ret = encrypted_password != NULL &amp;amp;&amp;amp;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+	    strlen(pw_password) &amp;gt;= MIN_PASSWORD_HASH_LEN &amp;amp;&amp;amp;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; 	    strcmp(encrypted_password, pw_password) == 0;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+	freezero(pw_password, strlen(pw_password));
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;+	return ret;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;修補重點包含兩項：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;長度門檻檢查&lt;/strong&gt; ：在比對雜湊之前，明確要求 shadow 儲存的雜湊長度必須大於等於 4（&lt;code&gt;MIN_PASSWORD_HASH_LEN&lt;/code&gt;）。若帳號欄位僅為 &lt;code&gt;*&lt;/code&gt; 或 &lt;code&gt;!&lt;/code&gt;，比對直接判定為失敗。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;複本記憶體清除&lt;/strong&gt; ：&lt;code&gt;shadow_pw()&lt;/code&gt; 改為透過 &lt;code&gt;xstrdup&lt;/code&gt; 複製密碼字串，比對完畢後立即使用 &lt;code&gt;freezero&lt;/code&gt; 清除並釋放記憶體複本，同時徹底防範指標殘留。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;防禦與暫時緩解措施&#34;&gt;防禦與暫時緩解措施&lt;/h2&gt;
+&lt;p&gt;對於正在維運相關環境的管理人員，可採行以下處置：&lt;/p&gt;
+&lt;h3 id=&#34;升級-openssh-套件&#34;&gt;升級 OpenSSH 套件&lt;/h3&gt;
+&lt;p&gt;各發行版已陸續釋出包含 OpenSSH 10.6p2 修補的套件。在 Alpine Linux 上可透過套件管理器更新：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;apk update
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;apk upgrade openssh
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;rc-service sshd restart&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;暫時緩解措施關閉密碼認證&#34;&gt;暫時緩解措施：關閉密碼認證&lt;/h3&gt;
+&lt;p&gt;若無法立即升級套件，最直接的緩解措施是停用密碼認證，強制改用 SSH 金鑰登入：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;echo &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;PasswordAuthentication no&amp;#34;&lt;/span&gt; &amp;gt; /etc/ssh/sshd_config.d/00-no-passwords.conf
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;sshd -t
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;sshd -T -C user&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;root,host&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;127.0.0.1,addr&lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt;127.0.0.1 | grep -i passwordauthentication
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;rc-service sshd restart&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;執行後需透過 &lt;code&gt;sshd -t&lt;/code&gt; 確認設定語法無誤，並以 &lt;code&gt;sshd -T -C ...&lt;/code&gt; 模擬連線條件，確保 &lt;code&gt;passwordauthentication no&lt;/code&gt; 確實生效，未被較早載入的設定檔或 &lt;code&gt;Match&lt;/code&gt; 區塊覆蓋。測試時請將 &lt;code&gt;user&lt;/code&gt;、&lt;code&gt;host&lt;/code&gt;、&lt;code&gt;addr&lt;/code&gt; 替換為實際登入帳號、來源主機名稱與來源 IP（&lt;code&gt;host&lt;/code&gt; 為客戶端主機名稱，&lt;code&gt;addr&lt;/code&gt; 為客戶端 IP），並確認設定檔有透過 &lt;code&gt;Include&lt;/code&gt; 載入該 drop-in，若有不同的 &lt;code&gt;Match&lt;/code&gt; 條件應分別進行驗證。&lt;/p&gt;
+&lt;h2 id=&#34;架構與工程省思&#34;&gt;架構與工程省思&lt;/h2&gt;
+&lt;p&gt;回顧這項漏洞的演進過程，有幾項值得借鏡的架構思維：&lt;/p&gt;
+&lt;h3 id=&#34;帶內標記in-band-signaling的長期代價&#34;&gt;帶內標記（in-band signaling）的長期代價&lt;/h3&gt;
+&lt;p&gt;將控制意義（如「停用認證」或「計算失敗」）編碼在原本正常的資料字串空間中（magic string），容易在日後引發預期外的交互作用。&lt;/p&gt;
+&lt;p&gt;1980 年使用 &lt;code&gt;*&lt;/code&gt; 標記非密碼帳號，2012 年 musl 使用 &lt;code&gt;*&lt;/code&gt; 作為替代錯誤回傳值，兩者各自獨立運作時並無大礙，但當系統邊界重疊時便產生了碰撞。以現代語言設計的角度來看，使用明確的錯誤型別（例如 &lt;code&gt;Option&lt;/code&gt; 或 &lt;code&gt;Result&lt;/code&gt;）區分狀態，往往比依賴特殊字串標記更加健全。&lt;/p&gt;
+&lt;h3 id=&#34;安全性修補的連鎖效應&#34;&gt;安全性修補的連鎖效應&lt;/h3&gt;
+&lt;p&gt;OpenSSH 在 2016 年為了解決計時攻擊而借用其他帳號 salt 的機制，在單一模組視角下十分直觀，但它改變了一項潛在假設：傳入 &lt;code&gt;crypt()&lt;/code&gt; 的 salt 不再與待驗證的目標帳號具備相同的上下文。跨帳號的狀態依賴，最終與底層 libc 的特殊邊界行為產生了非預期的串接。&lt;/p&gt;
+&lt;h3 id=&#34;差分測試與工具輔助的價值&#34;&gt;差分測試與工具輔助的價值&lt;/h3&gt;
+&lt;p&gt;一般程式碼審查通常會關注複雜的演算法與記憶體操作，較少會對標準 API &lt;code&gt;crypt(3)&lt;/code&gt; 的回傳值產生疑慮。&lt;/p&gt;
+&lt;p&gt;透過差分測試矩陣，比對不同 C 函式庫與編譯選項在極端邊界條件下的行為差異，能夠有效檢驗不同軟體層之間的隱含假設，這也展現了自動化測試與 AI 工具在深入挖掘系統交互缺陷時的具體價值。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

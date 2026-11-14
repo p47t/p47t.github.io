@@ -1,0 +1,676 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>OpenSSH on musl 的 *sshole 認證繞過漏洞 - 當防計時攻擊遇上 256 位元組限制：一場跨越 46 年的歷史交會</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=acb7736f167fb9b8b57f6af3dfb6c99c" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-05-sshole-openssh-musl/"/>
+  <meta property="og:title" content="OpenSSH on musl 的 *sshole 認證繞過漏洞 - 當防計時攻擊遇上 256 位元組限制：一場跨越 46 年的歷史交會"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-11-05 19:18:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="openssh"/>
+  
+  <meta property="og:article:tag" content="security"/>
+  
+  <meta property="og:article:tag" content="linux"/>
+  
+  <meta property="og:article:tag" content="c"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">264</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">35</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c">c <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">32</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/10-29-creative-look-isp-simulation-with-jpeg-xl/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            相機創意外觀與硬體 ISP 色彩管線運作機制
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/11-06-libghostty-modern-c-library/">
+            libghostty 1.0 與現代 C 函式庫的設計修養
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">OpenSSH on musl 的 *sshole 認證繞過漏洞</h1>
+      
+      <div class="post-subtitle">當防計時攻擊遇上 256 位元組限制：一場跨越 46 年的歷史交會</div>
+      
+      <div class="post-meta">
+        <span class="post-date">November 5, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/openssh"><span class="label label-primary">openssh</span></a>
+        
+        <a href="/tags/security"><span class="label label-primary">security</span></a>
+        
+        <a href="/tags/linux"><span class="label label-primary">linux</span></a>
+        
+        <a href="/tags/c"><span class="label label-primary">c</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/11-05-sshole-openssh-musl/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>今天在 Hacker News 上看到一個標題只有一個字（還帶著一顆星號）的項目：<code>*sshole</code>。點進去閱讀 <a href="https://sshhole.com">sshhole.com</a> 與作者公開的技術細節，這場跨越數十年的軟體架構演進與邊界條件重疊，相當值得深入探討。</p>
+<p>這項漏洞的運作機制十分特殊：在基於 musl libc 且未啟用 PAM 的 Linux 系統（例如 Alpine Linux、OpenWrt、以及 Buildroot 與 Yocto 建置環境）上，當系統開啟密碼認證且 <code>pick_salt()</code> 選中 SHA-crypt salt 時，若目標帳號在 <code>/etc/shadow</code> 中的密碼欄位被設定為 <code>*</code>（原本用意是停用密碼認證），攻擊者輸入長度介於 <strong>257 至 1024 位元組</strong>的密碼，便可能成功通過密碼雜湊比對。</p>
+<p>在實際影響層面上，能否完成登入仍取決於 OpenSSH 其他存取控制與認證要求：</p>
+<ul>
+<li>對於 <code>root</code> 帳號，OpenSSH 預設的 <code>PermitRootLogin prohibit-password</code> 會阻斷密碼認證，因此只有在管理者明確設定 <code>PermitRootLogin yes</code> 時才會直接暴露 root 登入。</li>
+<li>但對於一般系統帳號（例如僅允許 SSH 金鑰登入的部署帳號、LDAP 整合帳號，或是 Alpine 雲端映像預設的 <code>alpine</code> 帳號），只要密碼欄位為 <code>*</code> 且無其他認證方法限制（如 <code>AuthenticationMethods</code>），便能通過密碼驗證登入。而在許多雲端映像中，預設使用者通常具備免密碼 <code>doas</code> 提權權限，攻擊者登入後即可取得完整系統控制權。</li>
+</ul>
+<p>更具工程啟發性的是背後的成因：這不是緩衝區溢位或記憶體損壞，而是多個看似合理、各自出於防禦考量的設計，在歷經 46 年的軟體演進後，於特定條件下產生了預期之外的行為碰撞。</p>
+<h2 id="六行虛擬碼說明比對邏輯">六行虛擬碼說明比對邏輯</h2>
+<p>作者在專案的說明文件中以六行虛擬碼總結了認證比對的流程：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>pw_password <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;*&#34;</span>                          <span style="color:#75715e"># 目標帳號在 shadow 裡為 &#34;*&#34;，代表不接受密碼認證</span>
+</span></span><span style="display:flex;"><span>salt <span style="color:#f92672">=</span> NULL                                <span style="color:#75715e"># &#34;*&#34; 長度過短，無法作為合法的 salt</span>
+</span></span><span style="display:flex;"><span>salt <span style="color:#f92672">=</span> pick_salt()                         <span style="color:#75715e"># OpenSSH 為防計時攻擊，借用有效帳號 bob 的 &#34;$6$abc$&#34;</span>
+</span></span><span style="display:flex;"><span>hash <span style="color:#f92672">=</span> crypt(<span style="color:#e6db74">&#34;AAAA…x300&#34;</span>, <span style="color:#e6db74">&#34;$6$abc$&#34;</span>)       <span style="color:#75715e"># musl SHA-crypt 遇長度 &gt; 256 位元組失敗，回傳 &#34;*&#34;</span>
+</span></span><span style="display:flex;"><span>strcmp(hash, pw_password) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>             <span style="color:#75715e"># strcmp(&#34;*&#34;, &#34;*&#34;) == 0 -&gt; 比對吻合！</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1</span>                                   <span style="color:#75715e"># 通過認證</span></span></span></code></pre></div>
+
+<p>當比對邏輯走到 <code>strcmp(&quot;*&quot;, &quot;*&quot;) == 0</code> 時，認證便宣告通過。</p>
+<p>原本在 Unix 傳統中用來標記「不接受密碼認證」的特殊字元 <code>*</code>（此處為字面值字串，並非萬用字元 wildcard），恰好與 musl libc 在密碼過長時回傳的錯誤替代值 <code>*</code> 完全一致。</p>
+<p>以下是該漏洞觸發流程的結構圖：</p>
+
+
+  
+    <img src="/posts/2026/11-05-sshole-openssh-musl/collision-flow.svg" alt="collision-flow.svg" class="img-responsive post-image">
+  
+
+<h2 id="跨越-46-年的歷史交會">跨越 46 年的歷史交會</h2>
+<p>要理解這個現象為何會發生，需要回顧幾個關鍵的歷史節點。</p>
+<h3 id="1980-年第一顆星號the-first-star">1980 年：第一顆星號（The First Star）</h3>
+<p>在早期 Unix 時代，使用者密碼的雜湊值直接儲存在所有使用者皆可讀取的 <code>/etc/passwd</code> 中。</p>
+<p>1980 年，Bill Joy 在 3BSD 的 <code>/etc/passwd</code> 裡，為系統內建的 <code>daemon</code> 帳號填入了 <code>*</code> 作為密碼欄位。</p>
+<p>由於當時 Unix 使用的 DES 雜湊格式固定產出長度為 13 的特定字元集字串，單一字元的 <code>*</code> 絕不可能對應到任何合法的密碼輸入。自此，「在密碼欄位填入 <code>*</code> 代表此帳號不接受密碼登入」成為 Unix 與 Linux 系統廣泛採納的慣例。</p>
+<h3 id="1990-年代openssh-的字串比對與-posix-規範">1990 年代：OpenSSH 的字串比對與 POSIX 規範</h3>
+<p>到了 1990 年代，密碼雜湊被移至僅限管理者讀取的 <code>/etc/shadow</code>。當使用者透過 SSH 嘗試密碼登入時，OpenSSH 會呼叫系統提供的 <code>crypt(3)</code> 函式：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>encrypted_password <span style="color:#f92672">=</span> <span style="color:#a6e22e">crypt</span>(password, shadow_hash);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">strcmp</span>(encrypted_password, shadow_hash) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 登入成功
+</span></span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>若目標帳號的 <code>shadow_hash</code> 是 <code>*</code>，正常計算出來的雜湊字串（例如現代常用的 SHA-512 雜湊 <code>$6$...</code>）絕不可能等於單一字元 <code>*</code>，比對自然失敗。</p>
+<p>但 POSIX 標準（The Single UNIX Specification）對 <code>crypt()</code> 規範了錯誤處理：若 <code>crypt()</code> 無法執行（例如傳入的 salt 指定了不支援的演算法），必須回傳空指標（<code>NULL</code>）。</p>
+<p>歷史上部分應用程式在呼叫 <code>crypt()</code> 後未檢查是否為 <code>NULL</code>，便直接將指標傳入 <code>strcmp()</code>，導致空指標解參考引發程式異常終止（segfault）。</p>
+<h3 id="2012-年musl-決定讓-crypt-不再回傳-null">2012 年：musl 決定讓 crypt 不再回傳 NULL</h3>
+<p>輕量化 C 函式庫 musl 的維護者在 2012 年 8 月 9 日提交了一筆修補（<a href="https://git.musl-libc.org/cgit/musl/commit/?id=b3c4cc12">commit b3c4cc12</a>）。</p>
+<p>為避免呼叫端因未檢查 <code>NULL</code> 而崩潰，musl 決定在 <code>crypt()</code> 發生錯誤時回傳一個特殊字串，而非 <code>NULL</code>。在當時的 DES 實作中，選用的特殊字串為 <code>&quot;*&quot;</code>。</p>
+<div class="markdown-alert markdown-alert-note">
+  <div class="markdown-alert-title"><i class="fa fa-info-circle"></i><span>&nbsp;Note</span>
+  </div>
+  <div class="markdown-alert-content"><p>musl 開發者當時也考慮過安全性。在該次 commit 針對 DES 的實作中加入了一道保護：若傳入的 salt 開頭正是 <code>*</code>，為了避免與目標欄位比對成功，函式會改為回傳 <code>&quot;x&quot;</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">return</span> (setting[<span style="color:#ae81ff">0</span>]<span style="color:#f92672">==</span><span style="color:#e6db74">&#39;*&#39;</span>) <span style="color:#f92672">?</span> <span style="color:#e6db74">&#34;x&#34;</span> <span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;*&#34;</span>;</span></span></code></pre></div>
+
+<p>這項防護建立在一個前提之上：比對用的目標雜湊與傳給 <code>crypt()</code> 的 salt 來自同一個來源。</p></div>
+</div><h3 id="2012-年20-天後musl-sha-crypt-加上-256-位元組上限">2012 年（20 天後）：musl SHA-crypt 加上 256 位元組上限</h3>
+<p>在改用特殊錯誤回傳值的 20 天後（2012 年 8 月 29 日，<a href="https://git.musl-libc.org/cgit/musl/commit/?id=88bf5a8a">commit 88bf5a8a</a>），musl 新增了 SHA-256 與 SHA-512 的雜湊支援。</p>
+<p>由於 SHA-crypt 包含多輪運算，為避免攻擊者藉由超長密碼耗盡伺服器 CPU 資源引發阻斷服務（hash DoS），內部實作加上了長度檢查：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* 等價示意：musl 內部 sha512crypt helper */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">strlen</span>(key) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">256</span>) <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;</span></span></code></pre></div>
+
+<p>當密碼長度超過 256 位元組時，內部的 <code>sha512crypt()</code> 會放棄計算並回傳失敗（0）；外層的 <code>__crypt_sha512()</code> 接到失敗後，便遵循 musl 的錯誤慣例，將回傳結果設為 <code>&quot;*&quot;</code>，最後由公開的 <code>crypt()</code> 傳回給呼叫端。</p>
+<p>此項 256 位元組長度上限是 musl SHA-crypt 的專屬實作，並非所有 libc 或所有雜湊演算法皆有相同限制。</p>
+<h3 id="2016-年openssh-修補計時攻擊借用鄰居的-salt">2016 年：OpenSSH 修補計時攻擊（借用鄰居的 salt）</h3>
+<p>2016 年 7 月，OpenSSH 針對帳號列舉問題釋出了安全性修補（CVE-2016-6210）。</p>
+<p>在修補前，OpenSSH 面對不存在的帳號時使用的是帶有 Blowfish 前綴的偽造密碼資料；若系統不支援該演算法，驗證會迅速失敗，而真實存在的帳號則需耗費時間計算 SHA-512 雜湊。攻擊者可藉由失敗路徑與計算延遲的差異，推測帳號是否存在。</p>
+<p>OpenSSH 的修補邏輯為：若使用者不存在，或目標帳號的密碼欄位沒有合法的 salt（例如欄位僅為 <code>*</code>），<code>sshd</code> 會透過 <code>pick_salt()</code> 從系統中已有的有效使用者裡搜尋並快取一組可用的 salt（例如其他帳號的 SHA-512 salt），藉此完成一次標準雜湊計算，平衡各路徑的處理時間：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>salt <span style="color:#f92672">=</span> <span style="color:#a6e22e">pick_salt</span>(); <span style="color:#75715e">// 取得有效帳號的 &#34;$6$xyz$...&#34;
+</span></span></span><span style="display:flex;"><span>encrypted_password <span style="color:#f92672">=</span> <span style="color:#a6e22e">crypt</span>(password, salt);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">return</span> <span style="color:#a6e22e">strcmp</span>(encrypted_password, pw_password) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>; <span style="color:#75715e">// pw_password 依然是目標帳號的 &#34;*&#34;
+</span></span></span></code></pre></div>
+
+<p>此設計的隱含假設是：傳入合法的 SHA-512 salt 後，<code>crypt()</code> 計算產生的字串格式必然是以 <code>$6$</code> 開頭的完整雜湊，絕不可能與只有單一字元的 <code>*</code> 吻合。</p>
+<p>兩項各自合理的假設在此處出現分歧：</p>
+<ol>
+<li>musl 認為錯誤時回傳 <code>*</code> 不會造成威脅，因為如果 salt 本身以 <code>*</code> 開頭，它會改傳 <code>&quot;x&quot;</code>；但未預料到 OpenSSH 傳入的 salt 其實是借來的 <code>$6$...</code>。</li>
+<li>OpenSSH 認為給定 <code>$6$</code> 開頭的 salt，<code>crypt()</code> 的輸出必然是以 <code>$6$</code> 開頭的雜湊；但未預料到 musl 的 SHA-crypt 在密碼長度超過 256 位元組時會直接中斷並回傳 <code>*</code>。</li>
+</ol>
+<h3 id="2021-至-2022-年alpine-linux-的-root-密碼設定變更">2021 至 2022 年：Alpine Linux 的 root 密碼設定變更</h3>
+<p>若系統中沒有密碼欄位為 <code>*</code> 的帳號，該路徑不會被觸發。然而 Alpine Linux 的歷史變更使得 <code>*</code> 帳號在多數環境中普遍存在。</p>
+<p>2019 年，Alpine 的 Docker 官方映像曾出現 root 密碼為空的情況（CVE-2019-5021），隨後官方將 root 密碼欄位改為 <code>!</code> 進行鎖定。</p>
+<p>然而在未啟用 PAM 的環境中，shadow 欄位為 <code>!</code> 不僅會停用密碼，也會導致 SSH key 認證遭系統拒絕。對於依賴預先注入金鑰開機的雲端主機而言，這項限制影響了正常運作。</p>
+<p>為了讓帳號在不接受密碼認證的同時仍能正常使用 SSH 金鑰登入，Alpine 在 2021 年 12 月（<a href="https://gitlab.alpinelinux.org/alpine/aports/-/commit/fbe926af">aports commit fbe926af</a>，出貨於 Alpine 3.16）將 root 欄位自 <code>!</code> 改為 <code>*</code>。同時，雲端映像的建置腳本中預設的 <code>alpine</code> 使用者也採用了 <code>*</code> 標記。</p>
+<h3 id="2026-年ai-agent-差分測試發現異常">2026 年：AI agent 差分測試發現異常</h3>
+<p>這項邊界條件組合在系統中存在了多年。</p>
+<p>依研究者 Özgün Kültekin 公開說明，其在探討 OpenSSH 與底層 libc 的邊界行為時，建立了包含 glibc、musl、PAM 啟用與停用等多種組合的差分測試矩陣，並利用 AI agent swarm 生成了 17,600 組邊界測試資料進行自動化比對。</p>
+<p>測試結果顯示，在「musl + 無 PAM」的環境下，當輸入超過 256 位元組且不超過 OpenSSH 的 1024 位元組上限時，密碼欄位為 <code>*</code> 的帳號會異常通過比對，該漏洞因而被發現。</p>
+<h2 id="檢查系統是否受影響">檢查系統是否受影響</h2>
+<p>該漏洞（社群通稱為 <code>*sshole</code>）的觸發需要多項條件同時成立：</p>
+<ol>
+<li><strong>底層為 musl libc</strong> ：例如 Alpine Linux、OpenWrt、Buildroot、Yocto、postmarketOS（現由 Nura 社群維護）、Void Linux（musl 版本）。使用 glibc 的發行版不受影響。</li>
+<li><strong>OpenSSH 未啟用 PAM</strong> ：Alpine Linux 預設安裝的 <code>openssh-server</code> 套件未包含 PAM 支援，或在設定中指定了 <code>UsePAM no</code>。</li>
+<li><strong>開啟了密碼認證</strong> ：<code>sshd_config</code> 中啟用了 <code>PasswordAuthentication yes</code>（OpenSSH 預設值）。</li>
+<li><strong>存在密碼欄位為 <code>*</code> 的帳號</strong> ：例如在設定了 <code>PermitRootLogin yes</code> 的環境中的 root 帳號，或是僅允許金鑰登入的部署帳號、具備 <code>doas</code> 權限的雲端預設帳號（如 <code>alpine</code>）。</li>
+<li><strong>系統中存在可供借用的 SHA-crypt salt</strong> ：<code>pick_salt()</code> 能夠在系統中搜尋到，並實際選中且快取來自 <code>$5$</code> 或 <code>$6$</code> 雜湊的 salt。</li>
+<li><strong>輸入密碼長度介於 257 至 1024 位元組</strong> ：需超過 musl SHA-crypt 的 256 位元組限制以觸發錯誤回傳，同時不能超過 OpenSSH 在 <code>auth-passwd.c</code> 中定義的 <code>MAX_PASSWORD_LEN</code>（1024 位元組）。</li>
+</ol>
+<p>官方專案提供了檢測指令：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>curl -sO https://raw.githubusercontent.com/oz9un/sshole/main/check.sh
+</span></span><span style="display:flex;"><span>sudo sh check.sh</span></span></code></pre></div>
+
+<h2 id="openssh-的修補方式">OpenSSH 的修補方式</h2>
+<p>依據 <a href="https://www.openssh.org/releasenotes.html">OpenSSH 10.6p2 發布說明</a> 與 <a href="https://github.com/openssh/openssh-portable/commit/4353fdc43ef646c43a8dda7025cc1a898caf1482">上游修補 commit 4353fdc43</a>，該問題已在 OpenSSH 10.6p2 中正式修正。核心驗證邏輯與記憶體管理修補節錄如下：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-diff" data-lang="diff"><span style="display:flex;"><span><span style="color:#f92672">--- a/auth-passwd.c
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+++ b/auth-passwd.c
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -68,6 +68,7 @@ extern login_cap_t *lc;
+</span></span></span><span style="display:flex;"><span> #define DAY		(24L * 60 * 60) /* 1 day in seconds */
+</span></span><span style="display:flex;"><span> #define TWO_WEEKS	(2L * 7 * DAY)	/* 2 weeks in seconds */
+</span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+#define MIN_PASSWORD_HASH_LEN	4
+</span></span></span><span style="display:flex;"><span> #define MAX_PASSWORD_LEN	1024
+</span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -198,16 +200,20 @@ sys_auth_passwd(struct ssh *ssh, const char *password)
+</span></span></span><span style="display:flex;"><span> 	struct passwd *pw = authctxt-&gt;pw;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	int ret;
+</span></span></span><span style="display:flex;"><span> 	char *encrypted_password, *salt = NULL;
+</span></span><span style="display:flex;"><span>...
+</span></span><span style="display:flex;"><span> 	/*
+</span></span><span style="display:flex;"><span> 	 * Authentication is accepted if the encrypted passwords
+</span></span><span style="display:flex;"><span> 	 * are identical.
+</span></span><span style="display:flex;"><span> 	 */
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-	return encrypted_password != NULL &amp;&amp;
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	ret = encrypted_password != NULL &amp;&amp;
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	    strlen(pw_password) &gt;= MIN_PASSWORD_HASH_LEN &amp;&amp;
+</span></span></span><span style="display:flex;"><span> 	    strcmp(encrypted_password, pw_password) == 0;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	freezero(pw_password, strlen(pw_password));
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	return ret;
+</span></span></span><span style="display:flex;"><span> }
+</span></span></code></pre></div>
+
+<p>修補重點包含兩項：</p>
+<ol>
+<li><strong>長度門檻檢查</strong> ：在比對雜湊之前，明確要求 shadow 儲存的雜湊長度必須大於等於 4（<code>MIN_PASSWORD_HASH_LEN</code>）。若帳號欄位僅為 <code>*</code> 或 <code>!</code>，比對直接判定為失敗。</li>
+<li><strong>複本記憶體清除</strong> ：<code>shadow_pw()</code> 改為透過 <code>xstrdup</code> 複製密碼字串，比對完畢後立即使用 <code>freezero</code> 清除並釋放記憶體複本，同時徹底防範指標殘留。</li>
+</ol>
+<h2 id="防禦與暫時緩解措施">防禦與暫時緩解措施</h2>
+<p>對於正在維運相關環境的管理人員，可採行以下處置：</p>
+<h3 id="升級-openssh-套件">升級 OpenSSH 套件</h3>
+<p>各發行版已陸續釋出包含 OpenSSH 10.6p2 修補的套件。在 Alpine Linux 上可透過套件管理器更新：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>apk update
+</span></span><span style="display:flex;"><span>apk upgrade openssh
+</span></span><span style="display:flex;"><span>rc-service sshd restart</span></span></code></pre></div>
+
+<h3 id="暫時緩解措施關閉密碼認證">暫時緩解措施：關閉密碼認證</h3>
+<p>若無法立即升級套件，最直接的緩解措施是停用密碼認證，強制改用 SSH 金鑰登入：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;PasswordAuthentication no&#34;</span> &gt; /etc/ssh/sshd_config.d/00-no-passwords.conf
+</span></span><span style="display:flex;"><span>sshd -t
+</span></span><span style="display:flex;"><span>sshd -T -C user<span style="color:#f92672">=</span>root,host<span style="color:#f92672">=</span>127.0.0.1,addr<span style="color:#f92672">=</span>127.0.0.1 | grep -i passwordauthentication
+</span></span><span style="display:flex;"><span>rc-service sshd restart</span></span></code></pre></div>
+
+<p>執行後需透過 <code>sshd -t</code> 確認設定語法無誤，並以 <code>sshd -T -C ...</code> 模擬連線條件，確保 <code>passwordauthentication no</code> 確實生效，未被較早載入的設定檔或 <code>Match</code> 區塊覆蓋。測試時請將 <code>user</code>、<code>host</code>、<code>addr</code> 替換為實際登入帳號、來源主機名稱與來源 IP（<code>host</code> 為客戶端主機名稱，<code>addr</code> 為客戶端 IP），並確認設定檔有透過 <code>Include</code> 載入該 drop-in，若有不同的 <code>Match</code> 條件應分別進行驗證。</p>
+<h2 id="架構與工程省思">架構與工程省思</h2>
+<p>回顧這項漏洞的演進過程，有幾項值得借鏡的架構思維：</p>
+<h3 id="帶內標記in-band-signaling的長期代價">帶內標記（in-band signaling）的長期代價</h3>
+<p>將控制意義（如「停用認證」或「計算失敗」）編碼在原本正常的資料字串空間中（magic string），容易在日後引發預期外的交互作用。</p>
+<p>1980 年使用 <code>*</code> 標記非密碼帳號，2012 年 musl 使用 <code>*</code> 作為替代錯誤回傳值，兩者各自獨立運作時並無大礙，但當系統邊界重疊時便產生了碰撞。以現代語言設計的角度來看，使用明確的錯誤型別（例如 <code>Option</code> 或 <code>Result</code>）區分狀態，往往比依賴特殊字串標記更加健全。</p>
+<h3 id="安全性修補的連鎖效應">安全性修補的連鎖效應</h3>
+<p>OpenSSH 在 2016 年為了解決計時攻擊而借用其他帳號 salt 的機制，在單一模組視角下十分直觀，但它改變了一項潛在假設：傳入 <code>crypt()</code> 的 salt 不再與待驗證的目標帳號具備相同的上下文。跨帳號的狀態依賴，最終與底層 libc 的特殊邊界行為產生了非預期的串接。</p>
+<h3 id="差分測試與工具輔助的價值">差分測試與工具輔助的價值</h3>
+<p>一般程式碼審查通常會關注複雜的演算法與記憶體操作，較少會對標準 API <code>crypt(3)</code> 的回傳值產生疑慮。</p>
+<p>透過差分測試矩陣，比對不同 C 函式庫與編譯選項在極端邊界條件下的行為差異，能夠有效檢驗不同軟體層之間的隱含假設，這也展現了自動化測試與 AI 工具在深入挖掘系統交互缺陷時的具體價值。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

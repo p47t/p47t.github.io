@@ -1,0 +1,32 @@
+flowchart TD
+    subgraph UIThread["1. Main UI Thread (Kotlin)"]
+        direction TB
+        M1["Composition & Layout 測量"] --> M2["RenderNode.beginRecording()"]
+        M2 --> M3["寫入 DisplayList 繪圖指令集 (C++)"]
+        M3 --> M4["RenderNode.endRecording()"]
+    end
+
+    subgraph SyncStep["2. VSYNC 幀同步"]
+        M4 -->|SyncFrameState 資料同步| R1
+    end
+
+    subgraph RenderStep["3. RenderThread (Native C++)"]
+        direction TB
+        R1["取得 DisplayList & RenderNode 4x4 矩陣屬性"] --> R2["Skia 引擎生成 GPU Shaders / Vulkan / OpenGL 指令"]
+    end
+
+    subgraph GPUStep["4. GPU 硬體加速繪製"]
+        R2 --> G1["輸出至螢幕 Surface Buffer 顯示 (60/120 FPS)"]
+    end
+
+    style UIThread fill:#f1f5f9,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
+    style SyncStep fill:#faf5ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
+    style RenderStep fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#065f46
+    style GPUStep fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#7c2d12
+    style M1 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M2 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M3 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style M4 fill:#ffffff,stroke:#93c5fd,color:#0f172a
+    style R1 fill:#ffffff,stroke:#6ee7b7,color:#0f172a
+    style R2 fill:#ffffff,stroke:#6ee7b7,color:#0f172a
+    style G1 fill:#ffffff,stroke:#fdba74,color:#0f172a
