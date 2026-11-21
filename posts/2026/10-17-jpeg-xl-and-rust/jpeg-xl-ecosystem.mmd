@@ -1,0 +1,29 @@
+```mermaid
+flowchart TD
+    subgraph Capture["攝影輸入與資產 (Photographic Capture & Library)"]
+        Raw["RAW 相機原始檔 (40–80MB)<br/>14-bit 感光元件資料・極耗硬碟空間"]
+        LegacyJpg["既有 JPEG 典藏庫 (8-bit)<br/>數十 TB 歷史資產・色階斷層・佔空間"]
+    end
+
+    subgraph CodecMatrix["五大影像格式特質與攝影評比 (Codec & HDR Comparison)"]
+        JXL["JPEG XL：攝影專用次世代格式<br/>• 原生單層 32-bit 浮點 / HDR 廣色域<br/>• 無損重壓既有 JPEG (直接瘦身 20%)<br/>• VarDCT 保留照片自然顆粒與紋理"]
+        UHDR["Ultra HDR：向後相容雙層橋樑<br/>• 8-bit SDR 主圖 + MPF Gain Map<br/>• 舊螢幕看 SDR、新螢幕現 HDR<br/>• 雙層裁切易掉 HDR (靠 TileSplit 解)"]
+        AVIF["AVIF：視訊衍生・紋理需細調<br/>• 源自 AV1 視訊畫格，低位元率表現優異<br/>• 預設濾波可能平滑高頻，高畫質編碼耗時"]
+        HEIF["HEIC：機身直出・授權受阻<br/>• iPhone / Sony / Canon 10-bit HDR 機身直出<br/>• HEVC 專利授權爭議大，開源與網頁生態受阻"]
+        WEBP["WebP：成熟普及・規格較受限<br/>• 源自 VP8，以 8-bit 為主且無原生 HDR<br/>• 適合一般網頁小縮圖，不適合作為高動態範圍攝影典藏"]
+    end
+
+    subgraph RustPipeline["Rust 記憶體安全影像核心：從瀏覽器解碼到實戰工具 (Rust Ecosystem)"]
+        Engines["純 Rust 生態：jxl-rs + jxl-oxide + ultrahdr-core + TileSplit<br/>• jxl-rs 破局：Google Research 回應 Mozilla 戰帖打造純 Rust 解碼器<br/>• 瀏覽器到位：Chrome 155 與 Firefox 158 正式內建 jxl-rs，與 Safari 會合<br/>• 實戰工具鏈：TileSplit 重組 MPF 保留 Ultra HDR，jxl-oxide 無痛編譯 WASM"]
+    end
+
+    subgraph Delivery["攝影玩家現代工作流程 (Photographer Workflow)"]
+        StorageWin["典藏無痛瘦身 (JXL)<br/>無損重壓既有 JPEG<br/>省 20% 且可 1:1 還原"]
+        SocialWin["社群切圖 (Ultra HDR)<br/>TileSplit 切 IG 橫幅<br/>保留 Gain Map 高光"]
+        BrowserWin["高傳真作品集 (JXL)<br/>三大瀏覽器原生支援<br/>渲染 32-bit HDR 細節"]
+    end
+
+    Capture --> CodecMatrix
+    CodecMatrix --> RustPipeline
+    RustPipeline --> Delivery
+```

@@ -1,0 +1,13 @@
+flowchart TD
+    A[token id] --> B[model.embed → x]
+    B --> C{每層 0..n_layer}
+    C --> D[rmsnorm x → xb]
+    D --> E[wq·xb → q<br/>wk·xb → kcache row<br/>wv·xb → vcache row]
+    E --> F[apply_rope on q & k]
+    F --> G[每個 head:<br/>q·K 算 attention scores<br/>softmax<br/>加權 V → xb]
+    G --> H[wo·xb → xb2<br/>x += xb2 殘差]
+    H --> I[rmsnorm x → xb<br/>FFN: silu·gate * up<br/>w_down → xb2<br/>x += xb2]
+    I --> C
+    C --> J[output_norm → xb]
+    J --> K[lm_head: output·xb → logits]
+    K --> L[回傳 logits slice]

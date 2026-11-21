@@ -1,0 +1,47 @@
+flowchart TD
+    subgraph Layer1["高階軟體與編譯器層 (Compiler Layer)"]
+        direction LR
+        L1_Code["<div style='width:280px; text-align:left; line-height:1.4;'><b>高階語言原始碼 (Source Code)</b><br/>• 循序語意：C++ / Rust Program Order<br/>• 單執行緒 as-if 原則保障結果正確<br/>• 尚未考慮多核心記憶體可見性問題</div>"]
+        L1_Opt["<div style='width:280px; text-align:left; line-height:1.4;'><b>編譯器最佳化 (Optimization)</b><br/>• 指令調度 (Scheduling)：隱藏管線延遲<br/>• 暫存器提升 (Promotion)：延遲寫回記憶體<br/>• 冗餘消除 (DSE / CSE)：刪除中間存取</div>"]
+        L1_Code -->|"編譯與轉換"| L1_Opt
+    end
+
+    subgraph Layer2["處理器執行核心 (CPU Core & Execution Pipeline)"]
+        direction LR
+        L2_Core["<div style='width:280px; text-align:left; line-height:1.4;'><b>超純量管線與執行引擎 (Pipeline)</b><br/>• 指令解碼為微操作 (μops) 平行派發<br/>• 分支預測與推測讀取 (Speculative Load)<br/>• 保留站 (Reservation Station) 動態調度</div>"]
+        L2_ROB["<div style='width:280px; text-align:left; line-height:1.4;'><b>亂序執行與引退機制 (ROB)</b><br/>• 運算元資料就緒即脫離循序執行<br/>• 重排序緩衝區 (ROB)：維護暫存器假象<br/>• 指令循序引退 (In-order Retirement)</div>"]
+        L2_Core -->|"微操作引退"| L2_ROB
+    end
+
+    subgraph Layer3["核心記憶體介面 (Memory Subsystem Interface)"]
+        direction LR
+        L3_SB["<div style='width:280px; text-align:left; line-height:1.4;'><b>寫入緩衝區 (Store Buffer)</b><br/>• 吸收寫入延遲，非同步背景排空 (Drain)<br/>• 支援寫入合併 (Store Merging)<br/>• <b>★ 物理根源：誘發 Store-Load 亂序</b></div>"]
+        L3_IQ["<div style='width:280px; text-align:left; line-height:1.4;'><b>無效化佇列 (Invalidate Queue)</b><br/>• 暫存跨核心失效請求，延遲確認 (ACK)<br/>• 避免 CPU 等待快取行使無效廣播<br/>• 弱架構下引發過期快取資料讀取</div>"]
+        L3_SB <--->|"記憶體介面協調"| L3_IQ
+    end
+
+    subgraph Layer4["快取階層與多核心互連 (Cache Hierarchy & Interconnect)"]
+        direction LR
+        L4_Cache["<div style='width:280px; text-align:left; line-height:1.4;'><b>多層級快取階層 (Cache Hierarchy)</b><br/>• 本地 L1 / L2 快取與共享 L3 快取<br/>• 快取未命中 (Miss) 產生巨大延遲落差<br/>• 造成各變數寫入發布時程產生偏斜</div>"]
+        L4_Bus["<div style='width:280px; text-align:left; line-height:1.4;'><b>快取一致性互連網路 (Interconnect)</b><br/>• MESI / MOESI 協定維持快取行狀態<br/>• <b>局限：僅保證單一位址，不保證跨位址順序</b><br/>• 晶片互連網路 (Ring/Mesh) 傳播延遲差</div>"]
+        L4_Cache <--->|"快取行狀態維護"| L4_Bus
+    end
+
+    Layer1 -->|"發射機器碼"| Layer2
+    Layer2 -->|"寫入指令提交"| Layer3
+    Layer3 -->|"非同步排空寫入 / 快取失效協調"| Layer4
+
+    style Layer1 fill:#1a1e2e,stroke:#3b4261,stroke-width:1.5px,color:#7aa2f7;
+    style Layer2 fill:#1a1e2e,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    style Layer3 fill:#1a1e2e,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    style Layer4 fill:#1a1e2e,stroke:#2ac3de,stroke-width:1.5px,color:#2ac3de;
+
+    classDef sw fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef core fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#c0caf5;
+    classDef mem fill:#24283b,stroke:#ff9e64,stroke-width:1.5px,color:#ff9e64;
+    classDef hw fill:#24283b,stroke:#7dcfff,stroke-width:1.5px,color:#7dcfff;
+
+    class L1_Code,L1_Opt sw;
+    class L2_Core,L2_ROB core;
+    class L3_SB,L3_IQ mem;
+    class L4_Cache,L4_Bus hw;

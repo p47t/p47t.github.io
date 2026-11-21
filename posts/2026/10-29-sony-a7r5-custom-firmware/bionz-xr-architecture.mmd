@@ -1,0 +1,19 @@
+flowchart TD
+    subgraph SD["SD 卡與韌體容器層"]
+        LUT["CUSTOM_F.BIN / SONY_LUT.BIN (29,552 bytes)<br/>12 組 Creative Look 名稱、參數與 184-byte 5x9x9 3D HSV 色格"]
+        UFU["BODYDATA.DAT (UFU 韌體容器 · 754.5 MB)<br/>AES-ECB/CBC 加密 FDAT + RSA-2048 簽章 + DEND CRC32"]
+    end
+
+    subgraph SOC["Sony BIONZ XR (CXD90057) 雙處理器架構"]
+        P1["nflasha1 (Recovery FAT12 · /boot/initrd.img)<br/>替換 VerificationKey.pem 並修補 verifyKey()，保留 RSA-2048 驗簽"]
+        AP["AP 應用處理器 · 4x ARM Cortex-A35 (64-bit Linux 4.9.337-scel)<br/>nflasha15 /lib/appFw.so (97 MB) · +40 KB Code Cave @ 0x3c97ef8 (17 Hooks)"]
+        WBI["nflasha5 休眠快照 (Warm Boot Image 2)<br/>WBI2 ➔ wbi2 單一位元組失效化，強制刷機後冷開機重建 RAM 快照"]
+        CP["CP 相機處理器 · 32-bit ARM Cortex-R5 (TOPPERS/FMP RTOS)<br/>nflasha8 cpapp-b.bin · 12 組 Look 表格重定位 @ 0x688df740 (167 處指令修補)"]
+    end
+
+    UFU --> P1
+    P1 --> AP
+    P1 --> WBI
+    P1 --> CP
+    LUT --> AP
+    AP -->|IPC 傳遞 Look ID 1..12 與自訂色彩格| CP

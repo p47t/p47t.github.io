@@ -1,0 +1,24 @@
+flowchart TB
+    subgraph CPP["⚡ C++20/23 Coroutines (Push-Driven / Resumption)"]
+        direction TB
+        CP_Suspend["1. co_await awaitable<br/>協程暫停，儲存狀態至 Frame"]
+        CP_Register["2. await_suspend(handle)<br/>將 coroutine_handle 註冊給 EventLoop / Driver"]
+        CP_Push["3. Event Ready ➜ handle.resume() / 對稱轉移<br/><b>精確直接喚醒</b>：直接跳轉至中斷點續行"]
+        CP_Suspend --> CP_Register --> CP_Push
+    end
+
+    subgraph Rust["🦀 Rust Async / Future (Pull-Driven / Polling)"]
+        direction TB
+        RS_Poll["1. Executor 呼叫頂層 Future::poll(cx)<br/>狀態機由上而下遞迴評估"]
+        RS_Pending["2. 未就緒 ➜ 回傳 Poll::Pending<br/>底層 Leaf Future 將 Waker 註冊至 Reactor (epoll)"]
+        RS_Pull["3. Event Ready ➜ waker.wake()<br/><b>重新拉取</b>：Task 放回佇列，Executor 再次從頂層 poll"]
+        RS_Poll --> RS_Pending --> RS_Pull
+    end
+
+    classDef cppBox fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef rustBox fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+    classDef stepNode fill:#ffffff,stroke:#94a3b8,stroke-width:1px,color:#0f172a;
+
+    class CPP cppBox;
+    class Rust rustBox;
+    class CP_Suspend,CP_Register,CP_Push,RS_Poll,RS_Pending,RS_Pull stepNode;

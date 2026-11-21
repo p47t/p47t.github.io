@@ -1,0 +1,31 @@
+flowchart TD
+    subgraph G1["物理模擬世界 (120 Hz Fixed Timestep)"]
+        direction TB
+        Physics["Canvas 遊戲實體循環 (120 Hz 物理微步)<br/>無重力慣性推進・環形拓撲穿透・子彈軌跡與碎片碰撞檢測"]
+    end
+
+    subgraph G2["語意感知層 (Sensory Abstraction)"]
+        direction TB
+        Snapshot["雷達幾何解算 (FlightSnapshot)<br/>最近 10 顆隕石・相對方位角・接近速度・最近距離預估"]
+    end
+
+    subgraph G3["戰術推理大腦 (Cloud AI / System 1)"]
+        direction TB
+        JevAPI["TypeSafe AI SDK (Jev · systemOne)<br/>Choice 結構化查詢・Maneuver 機率分佈・Target 鎖定評估"]
+    end
+
+    subgraph G4["在地控制與防衛層 (Local Actuation & Reflex)"]
+        direction TB
+        ReflexCheck["緊急避險反射 (Reflex Check)<br/>< 0.8s 安全包絡檢測・強行轉向避難"]
+        LocalExec["在地物理控制器 (Local Steering)<br/>前置量解算瞄準・24 方位候選落點評估"]
+        Output["每微步致動輸出 (Controls Output)<br/>轉向控制量 (turn)・推進脈衝・開火紀律 (fire)"]
+
+        ReflexCheck --> Output
+        LocalExec --> Output
+    end
+
+    Physics -->|每幀構建快照（請求按 1.2s 節流）| Snapshot
+    Physics -.->|即時讀取即時空間狀態| G4
+    Snapshot -->|非同步傳送 FlightSnapshot| JevAPI
+    JevAPI -->|返回戰術姿態與機率分佈| G4
+    Output -.->|120 Hz 固定步長物理驅動| Physics

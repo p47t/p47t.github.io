@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1b26"/>
+      <stop offset="100%" stop-color="#24283b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff9e64"/>
+      <stop offset="100%" stop-color="#bb9af7"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2e42"/>
+      <stop offset="100%" stop-color="#1f2233"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect x="50" y="50" width="140" height="4" fill="url(#accent)" rx="2"/>
+
+  <text x="60" y="92" font-family="monospace" font-size="14" fill="#9ece6a">tiny-llm-runner · deep dive</text>
+  <text x="60" y="138" font-family="Arvo, serif" font-size="42" fill="#c0caf5" font-weight="bold">(3) tensor.rs</text>
+  <text x="60" y="170" font-family="Arial, sans-serif" font-size="20" fill="rgba(192,202,245,0.65)">a 32-byte view over mmap, with lifetimes</text>
+
+  <!-- mmap underneath -->
+  <g transform="translate(70, 230)">
+    <text x="0" y="0" font-family="monospace" font-size="14" fill="#7dcfff">memory-mapped GGUF (gigabytes, on disk)</text>
+    <rect x="0" y="20" width="1060" height="60" rx="6" fill="rgba(125,207,255,0.08)" stroke="#7dcfff" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <g font-family="monospace" font-size="11" fill="rgba(125,207,255,0.6)">
+      <text x="20" y="42">[ header ]</text>
+      <text x="120" y="42">[ tensor 0 — Q4_0 weights ]</text>
+      <text x="380" y="42">[ tensor 1 ]</text>
+      <text x="520" y="42">[ tensor 2 ]</text>
+      <text x="680" y="42">[ tensor 3 ]</text>
+      <text x="850" y="42">[ tensor 4 ... ]</text>
+      <text x="20" y="68">page 0</text><text x="120" y="68">pages 1-1024</text><text x="380" y="68">pages 1025-2048</text><text x="520" y="68">...</text><text x="680" y="68">...</text>
+    </g>
+    <!-- highlight -->
+    <rect x="120" y="20" width="260" height="60" rx="6" fill="rgba(255,158,100,0.1)" stroke="#ff9e64" stroke-width="2"/>
+  </g>
+
+  <!-- arrow up -->
+  <line x1="250" y1="320" x2="250" y2="370" stroke="#ff9e64" stroke-width="2"/>
+  <polygon points="250,360 245,372 255,372" fill="#ff9e64"/>
+
+  <!-- TensorView struct -->
+  <g transform="translate(70, 380)">
+    <rect x="0" y="0" width="500" height="220" rx="12" fill="url(#card)" stroke="#ff9e64" stroke-width="2"/>
+    <text x="20" y="32" font-family="monospace" font-size="14" fill="#ff9e64">struct TensorView&lt;'a&gt; { <tspan fill="rgba(255,158,100,0.5)">// 32 bytes, Copy</tspan></text>
+    <g font-family="monospace" font-size="13" fill="#c0caf5">
+      <text x="40" y="68">data: &amp;'a [u8],   <tspan fill="rgba(192,202,245,0.5)">// borrows mmap</tspan></text>
+      <text x="40" y="96">ggml_type: GgmlType,</text>
+      <text x="40" y="124">dims: [u64; 4],</text>
+      <text x="40" y="152">n_dims: usize,</text>
+    </g>
+    <text x="20" y="190" font-family="monospace" font-size="14" fill="#ff9e64">}</text>
+  </g>
+
+  <!-- Methods -->
+  <g transform="translate(610, 380)">
+    <rect x="0" y="0" width="520" height="220" rx="12" fill="url(#card)" stroke="#9ece6a" stroke-width="2"/>
+    <text x="20" y="32" font-family="monospace" font-size="14" fill="#9ece6a">impl&lt;'a&gt; TensorView&lt;'a&gt; {</text>
+    <g font-family="monospace" font-size="13" fill="#c0caf5">
+      <text x="40" y="68"><tspan fill="#bb9af7">pub fn</tspan> dot_row(&amp;<tspan fill="#bb9af7">self</tspan>, i: usize, x: &amp;[f32]) -&gt; f32</text>
+      <text x="60" y="92" fill="rgba(192,202,245,0.5)">// match ggml_type → dequant::dot_*</text>
+      <text x="60" y="116" fill="rgba(192,202,245,0.5)">// dispatch only at row boundary!</text>
+      <text x="40" y="148"><tspan fill="#bb9af7">pub fn</tspan> dequant_row(&amp;<tspan fill="#bb9af7">self</tspan>, i: usize, out: &amp;<tspan fill="#bb9af7">mut</tspan> [f32])</text>
+      <text x="60" y="172" fill="rgba(192,202,245,0.5)">// for embedding lookup (cold path)</text>
+    </g>
+    <text x="20" y="206" font-family="monospace" font-size="14" fill="#9ece6a">}</text>
+  </g>
+
+  <!-- Tech tags -->
+  <g transform="translate(600, 635)" font-family="monospace" font-size="14">
+    <g transform="translate(-180, 0)">
+      <rect x="-60" y="-15" width="120" height="30" rx="6" fill="rgba(255,158,100,0.18)" stroke="#ff9e64" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#ff9e64" text-anchor="middle">lifetime</text>
+    </g>
+    <g transform="translate(-40, 0)">
+      <rect x="-60" y="-15" width="120" height="30" rx="6" fill="rgba(125,207,255,0.18)" stroke="#7dcfff" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#7dcfff" text-anchor="middle">zero-copy</text>
+    </g>
+    <g transform="translate(100, 0)">
+      <rect x="-60" y="-15" width="120" height="30" rx="6" fill="rgba(187,154,247,0.18)" stroke="#bb9af7" stroke-width="1.5"/>
+      <text x="0" y="5" fill="#bb9af7" text-anchor="middle">view type</text>
+    </g>
+  </g>
+
+  <text x="1160" y="650" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.5)" text-anchor="end">blog.simplypatrick.com</text>
+</svg>

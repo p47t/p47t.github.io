@@ -1,0 +1,12 @@
+flowchart TD
+    A["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>請求進入，引擎開始建立內部資料結構</span><br/><span style='font-weight:normal;'>結構已標記為使用中，但底層記憶體尚未配置完成</span></div>"]
+    B["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>觸發 OOM 或 fatal 狀態</span><br/><span style='font-weight:normal;'>memory_limit 耗盡，引擎呼叫 zend_bailout()</span></div>"]
+    C["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>longjmp 跳回生效的 bailout 邊界</span><br/><span style='font-weight:normal;'>跳過函式收尾與簿記，留下半初始化或懸空的狀態</span></div>"]
+    D["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>清理程式假設結構完整</span><br/><span style='font-weight:normal;'>依據殘留的錯誤狀態分支，或是下一個請求重用同一塊記憶體</span></div>"]
+    E["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>記憶體損壞 / use-after-free ➔ RCE</span><br/><span style='font-weight:normal;'>攻擊者操控 heap 佈局，劫持控制流程</span></div>"]
+    A --> B --> C --> D --> E
+    style A width:580px;
+    style B width:580px;
+    style C width:580px;
+    style D width:580px;
+    style E width:580px;

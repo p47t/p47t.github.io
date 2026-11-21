@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant U as 使用者
+    participant AL as Agent Loop
+    participant M as Memory
+    participant LLM as LLM
+
+    U->>AL: 送出訊息
+    AL->>M: recall(user_msg, 5)
+    M-->>AL: 相關記憶（score >= 0.4 才納入）
+    AL->>LLM: [Memory context]\n- key: content\n...\n{user_msg}
+    LLM-->>AL: 回應
+    AL->>M: store("user_msg_{uuid}", msg, Conversation)
+    AL->>M: store("assistant_resp_{uuid}", summary[:100], Daily)
+    AL-->>U: 最終答覆

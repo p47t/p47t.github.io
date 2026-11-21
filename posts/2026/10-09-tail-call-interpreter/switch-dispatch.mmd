@@ -1,0 +1,13 @@
+flowchart TD
+    subgraph SD["Switch Dispatch 的執行循環"]
+        direction TB
+        LoopHead["<div style='width:560px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>迴圈起點 while(true)</span><br/><span style='font-weight:normal;'>檢查計數器、維護狀態</span></div>"]
+        CentralSwitch["<div style='width:560px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>中央 switch (*pc++) 跳躍表</span><br/><span style='font-weight:normal;'>所有 opcode 共享同一個間接跳躍位址（BTB 分支預測瓶頸）</span></div>"]
+        OpAdd["<div style='width:560px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>OP_ADD 執行完畢</span><br/><span style='font-weight:normal;'>遭遇 break，產生第一次跳躍（跳回迴圈頂端）</span></div>"]
+        LoopHead --> CentralSwitch
+        CentralSwitch -->|跳躍 1：間接跳躍| OpAdd
+        OpAdd -->|跳躍 2：無條件跳回頂端| LoopHead
+    end
+    style LoopHead width:580px;
+    style CentralSwitch width:580px;
+    style OpAdd width:580px;

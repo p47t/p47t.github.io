@@ -1,0 +1,29 @@
+flowchart TD
+    Req["<div style='width:260px; padding:4px 8px; text-align:center;'><b>執行緒請求加鎖</b><br/><code>mutex.lock()</code></div>"]
+    FastCheck{"Fast-path 比對<br/>使用者態原子 CAS"}
+    InCS["<div style='width:260px; padding:4px 8px; text-align:left;'><b>進入臨界區 (Critical Section)</b><br/>• ⚡ 耗時約 10–25 ns<br/>• 無核心介入、無切換</div>"]
+    SpinCheck{"自旋重試<br/>Spin-wait"}
+    SlowCall["<div style='width:260px; padding:4px 8px; text-align:left;'><b>墜入 Slow-path 核心態</b><br/>• 呼叫系統呼叫 <code>sys_futex(WAIT)</code><br/>• 執行緒掛起並移入等待佇列</div>"]
+    CtxSwitch["<div style='width:260px; padding:4px 8px; text-align:left;'><b>上下文切換 (Context Switch)</b><br/>• 💥 耗時 1,000–5,000 ns<br/>• CPU 調度其他執行緒執行</div>"]
+    Wakeup["<div style='width:260px; padding:4px 8px; text-align:left;'><b>持有者釋放與喚醒</b><br/>• 呼叫 <code>sys_futex(WAKE)</code><br/>• ❄️ 冷快取、TLB Miss、快取行彈跳</div>"]
+
+    Req --> FastCheck
+    FastCheck -->|無競爭| InCS
+    FastCheck -->|發生競爭| SpinCheck
+    SpinCheck -->|自旋獲鎖成功| InCS
+    SpinCheck -->|自旋超時失敗| SlowCall
+    SlowCall --> CtxSwitch
+    CtxSwitch --> Wakeup
+    Wakeup --> InCS
+
+    classDef proc fill:#24283b,stroke:#7aa2f7,stroke-width:1.5px,color:#c0caf5;
+    classDef branch fill:#24283b,stroke:#bb9af7,stroke-width:1.5px,color:#bb9af7;
+    classDef ok fill:#1f2335,stroke:#9ece6a,stroke-width:1.5px,color:#9ece6a;
+    classDef warn fill:#24283b,stroke:#e0af68,stroke-width:1.5px,color:#e0af68;
+    classDef err fill:#1f2335,stroke:#f7768e,stroke-width:1.5px,color:#f7768e;
+
+    class Req proc;
+    class FastCheck,SpinCheck branch;
+    class InCS ok;
+    class SlowCall,CtxSwitch err;
+    class Wakeup warn;
