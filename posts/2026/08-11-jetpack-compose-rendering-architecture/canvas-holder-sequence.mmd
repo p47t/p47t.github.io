@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant SC as System Canvas (android.graphics.Canvas)
+    participant ACV as AndroidComposeView
+    participant CH as CanvasHolder
+    participant AC as AndroidCanvas Wrapper
+    participant Root as Compose LayoutNode Tree
+
+    SC->>ACV: dispatchDraw(systemCanvas)
+    ACV->>CH: drawInto(systemCanvas)
+    CH->>AC: 暫時將 internalCanvas 指向 systemCanvas
+    CH->>Root: root.draw(androidCanvas)
+    Root->>AC: 執行繪圖指令 (drawRect, drawText...)
+    AC->>SC: 直接委派給 systemCanvas 執行
+    CH->>AC: 繪製結束，恢復 internalCanvas

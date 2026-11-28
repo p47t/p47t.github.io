@@ -1,0 +1,1088 @@
+<!doctype html>
+<html prefix="og: http://ogp.me/ns#">
+<head>
+    <title>libghostty 1.0 與現代 C 函式庫的設計修養 - 從 Mitchell Hashimoto 的釋出看 ABI 穩定性、不透明控制代碼與記憶體自主權</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-06-libghostty-modern-c-library/"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:image" content="https://lh3.googleusercontent.com/-GqbL2_hPq9Y/UC9brHyHa1I/AAAAAAAAEoY/rGGtCNWe3Vw/s800/patrick.jpg"/>
+
+  <link rel="preload" href="/fonts/Arvo-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/Julee-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/JustMeAgainDownHere-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link rel="preload" href="/fonts/SourceCodePro-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous">
+<link href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/bootstrap-toc.css" rel="stylesheet">
+<link href="//netdna.bootstrapcdn.com/font-awesome/4.0.3/css/font-awesome.css" rel="stylesheet">
+
+<link href="/css/prism.css" rel="stylesheet" />
+<link href="/css/blog.css?v=acb7736f167fb9b8b57f6af3dfb6c99c" rel="stylesheet">
+
+
+
+<link href="/images/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+
+  <meta property="og:site_name" content="Simply Patrick"/>
+  <meta property="og:url" content="https://blog.simplypatrick.com/posts/2026/11-06-libghostty-modern-c-library/"/>
+  <meta property="og:title" content="libghostty 1.0 與現代 C 函式庫的設計修養 - 從 Mitchell Hashimoto 的釋出看 ABI 穩定性、不透明控制代碼與記憶體自主權"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:article:published_time" content="2026-11-06 20:25:00 -0800 -0800"/>
+  
+  <meta property="og:article:tag" content="c"/>
+  
+  <meta property="og:article:tag" content="zig"/>
+  
+  <meta property="og:article:tag" content="architecture"/>
+  
+  <meta property="og:article:tag" content="ghostty"/>
+  
+  <meta property="og:article:tag" content="ai-assisted"/>
+  
+  <meta property="og:article:author" content="Patrick Tsai"/>
+</head>
+<body data-spy="scroll" data-target="#toc">
+    <div class="container" id="main">
+    <div class="row">
+      <header role="banner" data-pagefind-ignore>
+  <div class="row">
+    <div class="col-md-9">
+      <div class="banner-title">
+        <a href="/">Simply Patrick</a>
+        <small class="banner-subtitle">Hopes can always go up, tears can only come down.</small>
+      </div>
+    </div>
+    <div class="col-md-3 text-right">
+      <ul class="social-links list-inline">
+        <li><a href="https://www.threads.net/@p47rick.tsai" title="Threads" target="_blank" rel="noopener"><i class="fa fa-at"></i></a></li>
+        <li><a href="https://twitter.com/PatrickSimply"><i class="fa fa-twitter"></i></a></li>
+        <li><a href="https://www.facebook.com/yinghau76"><i class="fa fa-facebook"></i></a></li>
+        <li><a href="https://www.linkedin.com/in/yinghau76"><i class="fa fa-linkedin"></i></a></li>
+        <li><a href="https://github.com/p47t"><i class="fa fa-github-alt"></i></a></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+      <nav class="navbar navbar-default" role="navigation" data-pagefind-ignore>
+  <div class="container-fluid">
+    
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/posts/">posts</a>
+      <a class="navbar-brand" href="/tils/">TILs</a>
+    </div>
+
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">categories <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/categories/android">android <span class="badge">2</span></a></li>
+          
+            <li><a href="/categories/business">business <span class="badge">26</span></a></li>
+          
+            <li><a href="/categories/career">career <span class="badge">20</span></a></li>
+          
+            <li><a href="/categories/development">development <span class="badge">58</span></a></li>
+          
+            <li><a href="/categories/programming">programming <span class="badge">264</span></a></li>
+          
+            <li><a href="/categories/web">web <span class="badge">11</span></a></li>
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">tags <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            
+            <li><a href="/tags/ai">ai <span class="badge">35</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ai-assisted">ai-assisted <span class="badge">26</span></a></li>
+            
+          
+            
+            <li><a href="/tags/android">android <span class="badge">24</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/architecture">architecture <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/book">book <span class="badge">30</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c">c <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/c&#43;&#43;">c&#43;&#43; <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/cli">cli <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/computer-vision">computer-vision <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/concurrency">concurrency <span class="badge">3</span></a></li>
+            
+          
+            
+            <li><a href="/tags/database">database <span class="badge">4</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/dotnet">dotnet <span class="badge">62</span></a></li>
+            
+          
+            
+            <li><a href="/tags/embedded">embedded <span class="badge">10</span></a></li>
+            
+          
+            
+            <li><a href="/tags/emulator">emulator <span class="badge">7</span></a></li>
+            
+          
+            
+            <li><a href="/tags/game-dev">game-dev <span class="badge">10</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/git">git <span class="badge">16</span></a></li>
+            
+          
+            
+            <li><a href="/tags/go">go <span class="badge">6</span></a></li>
+            
+          
+            
+            <li><a href="/tags/google">google <span class="badge">39</span></a></li>
+            
+          
+            
+            <li><a href="/tags/gui">gui <span class="badge">32</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/ios">ios <span class="badge">8</span></a></li>
+            
+          
+            
+            <li><a href="/tags/java">java <span class="badge">31</span></a></li>
+            
+          
+            
+            <li><a href="/tags/javascript">javascript <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/linux">linux <span class="badge">9</span></a></li>
+            
+          
+            
+            <li><a href="/tags/macos">macos <span class="badge">4</span></a></li>
+            
+          
+            
+            <li><a href="/tags/microsoft">microsoft <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/opencv">opencv <span class="badge">7</span></a></li>
+            
+          
+            
+          
+            
+            <li><a href="/tags/performance">performance <span class="badge">35</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/productivity">productivity <span class="badge">18</span></a></li>
+            
+          
+            
+            <li><a href="/tags/python">python <span class="badge">12</span></a></li>
+            
+          
+            
+            <li><a href="/tags/ruby">ruby <span class="badge">21</span></a></li>
+            
+          
+            
+            <li><a href="/tags/rust">rust <span class="badge">63</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/software-engineering">software-engineering <span class="badge">43</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tooling">tooling <span class="badge">113</span></a></li>
+            
+          
+            
+            <li><a href="/tags/tools">tools <span class="badge">11</span></a></li>
+            
+          
+            
+            <li><a href="/tags/typescript">typescript <span class="badge">3</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/web">web <span class="badge">27</span></a></li>
+            
+          
+            
+          
+            
+          
+            
+            <li><a href="/tags/work">work <span class="badge">39</span></a></li>
+            
+          
+            
+          
+          </ul>
+        </li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">series <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+          
+            <li><a href="/series/fuchsia-dev">fuchsia dev <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jetpack-compose">jetpack-compose <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/jev-ai">jev ai <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/modern-c&#43;&#43;">modern c&#43;&#43; <span class="badge">4</span></a></li>
+          
+            <li><a href="/series/modern-concurrency">modern concurrency <span class="badge">2</span></a></li>
+          
+            <li><a href="/series/rust-52-projects">rust-52-projects <span class="badge">34</span></a></li>
+          
+            <li><a href="/series/tiny-llm-runner-deep-dive">tiny-llm-runner-deep-dive <span class="badge">9</span></a></li>
+          
+            <li><a href="/series/zeroclaw">zeroclaw <span class="badge">5</span></a></li>
+          
+          </ul>
+        </li>
+      </ul>
+      <form class="navbar-form navbar-left" role="search" action="/search/" method="get">
+        <div class="form-group">
+          <input class="form-control" type="text" name="q" results="0" placeholder="search"/>
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+      </form>
+      <ul class="nav navbar-nav navbar-right">
+        <li><a href="/pages/about">about</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+    </div>
+
+  <div class="row">
+    <div class="col-md-9" data-pagefind-body>
+          <div class="row">
+      <div class="col-xs-6">
+        
+        <section id="prev" class="text-left">
+          <a class="previous" href="/posts/2026/11-05-sshole-openssh-musl/">
+            <span class="glyphicon glyphicon-circle-arrow-left"></span>
+            OpenSSH on musl 的 *sshole 認證繞過漏洞
+          </a>
+        </section>
+        
+      </div>
+      <div class="col-xs-6">
+        
+        <section id="next" class="text-right">
+          <a class="next" href="/posts/2026/11-07-ghosptt-webgpu-terminal/">
+            GhosPTT 終端機實驗
+            <span class="glyphicon glyphicon-circle-arrow-right"></span>
+          </a>
+        </section>
+        
+      </div>
+    </div>
+      <h1 class="post-title" data-pagefind-meta="title">libghostty 1.0 與現代 C 函式庫的設計修養</h1>
+      
+      <div class="post-subtitle">從 Mitchell Hashimoto 的釋出看 ABI 穩定性、不透明控制代碼與記憶體自主權</div>
+      
+      <div class="post-meta">
+        <span class="post-date">November 6, 2026</span>
+        
+        <a href="/categories/programming"><span class="label label-info">programming</span></a>
+        
+        
+        <a href="/tags/c"><span class="label label-primary">c</span></a>
+        
+        <a href="/tags/zig"><span class="label label-primary">zig</span></a>
+        
+        <a href="/tags/architecture"><span class="label label-primary">architecture</span></a>
+        
+        <a href="/tags/ghostty"><span class="label label-primary">ghostty</span></a>
+        
+        <a href="/tags/ai-assisted"><span class="label label-primary">ai-assisted</span></a>
+        
+        
+
+      </div>
+      <div class="post-content">
+        
+
+  
+    <img src="/posts/2026/11-06-libghostty-modern-c-library/featured.svg" alt="featured.svg" class="img-responsive post-image">
+  
+
+<p>近日在 Hacker News 上讀到一則熱門討論：<a href="https://news.ycombinator.com/item?id=50399933">Libghostty 1.0</a>。Mitchell Hashimoto 正式宣布 <a href="https://mitchellh.com/writing/libghostty-1-0">libghostty-vt 1.0</a> 釋出，為這個從 Ghostty 終端機中獨立出來的核心元件建立正式的 ABI 穩定保證與語意化版本承諾。</p>
+<p>這篇公告之所以在社群引起廣泛共鳴，不僅是因為這套終端機核心已經投入大型生產環境——例如擁有超過 1,250 萬名定期活躍開發者的 JetBrains 全系列 IDE（IntelliJ、PyCharm、GoLand 等），已將內建終端機底層從 JediTerm 替換為 <code>libghostty</code>；Neovim 亦已有獲批准的 PR 準備取代原有的 <code>libvterm</code> 以改善視窗縮放重排版（reflow）支援（待正式釋出後整合）；甚至 Vercel 的 Turborepo 與社群中許多代理式（agentic）程式設計工具（包括我日常在 Hyprland 下使用的多代理管理工具 <code>herdr</code>）都直接依賴它的核心能力。</p>
+<p>但對系統工程師而言，更吸引人的是 Mitchell 在文中展現出對「現代 C 函式庫」的細緻雕琢：以 Zig 開發、卻以嚴謹的 C ABI 交付給全世界。</p>
+<p>在現代軟體工程中，儘管許多新專案轉向 Rust 或 Zig 開發，C ABI 依然是跨語言、跨系統呼叫的通用語言（lingua franca）。然而，很多現代函式庫在包裝 C 介面時，往往只停留在「能用 <code>extern &quot;C&quot;</code> 呼叫就好」的粗糙層次，忽視了二進位相容性、記憶體自主權與發行版封裝的需求。</p>
+<p>藉由 <code>libghostty-vt 1.0</code> 的設計哲學，我們可以具體梳理出一套現代 C 函式庫應該具備的架構修養。</p>
+
+
+  
+    <img src="/posts/2026/11-06-libghostty-modern-c-library/architecture.svg" alt="architecture.svg" class="img-responsive post-image">
+  
+
+<h2 id="徹底的不透明控制代碼opaque-handle">徹底的不透明控制代碼（Opaque Handle）</h2>
+<p>在設計 C 語言函式庫時，最常見的架構盲點，就是直接在公開標頭檔（header）中暴露 <code>struct</code> 的內部記憶體佈局：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// 不良設計：公開 struct 佈局
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> ghostty_terminal {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> rows;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> cols;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>cursor_style;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 只要未來內部新增一個欄位，sizeof(struct ghostty_terminal) 改變，
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 若新版函式庫依新佈局存取舊版呼叫端配置的物件，可能發生記憶體越界，或以錯誤的元素間距存取陣列。
+</span></span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>一旦 <code>sizeof(struct)</code> 在呼叫端編譯期被固定，函式庫內部若直接調整或新增欄位，就會改變結構大小與位移，進而破壞物件佈局的 ABI（Application Binary Interface）相容性。</p>
+<p><code>libghostty-vt</code> 的首要原則就是：每一個核心物件都是不透明控制代碼（Opaque Handle）。</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// 現代 C 函式庫作法：ghostty/vt/types.h
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#66d9ef">struct</span> GhosttyTerminalImpl <span style="color:#f92672">*</span>GhosttyTerminal;</span></span></code></pre></div>
+
+<p>標頭檔中只宣告前置型別，實際的結構定義完全留在函式庫實作內部。宿主程式只能持有控制代碼指標，永遠無法直接解參考（dereference）結構，也無法在堆疊（stack）上為其配置空間。物件的配置與生命週期完全由建構與解構函式管控：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// ghostty/vt/terminal.h
+</span></span></span><span style="display:flex;"><span>GhosttyResult <span style="color:#a6e22e">ghostty_terminal_new</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> GhosttyAllocator <span style="color:#f92672">*</span>allocator,
+</span></span><span style="display:flex;"><span>    GhosttyTerminal <span style="color:#f92672">*</span>out,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint16_t</span> cols,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">uint16_t</span> rows
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">ghostty_terminal_free</span>(GhosttyTerminal terminal);</span></span></code></pre></div>
+
+<p>這項設計雖然意味著每一次實例化都必須由函式庫負責，卻換來了堅實的防護邊界：內部無論重構演算法、調整記憶體對齊（alignment），還是新增內部欄位，外部動態鏈結的程式碼都不會受到結構尺寸與佈局變化的波及。</p>
+<h2 id="列舉驅動的屬性存取器enum-keyed-accessors">列舉驅動的屬性存取器（Enum-Keyed Accessors）</h2>
+<p>傳統 C 函式庫常為每一個屬性定義一對專屬的 getter / setter：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// 傳統設計：符號爆炸且無法優雅處理向後相容
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">ghostty_terminal_get_rows</span>(GhosttyTerminal terminal);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">ghostty_terminal_get_cols</span>(GhosttyTerminal terminal);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">ghostty_terminal_get_cursor_x</span>(GhosttyTerminal terminal);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">ghostty_terminal_get_cursor_y</span>(GhosttyTerminal terminal);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 若新版本新增了 ghostty_terminal_get_bracketed_paste()，
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 舊版 .so 執行期直接跳出動態符號未找到（undefined symbol）！
+</span></span></span></code></pre></div>
+
+<p>終端機模擬器有數百種狀態值需要讀取與設定。如果每個屬性都獨立成為匯出符號（exported symbol），不僅動態鏈結時的符號表（<code>.dynsym</code>）龐大冗餘，更實際的問題在於：當宿主程式以較新的標頭檔編譯並實際呼叫了新增的存取函式，卻在使用者環境中鏈結到尚未包含該符號的舊版動態函式庫時，動態鏈結器就會因找不到符號而拒絕載入。</p>
+<p><code>libghostty-vt</code> 在屬性存取上採取了極具擴充性的列舉驅動存取模型（enum-keyed getters &amp; setters）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>GhosttyResult <span style="color:#a6e22e">ghostty_terminal_get</span>(
+</span></span><span style="display:flex;"><span>    GhosttyTerminal terminal,
+</span></span><span style="display:flex;"><span>    GhosttyTerminalData key,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>out
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>GhosttyResult <span style="color:#a6e22e">ghostty_terminal_set</span>(
+</span></span><span style="display:flex;"><span>    GhosttyTerminal terminal,
+</span></span><span style="display:flex;"><span>    GhosttyTerminalOption opt,
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>val
+</span></span><span style="display:flex;"><span>);</span></span></code></pre></div>
+
+<p>這種介面帶來的架構優勢非常明顯：</p>
+<ol>
+<li><strong>屬性存取介面收斂</strong> - 雖然整個函式庫因終端機控制與繪圖支援匯出了 180+ 個函式，但數百種可讀寫屬性全數收斂至同一組列舉存取器，不會隨未來新增終端機狀態而無限膨脹符號表。</li>
+<li><strong>優雅的向後相容性降級</strong> - 當新版應用程式向舊版函式庫請求一個尚未實作的列舉鍵時，函式只會明確回傳 <code>GHOSTTY_UNSUPPORTED</code> 狀態碼，呼叫端可以立刻以預設值回退，避免在載入期發生動態符號遺失（當然，呼叫端仍須確保傳入的 <code>void *out</code> 指標型別與配置空間符合該列舉鍵的規範）。</li>
+<li><strong>固定列舉底層寬度</strong> - 在 C 標準中，<code>enum</code> 的底層整數型別大小可能因編譯器或架構最佳化而浮動（如 <code>-fshort-enums</code>）。<code>libghostty-vt</code> 以 <code>GHOSTTY_ENUM_TYPED</code> 巨集在 C23 與 C++11 之後直接展開為 <code>: int</code> 明確指定底層型別；較舊的 C 模式則在每個列舉尾端加上 <code>INT_MAX</code> 哨兵值，確保底層型別至少具備 <code>int</code> 寬度。這是在 C 標準允許範圍內能達到的最大保證，也讓 Zig 端以 <code>c_int</code> 對應時始終維持 ABI 一致。</li>
+</ol>
+<p>對於極少數必須以結構傳遞的情境，<code>libghostty-vt</code> 也規範該結構必須在首個欄位攜帶自身的結構大小（<code>size_t size</code>，並搭配 <code>GHOSTTY_INIT_SIZED</code> 巨集初始化），或是預留足夠的對齊填充空間（reserved padding），讓未來的版本可以在結構尾端擴充新欄位而不破壞舊版的位移量（offset）。</p>
+<h2 id="記憶體自主權不奪走宿主的配置器">記憶體自主權：不奪走宿主的配置器</h2>
+<p>許多 C/C++ 函式庫常見的限制，在於內部死板地硬編碼呼叫 <code>malloc</code>、<code>free</code> 或自行啟動背景執行緒（threads）。</p>
+<p>這在複雜的宿主環境中常帶來整合限制：</p>
+<ul>
+<li><strong>WebAssembly 與嵌入式系統</strong> - 可能根本沒有標準的作業系統堆積（heap）或執行緒執行期。</li>
+<li><strong>高吞吐遊戲引擎或 IDE</strong> - 宿主通常具備自己的專屬記憶體池（memory arena、bump allocator 或 NUMA-aware 配置器），若第三方函式庫直接向作業系統申請記憶體，容易打亂快取並引發記憶體碎片化。</li>
+<li><strong>Rust 與 Go 等跨語言 FFI</strong> - 跨越 FFI 邊界釋放記憶體是常見的雙重釋放（double-free）與記憶體洩漏溫床。</li>
+</ul>
+<p>Mitchell Hashimoto 在設計 <code>libghostty-vt</code> 時立下嚴謹規範：</p>
+<blockquote><p>&ldquo;For resource usage, the library creates no threads, allocates only through an allocator you can customize, and uses minimal compute and memory.&rdquo;</p>
+</blockquote><p><code>libghostty-vt</code> 在內部不建立任何背景執行緒，也不直接處理 PTY 或畫面繪製（交由宿主負責）；它是一個純粹的狀態機與資料解析引擎（同一 <code>GhosttyTerminal</code> 實例並非執行緒安全，需由宿主自行同步存取；且同步回呼函式內不得對同一 terminal 再次重入呼叫 <code>ghostty_terminal_vt_write()</code> 或 <code>ghostty_terminal_vt_write_until()</code>）。所有需要動態記憶體的運算，全數透過呼叫端注入的兩層式 <code>GhosttyAllocator</code> 介面（直接對齊 Zig 的 <code>std.mem.Allocator</code> 模型）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// ghostty/vt/allocator.h
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>    GhosttyAllocatorAllocFn  alloc;   <span style="color:#75715e">// 必要：配置記憶體
+</span></span></span><span style="display:flex;"><span>    GhosttyAllocatorResizeFn resize;  <span style="color:#75715e">// 原地調整大小，不移動位址（可為 NULL）
+</span></span></span><span style="display:flex;"><span>    GhosttyAllocatorRemapFn  remap;   <span style="color:#75715e">// 允許移動位址的重新配置（可為 NULL）
+</span></span></span><span style="display:flex;"><span>    GhosttyAllocatorFreeFn   free;    <span style="color:#75715e">// 必要：釋放記憶體
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>reserved[<span style="color:#ae81ff">4</span>];                <span style="color:#75715e">// 預留欄位，初始化時必須清零為 NULL
+</span></span></span><span style="display:flex;"><span>} GhosttyAllocatorVtable;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">typedef</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>ctx;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> GhosttyAllocatorVtable <span style="color:#f92672">*</span>vtable;
+</span></span><span style="display:flex;"><span>} GhosttyAllocator;</span></span></code></pre></div>
+
+<p>這套兩層式設計（<code>ctx</code> 承載呼叫端狀態，<code>vtable</code> 承載函式指標表）展現了細膩的介面契約與 ABI 考量：</p>
+<ol>
+<li><strong>共享唯讀分派表與預留槽檢查</strong> - <code>vtable</code> 可以宣告為靜態唯讀（<code>static const</code>）共享，且尾端自帶 <code>reserved[4]</code> 預留槽，未來擴充新配置行為時無需更動結構大小（呼叫端初始化時必須將 <code>reserved</code> 清零為 <code>NULL</code>，debug 建置會主動檢查）。此外，函式庫不會複製 <code>GhosttyAllocator</code> 結構本身，因此傳入的配置器實例在相關記憶體全數釋放前必須維持有效。</li>
+<li><strong>長度與對齊參數對稱交還</strong> - 函式庫在釋放（<code>free</code>）、原地調整（<code>resize</code>）或重新配置（<code>remap</code>）記憶體時，會將原先配置時的 <code>alignment</code> 與目前長度對稱傳遞給配置器，呼叫端無需在每個記憶體區塊前端額外記錄長度標頭。</li>
+<li><strong>支援對齊 SIMD 運算</strong> - 介面中的 <code>alignment</code> 參數儲存對齊位元組數以 2 為底的對數（實際對齊要求為 <code>1 &lt;&lt; alignment</code> 位元組），讓向量化操作（AVX2 / NEON）可直接取得對齊緩衝區，避免手動偏移。</li>
+</ol>
+<p>當呼叫端傳入 <code>NULL</code> 時，函式庫會溫和地回退至預設配置器；而當宿主是 Rust 或 Zig 時，開發者可以把宿主語言的 arena allocator 或記憶體追蹤器整合進來。</p>
+<p>當記憶體配置的主導權還給呼叫端，函式庫才能順暢地嵌入至各種執行環境（從獨立微控制器到大型 JVM 程式）。</p>
+<h2 id="發行版友善嚴格的二進位封裝與-soname">發行版友善：嚴格的二進位封裝與 SONAME</h2>
+<p>一個只在作者本機跑得通、但 Linux 發行版維護者（distro packagers）難以依據發行版規範打包的函式庫，不能稱作優秀的函式庫。</p>
+<p>過去許多現代開源專案只提供原始碼建置或靜態鏈結（static linking），對共享函式庫（shared library）的規格缺乏考量。但在 Debian、Arch Linux、Fedora 或 Alpine 等 Linux 生態系中，動態函式庫的升級必須遵循嚴格的系統級規範。</p>
+<p><code>libghostty-vt 1.0</code> 從發布第一天起，就遵循了完備的系統打包準則：</p>
+<ol>
+<li><strong>正確標記 SONAME 與 major version</strong> - 在 Linux 與 BSD 系統上，動態庫編譯會產生正確的 <code>libghostty-vt.so.1</code>，並搭配 ELF 符號版本控制檔（<code>ghostty-vt.map</code>）精確定義符號節點。唯有當未來發生不相容的重大 ABI 破壞時，才遞增為 <code>.so.2</code>。</li>
+<li><strong>語意化版本（SemVer）承諾</strong> - 從 1.0 開始，任何 1.x 的次版本號更新，都保證能夠直接作為 drop-in 替換舊版二進位檔案，既有的軟體完全無需重新編譯。</li>
+<li><strong>標準 pkg-config 支援</strong> - 提供標準的 <code>libghostty-vt.pc</code>，讓建置系統透過一行 <code>pkg-config --cflags --libs libghostty-vt</code> 就能準確取得標頭路徑與鏈結旗標。</li>
+<li><strong>自動化 ABI 破壞檢驗</strong> - 在 CI 流程中針對 Linux/ELF 整合 <code>libabigail</code> 工具（<code>abidiff</code>）進行基準比對（1.0 釋出時基準檔尚未提交，CI 先將 dump 存成 artifact，待 vt-1.0.0 標記後正式轉為自動比對；macOS / WASM 另以專屬型別 manifest 把關），將人為疏失阻絕在合併之前。</li>
+</ol>
+<p>在 macOS 上，它也同步寫入標準的相容性版本（compatibility version）資訊，確保無論在何種作業系統上，包裝工具都能自動化識別相依關係。</p>
+<h2 id="建置工具鏈與-abi-驗證">建置工具鏈與 ABI 驗證</h2>
+<p>許多人好奇：既然核心是用 Zig 寫的，要產出上述高規格的 C 函式庫，是不是只要執行一行 <code>zig build-lib</code> 就夠了？</p>
+<p>檢視 Ghostty 儲存庫（以下分析基於儲存庫 commit <code>0fa3d57</code>）中的 <code>build.zig</code> 與 <code>src/build/</code> 目錄後會發現，為了將 Zig 模組封裝成符合各作業系統慣例的原生 C 產物，<code>libghostty-vt</code> 實作了一套完整的建置與驗證管線。</p>
+
+
+  
+    <img src="/posts/2026/11-06-libghostty-modern-c-library/build-pipeline.svg" alt="build-pipeline.svg" class="img-responsive post-image">
+  
+
+<h3 id="雙模式單一儲存庫與預設零-c-執行期依賴">雙模式單一儲存庫與預設零 C++ 執行期依賴</h3>
+<p>Ghostty 終端機應用程式與 <code>libghostty-vt</code> 函式庫共用同一個單一儲存庫（monorepo），但擁有各自獨立的版本號與建置圖（build graph）。<code>build.zig</code> 開頭就把兩個版本分開宣告：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">/// The libghostty-vt version, released separately from the app with</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// `vt-X.Y.Z` tags. See `Config.libVersion` for how builds use it.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">///</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// CMakeLists.txt and CI read this line with a regular expression, so</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// keep it on one line in this form.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> lib_version <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;1.0.0-dev&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// Minimum required zig version.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> minimum_zig_version <span style="color:#f92672">=</span> @import(<span style="color:#e6db74">&#34;build.zig.zon&#34;</span>).minimum_zig_version;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">comptime</span> {
+</span></span><span style="display:flex;"><span>    buildpkg.<span style="color:#a6e22e">requireZig</span>(minimum_zig_version);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p><code>comptime</code> 區塊會在建置腳本編譯期就檢查 Zig 版本，版本不符直接停止，避免打包者用錯編譯器卻得到難以理解的錯誤訊息。</p>
+<p>是否進入函式庫模式，則由 <code>src/build/Config.zig</code> 決定：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Default dependency builds to libghostty-vt-only mode. Consumers can</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// still explicitly disable this to request the full Ghostty build.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> is_dep <span style="color:#f92672">=</span> b.dep_prefix.len <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> emit_lib_vt <span style="color:#f92672">=</span> b.<span style="color:#a6e22e">option</span>(
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">bool</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;emit-lib-vt&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;Build and install libghostty-vt only. Disables the xcframework, &#34;</span> <span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;macOS app, and docs by default. Without this, libghostty-vt &#34;</span> <span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;is not installed unless Ghostty is a dependency.&#34;</span>,
+</span></span><span style="display:flex;"><span>) <span style="color:#66d9ef">orelse</span> (is_dep <span style="color:#66d9ef">or</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// A libghostty-vt source tarball has LIB_VERSION but no VERSION.</span>
+</span></span><span style="display:flex;"><span>    (versions.lib_file <span style="color:#f92672">!=</span> <span style="color:#66d9ef">null</span> <span style="color:#66d9ef">and</span> versions.app_file <span style="color:#f92672">==</span> <span style="color:#66d9ef">null</span>));</span></span></code></pre></div>
+
+<p>也就是說，當 Ghostty 作為其他 Zig 專案的相依套件（<code>is_dep</code>），或根目錄存在 <code>LIB_VERSION</code> 但沒有應用程式的 <code>VERSION</code>（即官方 <code>libghostty-vt</code> 源碼包的結構），抑或顯式傳入 <code>-Demit-lib-vt</code> 時，<code>build.zig</code> 就會切換至函式庫模式，略過 GUI 資源、字型、佈景主題與多語系翻譯的下載與編譯：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// ...</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Only the app uses them, so a libghostty-vt build skips them, which</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// also keeps it from downloading the themes package.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> resources: ?buildpkg.GhosttyResources <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> (config.emit_lib_vt)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">null</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> buildpkg.GhosttyResources.<span style="color:#a6e22e">init</span>(b, <span style="color:#f92672">&amp;</span>config, <span style="color:#f92672">&amp;</span>deps);</span></span></code></pre></div>
+
+<p>更值得留意的是它對 C++ 第三方加速庫的預設處理方式。<code>libghostty-vt</code> 內部依賴 <code>simdutf</code> 與 Google <code>Highway</code>（兩者皆為 C++ 專案）來進行高速 UTF-8 驗證與 SIMD 解析。若是一般建置方式，這會導致最終產出的 C 函式庫在執行期被迫連帶依賴 <code>libc++</code> / <code>libstdc++</code>。為了在預設內嵌（vendored）建置下消除這個額外負擔，<code>pkg/simdutf/build.zig</code> 在編譯期傳入了關鍵旗標：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Only linked statically into libghostty-vt and the app: export nothing.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> flags.<span style="color:#a6e22e">append</span>(b.allocator, <span style="color:#e6db74">&#34;-fvisibility=hidden&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (no_libcxx) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> flags.<span style="color:#a6e22e">append</span>(b.allocator, <span style="color:#e6db74">&#34;-DSIMDUTF_NO_LIBCXX&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> flags.<span style="color:#a6e22e">append</span>(b.allocator, <span style="color:#e6db74">&#34;-fno-exceptions&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> flags.<span style="color:#a6e22e">append</span>(b.allocator, <span style="color:#e6db74">&#34;-fno-rtti&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...</span>
+</span></span><span style="display:flex;"><span>    lib.root_module.<span style="color:#a6e22e">addCMacro</span>(<span style="color:#e6db74">&#34;SIMDUTF_NO_LIBCXX&#34;</span>, <span style="color:#e6db74">&#34;1&#34;</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>透過關閉 C++ 例外處理、RTTI 與標準庫依賴，同時以 <code>-fvisibility=hidden</code> 隱藏所有內部符號，<code>libghostty-vt</code> 在預設建置下借用了 C++ 標頭檔與模板能力，卻在執行期剝離了對 <code>libc++</code> 的依賴，讓預設產物維持單純的 <code>libc</code> 相依性。</p>
+<p>若打包者改用系統函式庫，<code>.pc</code> 檔會依選項在 <code>Requires.private</code> 列入 <code>simdutf</code> 或 <code>libhwy</code>；當模組需要連結 C++ 標準庫時（例如啟用系統 <code>simdutf</code>），則另於 <code>Libs.private</code> 加入 <code>-lc++</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">/// Returns the Libs.private value for the pkg-config file.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// Vendored C++ dependencies are built in no-libcxx mode so consumers</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/// don&#39;t need libc++.  System-provided simdutf still requires it.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">libsPrivate</span>(
+</span></span><span style="display:flex;"><span>    zig: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> GhosttyZig,
+</span></span><span style="display:flex;"><span>) []<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">if</span> (zig.vt_c.link_libcpp <span style="color:#66d9ef">orelse</span> <span style="color:#66d9ef">false</span>) <span style="color:#e6db74">&#34;-lc++&#34;</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;&#34;</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">requiresPrivate</span>(b: <span style="color:#f92672">*</span>std.Build) []<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">u8</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> system_simdutf <span style="color:#f92672">=</span> b.<span style="color:#a6e22e">systemIntegrationOption</span>(<span style="color:#e6db74">&#34;simdutf&#34;</span>, .{});
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> system_highway <span style="color:#f92672">=</span> b.<span style="color:#a6e22e">systemIntegrationOption</span>(<span style="color:#e6db74">&#34;highway&#34;</span>, .{ .default <span style="color:#f92672">=</span> <span style="color:#66d9ef">false</span> });
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (system_simdutf <span style="color:#66d9ef">and</span> system_highway) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;simdutf, libhwy&#34;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (system_simdutf) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;simdutf&#34;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (system_highway) <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;libhwy&#34;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;&#34;</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h3 id="跨平台連結器客製與二進位修補">跨平台連結器客製與二進位修補</h3>
+<p>單靠 Zig 內建的連結器，還不足以處理所有平台在打包與效能上的邊角細節。<code>src/build/GhosttyLibVt.zig</code> 針對四條建置路徑分別實作了專屬的底層處理。</p>
+<h4 id="linux--elf強制切換-lld-執行符號隔離">Linux / ELF：強制切換 LLD 執行符號隔離</h4>
+<p>ELF 平台的符號匯出由 <code>ghostty-vt.map</code> 這份 version script 控制。它只匯出 <code>ghostty_*</code>，其餘符號（<code>simdutf</code>、<code>highway</code>、<code>wuffs</code>、C++ runtime 與 <code>compiler-rt</code>）一律設為 local，避免與宿主程式內的同名函式庫衝突：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>GHOSTTY_VT_1.0 {
+</span></span><span style="display:flex;"><span>    global:
+</span></span><span style="display:flex;"><span>        ghostty_*;
+</span></span><span style="display:flex;"><span>    local:
+</span></span><span style="display:flex;"><span>        *;
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<p>未來每個次版本只需新增一個節點，列出該版本新增的函式並串接到前一版。程式若用到 1.1 才有的函式，載入 1.0 的函式庫時，動態載入器會直接以版本名稱指出問題。</p>
+<p>套用這份腳本的建置設定如下：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (kind <span style="color:#f92672">==</span> .shared <span style="color:#66d9ef">and</span> target.result.ofmt <span style="color:#f92672">==</span> .elf) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Export only the ghostty_* functions and tag them with a version</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// that the loader checks. The map file explains the versioning.</span>
+</span></span><span style="display:flex;"><span>    lib.version_script <span style="color:#f92672">=</span> b.<span style="color:#a6e22e">path</span>(<span style="color:#e6db74">&#34;src/terminal/c/ghostty-vt.map&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Zig&#39;s own ELF linker, which Debug builds on x86_64 use by</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// default, silently ignores the version script. LLD applies it,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// and Zig can only link with LLD when it compiles with LLVM.</span>
+</span></span><span style="display:flex;"><span>    lib.use_llvm <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>    lib.use_lld <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>註解直接點出了原因：Zig 自帶的 ELF 連結器在 x86_64 debug 建置下會默默忽略 version script，強制走 LLVM LLD 才能確保開發期與發行期的符號表行為一致。</p>
+<h4 id="靜態庫pic-與胖靜態庫合成">靜態庫：PIC 與胖靜態庫合成</h4>
+<p>靜態庫同樣有幾項容易被忽略的細節：必須內含 <code>compiler-rt</code>，並且要開啟 PIC 才能被連結進現代 Linux 發行版預設的 PIE 執行檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (kind <span style="color:#f92672">==</span> .static) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// These must be bundled since we&#39;re compiling into a static lib.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Otherwise, you get undefined symbol errors.</span>
+</span></span><span style="display:flex;"><span>    lib.bundle_compiler_rt <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>    lib.bundle_ubsan_rt <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Enable PIC so the static library can be linked into PIE</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// executables, which is the default on most Linux distributions.</span>
+</span></span><span style="display:flex;"><span>    lib.root_module.pic <span style="color:#f92672">=</span> target.result.os.tag <span style="color:#f92672">!=</span> .freestanding;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<p>為了不讓下游使用者還得手動尋找並連結內嵌的 <code>libsimdutf.a</code> 與 <code>libhighway.a</code>，專案編寫了跨平台工具 <code>combine_archives.zig</code>。它在建置期生成 MRI 腳本，透過標準輸入管線餵給 <code>zig ar -M</code>，將多個靜態封存檔合併為單一的胖靜態庫（fat archive）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Build the MRI script.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> script: std.<span style="color:#a6e22e">ArrayList</span>(<span style="color:#66d9ef">u8</span>) <span style="color:#f92672">=</span> .empty;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">appendSlice</span>(alloc, <span style="color:#e6db74">&#34;CREATE &#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">appendSlice</span>(alloc, output_path);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">append</span>(alloc, <span style="color:#e6db74">&#39;\n&#39;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (inputs) <span style="color:#f92672">|</span>input<span style="color:#f92672">|</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">appendSlice</span>(alloc, <span style="color:#e6db74">&#34;ADDLIB &#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">appendSlice</span>(alloc, input);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">append</span>(alloc, <span style="color:#e6db74">&#39;\n&#39;</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> script.<span style="color:#a6e22e">appendSlice</span>(alloc, <span style="color:#e6db74">&#34;SAVE</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">END</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> child <span style="color:#f92672">=</span> <span style="color:#66d9ef">try</span> std.process.<span style="color:#a6e22e">spawn</span>(init.io, .{
+</span></span><span style="display:flex;"><span>    .argv <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>.{ zig_exe, <span style="color:#e6db74">&#34;ar&#34;</span>, <span style="color:#e6db74">&#34;-M&#34;</span> },
+</span></span><span style="display:flex;"><span>    .stdin <span style="color:#f92672">=</span> .pipe,
+</span></span><span style="display:flex;"><span>    .stdout <span style="color:#f92672">=</span> .inherit,
+</span></span><span style="display:flex;"><span>    .stderr <span style="color:#f92672">=</span> .inherit,
+</span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+
+<p>之所以要另寫一支 Zig 程式，而不是直接在建置步驟裡寫 <code>/bin/sh -c &quot;ar -M &lt; script&quot;</code>，是因為 Windows 上沒有 <code>/bin/sh</code>。用 Zig 自己處理管線，才能讓同一份建置腳本在所有主機上都能執行。</p>
+<h4 id="macos原生-ld64-連結與-libsystem-符號降級">macOS：原生 <code>ld64</code> 連結與 <code>libSystem</code> 符號降級</h4>
+<p>在 macOS 主機上，Zig 內建連結器無法設定 Mach-O 的 compatibility version（永遠寫入 1.0.0），因此 <code>initLibApple</code> 改為先建出靜態庫，再呼叫 Apple 原生連結器產出動態庫：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span>native_link.<span style="color:#a6e22e">addArgs</span>(<span style="color:#f92672">&amp;</span>.{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Emit a Mach-O dynamic library instead of an executable.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-dynamiclib&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Pull every object from the combined static archive.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wl,-all_load&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Remove unreachable private code pulled in by all_load.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wl,-dead_strip&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Leave room for packaging tools to rewrite install names.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wl,-headerpad_max_install_names&#34;</span>,
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ...</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Restrict exports to libghostty-vt&#39;s public C ABI.</span>
+</span></span><span style="display:flex;"><span>native_link.<span style="color:#a6e22e">addPrefixedFileArg</span>(<span style="color:#e6db74">&#34;-Wl,-exported_symbols_list,&#34;</span>, exports);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Link the archive produced by the normal static-library path.</span>
+</span></span><span style="display:flex;"><span>native_link.<span style="color:#a6e22e">addFileArg</span>(static.output);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ...</span>
+</span></span><span style="display:flex;"><span>native_link.<span style="color:#a6e22e">addArgs</span>(<span style="color:#f92672">&amp;</span>.{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// The name programs record and load at run time, found via @rpath.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-install_name&#34;</span>,
+</span></span><span style="display:flex;"><span>    shared_version.install_name,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// The full library version.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-current_version&#34;</span>,
+</span></span><span style="display:flex;"><span>    shared_version.current_version,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// The oldest release with the same ABI.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-compatibility_version&#34;</span>,
+</span></span><span style="display:flex;"><span>    shared_version.compatibility_version,
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Write the fully versioned dylib used by the install symlinks.</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-o&#34;</span>,
+</span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+
+<p>另一個問題則與效能有關。Zig 的靜態庫會打包 <code>compiler_rt.o</code>，其中包含強符號（strong global）的 <code>memcpy</code>、<code>memmove</code> 與數學函式。當宿主程式連結該靜態庫時，這些通用實作會覆蓋掉 Apple <code>libSystem</code> 針對硬體最佳化的版本，實測造成數個百分比的 PTY 吞吐量下滑。</p>
+<p><code>libsystem_override.sh</code>（需在 Darwin host 上針對 Darwin target 執行）搭配一份明確列舉 <code>libSystem</code> 穩定匯出符號的清單，把清單內的符號改為 local，同時保留清單以外的 <code>compiler-rt</code> 全域定義（例如 128 位元浮點轉換與 <code>sincos*</code> 等 Apple 未匯出的 intrinsics）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>xcrun ar x <span style="color:#e6db74">&#34;</span>$out<span style="color:#e6db74">&#34;</span> compiler_rt.o
+</span></span><span style="display:flex;"><span>chmod <span style="color:#ae81ff">644</span> compiler_rt.o
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># nmedit takes a keep-list (-s): all current global definitions except</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># the ones we want to localize.</span>
+</span></span><span style="display:flex;"><span>xcrun nm -g compiler_rt.o | awk <span style="color:#e6db74">&#39;$2 ~ /^[A-TV-Z]$/ {print $3}&#39;</span> | sort -u &gt;all.txt
+</span></span><span style="display:flex;"><span>sort -u localize.txt &gt;loc.txt
+</span></span><span style="display:flex;"><span>comm -23 all.txt loc.txt &gt;keep.txt
+</span></span><span style="display:flex;"><span>xcrun nmedit -s keep.txt compiler_rt.o
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>xcrun ar r <span style="color:#e6db74">&#34;</span>$out<span style="color:#e6db74">&#34;</span> compiler_rt.o</span></span></code></pre></div>
+
+<h4 id="webassembly可成長的函式表">WebAssembly：可成長的函式表</h4>
+<p>WebAssembly 版本是一個沒有進入點的執行檔模組，建置設定也各有考量：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Allow exported symbols to actually be exported.</span>
+</span></span><span style="display:flex;"><span>exe.rdynamic <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Export the indirect function table so that embedders (e.g. JS in</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// a browser) can insert callback entries for terminal effects.</span>
+</span></span><span style="display:flex;"><span>exe.export_table <span style="color:#f92672">=</span> <span style="color:#66d9ef">true</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// There is no entrypoint for this wasm module.</span>
+</span></span><span style="display:flex;"><span>exe.entry <span style="color:#f92672">=</span> .disabled;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Default Zig stack size in Zig 0.16 is 1MB. Lower to 128 KB since</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// this has to be preallocated up front in Wasm linear memory. Peak</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// stack under various artificial loads is 17 KB at the time of this</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// comment but lets do 128KB to be safe. We can lower later.</span>
+</span></span><span style="display:flex;"><span>exe.stack_size <span style="color:#f92672">=</span> <span style="color:#ae81ff">128</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1024</span>;</span></span></code></pre></div>
+
+<p>JavaScript 宿主需要在執行期動態註冊回呼函式（寫入 <code>__indirect_function_table</code>），但 Zig 目前的 WASM 連結器不支援 <code>--growable-table</code>，匯出的函式表上限被鎖死（<code>max == min</code>）。建置系統因此在連結後再跑一支 <code>wasm_patch_growable_table.zig</code>，定位至 Section 4（Table Section），把限制旗標從 <code>0x01</code>（有上限）改為 <code>0x00</code>（無上限），同時剝除原有的 LEB128 <code>max</code> 欄位並重新計算 section 長度：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Build the new section payload with the max removed:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">//   [table count + elem_type] [flags=0x00] [min] [trailing data]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> payload: std.Io.Writer.Allocating <span style="color:#f92672">=</span> .<span style="color:#a6e22e">init</span>(alloc);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> payload.writer.<span style="color:#a6e22e">writeAll</span>(input[section_start<span style="color:#f92672">..</span>flags_pos]);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> payload.writer.<span style="color:#a6e22e">writeByte</span>(<span style="color:#ae81ff">0x00</span>); <span style="color:#75715e">// flags: no max</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> payload.writer.<span style="color:#a6e22e">writeAll</span>(input[min_start<span style="color:#f92672">..</span>max_start]);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> payload.writer.<span style="color:#a6e22e">writeAll</span>(input[max_end<span style="color:#f92672">..</span>section_end]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Reassemble the full binary:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">//   [everything before this section] [section id] [new size] [new payload] [everything after]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> before_section <span style="color:#f92672">=</span> input[<span style="color:#ae81ff">0</span> <span style="color:#f92672">..</span> section_start <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">uleb128Size</span>(section_size)];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> result: std.Io.Writer.Allocating <span style="color:#f92672">=</span> .<span style="color:#a6e22e">init</span>(alloc);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> result.writer.<span style="color:#a6e22e">writeAll</span>(before_section);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> result.writer.<span style="color:#a6e22e">writeByte</span>(<span style="color:#ae81ff">4</span>); <span style="color:#75715e">// table section id</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> result.writer.<span style="color:#a6e22e">writeUleb128</span>(@as(<span style="color:#66d9ef">u32</span>, @intCast(payload.<span style="color:#a6e22e">written</span>().len)));
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> result.writer.<span style="color:#a6e22e">writeAll</span>(payload.<span style="color:#a6e22e">written</span>());
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">try</span> result.writer.<span style="color:#a6e22e">writeAll</span>(input[section_end<span style="color:#f92672">..</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">return</span> result.<span style="color:#a6e22e">written</span>();</span></span></code></pre></div>
+
+<h3 id="三層自動化-abi-與標頭檔防禦管線">三層自動化 ABI 與標頭檔防禦管線</h3>
+<p>為了針對已建模的公開型別佈局、匯出符號與函式簽章進行自動化把關，<code>libghostty-vt</code> 建立了三層驗證機制。</p>
+<h4 id="第一層編譯期-translate-c-雙向反射測試">第一層：編譯期 <code>translate-c</code> 雙向反射測試</h4>
+<p>測試套件（<code>abi_test.zig</code>）利用 Zig 的 <code>translate-c</code> 將公開標頭檔 <code>&lt;ghostty/vt.h&gt;</code> 轉換為 Zig 模組，並在編譯期透過 <code>@typeInfo</code> 反射，逐一比對每一個 C <code>struct</code>、<code>union</code>、<code>enum</code> 與回呼函式指標跟 Zig 內部 <code>extern</code> 型別的大小、對齊（alignment）、欄位位移（offset）及列舉值。只要在標頭檔新增型別卻忘記註冊，或兩邊欄位順序不一致，測試就會報錯，例如：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>GHOSTTY_CELL_WIDE_WIDE: the header says 5, Zig says 1</span></span></code></pre></div>
+
+<p>此外，<code>build.zig</code> 會以三種語言標準搭配最嚴格的警告設定，編譯一個只 include <code>vt.h</code> 的檔案，確保公開標頭檔在各標準下都零警告：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> warnings: []<span style="color:#66d9ef">const</span> []<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">u8</span> <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>.{
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wall&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wextra&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Wpedantic&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;-Werror&#34;</span>,
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> Case <span style="color:#f92672">=</span> <span style="color:#66d9ef">struct</span> { std: []<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">u8</span>, src: std.Build.LazyPath };
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> cases: []<span style="color:#66d9ef">const</span> Case <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>.{
+</span></span><span style="display:flex;"><span>    .{ .std <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;c11&#34;</span>, .src <span style="color:#f92672">=</span> c_src },
+</span></span><span style="display:flex;"><span>    .{ .std <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;c23&#34;</span>, .src <span style="color:#f92672">=</span> c_src },
+</span></span><span style="display:flex;"><span>    .{ .std <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;c++17&#34;</span>, .src <span style="color:#f92672">=</span> cpp_src },
+</span></span><span style="display:flex;"><span>};</span></span></code></pre></div>
+
+<h4 id="第二層跨平台二進位內嵌-json-manifest-檢驗">第二層：跨平台二進位內嵌 JSON manifest 檢驗</h4>
+<p>函式庫在唯讀資料段中內嵌了一份由編譯期反射生成的 NUL 結尾 JSON 型別清單。檢驗工具（<code>src/terminal/c/abi/check.zig</code>）完全不需要執行目標二進位檔，而是直接解析 ELF、Mach-O 或 WASM 結構中的匯出符號表與內嵌 JSON，因此能檢驗交叉編譯出的產物。黃金基準檔依目標平台命名，並以建置步驟的形式掛進 <code>zig build</code>：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#75715e">// Goldens are named after the target, such as x86_64-linux-gnu. Targets</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// with no ABI leave it out, such as aarch64-macos.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> arch_os <span style="color:#f92672">=</span> b.<span style="color:#a6e22e">fmt</span>(<span style="color:#e6db74">&#34;{t}-{t}&#34;</span>, .{ target.cpu.arch, target.os.tag });
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">const</span> golden <span style="color:#f92672">=</span> <span style="color:#66d9ef">if</span> (target.abi <span style="color:#f92672">==</span> .none)
+</span></span><span style="display:flex;"><span>    b.<span style="color:#a6e22e">fmt</span>(<span style="color:#e6db74">&#34;src/terminal/c/abi/{s}.json&#34;</span>, .{arch_os})
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>    b.<span style="color:#a6e22e">fmt</span>(<span style="color:#e6db74">&#34;src/terminal/c/abi/{s}-{t}.json&#34;</span>, .{ arch_os, target.abi });</span></span></code></pre></div>
+
+<p><code>check.zig</code> 的檔頭說明列出了日常使用的指令。前兩行檢查目前變更是否只新增了 ABI，確認是刻意的新增後，再用第三行更新該平台的基準檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>zig build test-lib-vt-abi
+</span></span><span style="display:flex;"><span>zig build test-lib-vt-abi -Dtarget<span style="color:#f92672">=</span>wasm32-freestanding
+</span></span><span style="display:flex;"><span>zig build update-lib-vt-abi -Dtarget<span style="color:#f92672">=</span>x86_64-linux-gnu</span></span></code></pre></div>
+
+<p>唯有符合規則的擴充（新增型別、新增列舉值、列舉值新增 key 型別、在 sized struct 尾端新增欄位，或已登記於 <code>symbols.txt</code> 的新函式）才會通過。若有人對調了兩個列舉值，檢查會逐行列出：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>GhosttyCursorStyle.values.BAR: golden 0, now 1
+</span></span><span style="display:flex;"><span>GhosttyCursorStyle.values.BLOCK: golden 1, now 0</span></span></code></pre></div>
+
+<h4 id="第三層c-探針庫與-libabigail-深度比對">第三層：C 探針庫與 <code>libabigail</code> 深度比對</h4>
+<p>在 Linux CI 中，直接用 <code>abidiff</code> 分析 Zig 編譯出的 <code>.so</code> 會遇到障礙：Zig 在 DWARF 除錯資訊中記錄的是 Zig 內部命名空間（例如 <code>terminal.c.terminal.new</code>）且未標記為外部符號，導致 <code>libabigail</code> 看不到公開函式的型別。<code>test/abi/check.sh</code> 因此讀取公開標頭檔與符號表，動態生成一個 C 語言「探針函式庫（probe library）」：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;ghostty/vt.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">__typeof__</span>(ghostty_terminal_new) <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> abi_ghostty_terminal_new <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>ghostty_terminal_new;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">__typeof__</span>(ghostty_terminal_resize) <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> abi_ghostty_terminal_resize <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>ghostty_terminal_resize;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ...and so on for every function.
+</span></span></span></code></pre></div>
+
+<p>這個探針庫由標準 C 編譯器加上 <code>-g</code> 編譯並連結 <code>libghostty-vt.so</code>，再交由 <code>abidiff</code> 與 <code>baseline.abi</code>（搭配 <code>libghostty-vt.suppr</code> 抑制規則）進行兩階段比對：第一輪列出所有差異，第二輪過濾純新增項目。</p>
+<p>在日常本機開發中，開發者可以生成當前的 ABI dump，或與官方基準檔比對（注意：<code>baseline.abi</code> 會在 <code>vt-1.0.0</code> 釋出並打上 tag 後由 CI artifact 提交至儲存庫；在此之前本機比對需先透過 CI 下載或本機生成基準檔）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 編譯函式庫</span>
+</span></span><span style="display:flex;"><span>nix develop -c zig build -Demit-lib-vt -Doptimize<span style="color:#f92672">=</span>ReleaseFast -Dcpu<span style="color:#f92672">=</span>baseline
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 本機生成當前 ABI dump（格式與 CI artifact 一致）</span>
+</span></span><span style="display:flex;"><span>nix develop -c test/abi/check.sh dump test/abi/baseline.abi zig-out/lib/libghostty-vt.so
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 若基準檔已存在，比對 ABI 差異</span>
+</span></span><span style="display:flex;"><span>nix develop -c test/abi/check.sh diff test/abi/baseline.abi zig-out/lib/libghostty-vt.so</span></span></code></pre></div>
+
+<p>若某個函式被移除，報告會長這樣：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>1 Removed variable:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  [D] &#39;GhosttyResult (* const abi_ghostty_terminal_resize)(GhosttyTerminal, uint16_t, uint16_t, uint32_t, uint32_t)&#39;    {abi_ghostty_terminal_resize}
+</span></span><span style="display:flex;"><span>error: incompatible ABI change (abidiff exit status 12 without additions)</span></span></code></pre></div>
+
+<h3 id="下游生態系橋接與離線供應鏈支援">下游生態系橋接與離線供應鏈支援</h3>
+<p>即便底層使用 Zig 建置，<code>libghostty-vt</code> 依然把下游整合與 Linux 發行版打包體驗照顧得很周到。</p>
+<h4 id="pkg-config-與-cmake-雙軌支援">pkg-config 與 CMake 雙軌支援</h4>
+<p><code>zig build</code> 安裝時會同時產出動態與靜態兩個 pkg-config 模組。之所以要分成兩個，是因為 <code>pkg-config --static</code> 會納入私有連結相依（<code>Libs.private</code> 與 <code>Requires.private</code>），但不會強制將 <code>-lghostty-vt</code> 解析為 <code>.a</code> 封存檔：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cc -o myapp main.c <span style="color:#66d9ef">$(</span>pkg-config --cflags --libs libghostty-vt<span style="color:#66d9ef">)</span></span></span></code></pre></div>
+
+<p>靜態連結則改用 <code>libghostty-vt-static</code> 模組：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cc -o myapp main.c <span style="color:#66d9ef">$(</span>pkg-config --static --cflags --libs libghostty-vt-static<span style="color:#66d9ef">)</span></span></span></code></pre></div>
+
+<p>即便建置主機上沒有安裝 CMake，<code>zig build</code> 也會透過自寫的 <code>cmake_package_config.zig</code> 生成 <code>ghostty-vt-config.cmake</code> 與版本檢查檔，因此已安裝的函式庫可以直接用 <code>find_package</code> 找到：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cmake" data-lang="cmake"><span style="display:flex;"><span>find_package(<span style="color:#e6db74">ghostty-vt</span> <span style="color:#e6db74">1.0</span> <span style="color:#e6db74">REQUIRED</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>target_link_libraries(<span style="color:#e6db74">myapp</span> <span style="color:#e6db74">PRIVATE</span> <span style="color:#e6db74">ghostty-vt::ghostty-vt</span>)</span></span></code></pre></div>
+
+<p>自動生成的版本檔遵循 SemVer 的 ABI 規則（1.x 只接受相同 major 版本），還會拒絕指標寬度不同的安裝，避免 64 位元專案誤找 32 位元函式庫。這段 CMake 檢查檔是由 <code>GhosttyLibVt.zig</code> 裡的 Zig 多行字串模板動態產生，<code>{[ptr_size]d}</code> 會在建置時自動填入目標平台的指標位元組數：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span><span style="color:#e6db74">\\# Skip the pointer size check if either side doesn&#39;t know its own.</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\if(&#34;${{CMAKE_SIZEOF_VOID_P}}&#34; STREQUAL &#34;&#34;)</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\  return()</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\endif()</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\# Reject an install built for a different pointer size, for example</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\# a 32-bit library found by a 64-bit project.</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\if(NOT CMAKE_SIZEOF_VOID_P STREQUAL &#34;{[ptr_size]d}&#34;)</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\  math(EXPR installedBits &#34;{[ptr_size]d} * 8&#34;)</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\  set(PACKAGE_VERSION &#34;${{PACKAGE_VERSION}} (${{installedBits}}bit)&#34;)</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\  set(PACKAGE_VERSION_UNSUITABLE TRUE)</span>
+</span></span><span style="display:flex;"><span><span style="color:#e6db74">\\endif()</span></span></span></code></pre></div>
+
+<p>儲存庫頂層也提供了 <code>CMakeLists.txt</code> 委派包裝器，讓 C/C++ 專案以 <code>FetchContent</code> 直接引入原始碼（主機上仍需安裝 <code>zig</code>），並依需求擇一連結動態或靜態目標：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cmake" data-lang="cmake"><span style="display:flex;"><span>include(<span style="color:#e6db74">FetchContent</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>FetchContent_Declare(<span style="color:#e6db74">ghostty</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">GIT_REPOSITORY</span> <span style="color:#e6db74">https://github.com/ghostty-org/ghostty.git</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">GIT_TAG</span> <span style="color:#e6db74">main</span>
+</span></span><span style="display:flex;"><span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>FetchContent_MakeAvailable(<span style="color:#e6db74">ghostty</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"># 依需求擇一連結：
+</span></span></span><span style="display:flex;"><span>target_link_libraries(<span style="color:#e6db74">myapp</span> <span style="color:#e6db74">PRIVATE</span> <span style="color:#e6db74">ghostty-vt</span>)        <span style="color:#75715e"># shared
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">#</span> target_link_libraries(<span style="color:#e6db74">myapp</span> <span style="color:#e6db74">PRIVATE</span> <span style="color:#e6db74">ghostty-vt-static</span>) <span style="color:#960050;background-color:#1e0010">#</span> <span style="color:#960050;background-color:#1e0010">static</span></span></span></code></pre></div>
+
+<p>需要交叉編譯時，在 <code>FetchContent_MakeAvailable</code> 之後呼叫 <code>ghostty_vt_add_target()</code>，它會建立帶有平台後綴的匯入目標：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cmake" data-lang="cmake"><span style="display:flex;"><span>ghostty_vt_add_target(<span style="color:#e6db74">NAME</span> <span style="color:#e6db74">linux-amd64</span> <span style="color:#e6db74">ZIG_TARGET</span> <span style="color:#e6db74">x86_64-linux-gnu</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"># 依需求擇一連結：
+</span></span></span><span style="display:flex;"><span>target_link_libraries(<span style="color:#e6db74">myapp</span> <span style="color:#e6db74">PRIVATE</span> <span style="color:#e6db74">ghostty-vt-linux-amd64</span>)        <span style="color:#75715e"># shared
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">#</span> target_link_libraries(<span style="color:#e6db74">myapp</span> <span style="color:#e6db74">PRIVATE</span> <span style="color:#e6db74">ghostty-vt-static-linux-amd64</span>) <span style="color:#960050;background-color:#1e0010">#</span> <span style="color:#960050;background-color:#1e0010">static</span></span></span></code></pre></div>
+
+<p>包裝器內部會把 CMake 的建置類型轉成 Zig 的最佳化等級，加入 <code>GHOSTTY_ZIG_BUILD_FLAGS</code> 後呼叫 <code>zig build -Demit-lib-vt</code>（以下為核心邏輯節錄）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cmake" data-lang="cmake"><span style="display:flex;"><span>if(<span style="color:#e6db74">CMAKE_BUILD_TYPE</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>    string(<span style="color:#e6db74">TOUPPER</span> <span style="color:#e6db74">&#34;${CMAKE_BUILD_TYPE}&#34;</span> <span style="color:#e6db74">_bt</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>    if(<span style="color:#e6db74">_bt</span> <span style="color:#e6db74">STREQUAL</span> <span style="color:#e6db74">&#34;RELEASE&#34;</span> <span style="color:#e6db74">OR</span> <span style="color:#e6db74">_bt</span> <span style="color:#e6db74">STREQUAL</span> <span style="color:#e6db74">&#34;MINSIZEREL&#34;</span> <span style="color:#e6db74">OR</span> <span style="color:#e6db74">_bt</span> <span style="color:#e6db74">STREQUAL</span> <span style="color:#e6db74">&#34;RELWITHDEBINFO&#34;</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>        set(<span style="color:#e6db74">_GHOSTTY_ZIG_OPT_FLAG</span> <span style="color:#e6db74">&#34;-Doptimize=ReleaseFast&#34;</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>    endif()<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>    unset(<span style="color:#e6db74">_bt</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>endif()<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>if(<span style="color:#e6db74">_GHOSTTY_ZIG_OPT_FLAG</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>    list(<span style="color:#e6db74">APPEND</span> <span style="color:#e6db74">GHOSTTY_ZIG_BUILD_FLAGS</span> <span style="color:#e6db74">&#34;${_GHOSTTY_ZIG_OPT_FLAG}&#34;</span>)<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>endif()<span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"># ...
+</span></span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">
+</span></span></span><span style="display:flex;"><span>add_custom_command(
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">OUTPUT</span> <span style="color:#e6db74">&#34;${GHOSTTY_VT_SHARED_LIBRARY}&#34;</span> <span style="color:#e6db74">&#34;${GHOSTTY_VT_STATIC_LIBRARY}&#34;</span> <span style="color:#e6db74">&#34;${ZIG_OUT_DIR}/lib/${GHOSTTY_VT_IMPLIB}&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">COMMAND</span> <span style="color:#e6db74">&#34;${ZIG_EXECUTABLE}&#34;</span> <span style="color:#e6db74">build</span> <span style="color:#e6db74">-Demit-lib-vt</span> <span style="color:#f92672">${</span>GHOSTTY_ZIG_BUILD_FLAGS<span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">WORKING_DIRECTORY</span> <span style="color:#e6db74">&#34;${CMAKE_CURRENT_SOURCE_DIR}&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">COMMENT</span> <span style="color:#e6db74">&#34;Building libghostty-vt via zig build...&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">USES_TERMINAL</span>
+</span></span><span style="display:flex;"><span>)</span></span></code></pre></div>
+
+<h4 id="成對的離線相依套件包">成對的離線相依套件包</h4>
+<p>各大 Linux 發行版（如 Debian、Fedora、Arch 與 Nix）打包時，通常要求在無網路沙盒（hermetic build）中執行。<code>zig build dist-deps -Demit-lib-vt</code> 會把建置所需的 Zig 相依套件打包成結構與 Zig 全域快取一致的 <code>libghostty-vt-VERSION-deps.tar.gz</code>，再由正式發布流程（release workflow）統一以 <code>minisign</code> 產生數位簽章。</p>
+<p><code>PACKAGING-LIBGHOSTTY.md</code> 給出的標準打包流程分成幾步。首先驗證簽章：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>minisign -V -P RWQlAjJC23149WL2sEpT/l0QKy7hMIFhYdQOFy0Z7z7PbneUgvlsnYcV <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  -m libghostty-vt-1.0.0.tar.gz</span></span></code></pre></div>
+
+<p>接著把同一版本的源碼包與相依套件包並排解開：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>tar -xzf libghostty-vt-1.0.0.tar.gz
+</span></span><span style="display:flex;"><span>tar -xzf libghostty-vt-1.0.0-deps.tar.gz
+</span></span><span style="display:flex;"><span>cd libghostty-vt-1.0.0</span></span></code></pre></div>
+
+<p>然後以相依套件包作為 <code>--system</code> 目錄完全離線建置（<code>ZIG_GLOBAL_CACHE_DIR</code> 必須是全新的空目錄）：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>DESTDIR<span style="color:#f92672">=</span>/tmp/pkg <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>ZIG_GLOBAL_CACHE_DIR<span style="color:#f92672">=</span>/tmp/build-cache <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>zig build <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  --prefix /usr <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  --system ../libghostty-vt-1.0.0-deps <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  -Doptimize<span style="color:#f92672">=</span>ReleaseFast <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  -Dcpu<span style="color:#f92672">=</span>baseline</span></span></code></pre></div>
+
+<p>測試同樣可以離線執行：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ZIG_GLOBAL_CACHE_DIR<span style="color:#f92672">=</span>/tmp/build-cache <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>zig build test-lib-vt <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span>  --system ../libghostty-vt-1.0.0-deps</span></span></code></pre></div>
+
+<p><code>--system</code> 會停用所有網路下載，<code>-Dcpu=baseline</code> 則避免編出目標機器不一定支援的新指令集。若發行版把函式庫放在 <code>/usr/lib64</code>，再加上 <code>--prefix-lib-dir lib64</code> 即可，pkg-config 與 CMake 設定檔會一併指向新位置。</p>
+<h4 id="自動化建置圖第三方授權稽核">自動化建置圖第三方授權稽核</h4>
+<p>為了協助發行版維護者撰寫授權聲明（如 Fedora 的 <code>bundled()</code> 或 Debian 的 <code>copyright</code>），專案在各個 <code>build.zig.zon</code> 中擴充了自訂的 <code>.third_party</code> 欄位。Zig 會忽略不認得的欄位，因此這項擴充不影響正常建置：</p>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-zig" data-lang="zig"><span style="display:flex;"><span>.dependencies <span style="color:#f92672">=</span> .{
+</span></span><span style="display:flex;"><span>    .wuffs <span style="color:#f92672">=</span> .{ .url <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;...&#34;</span>, .hash <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;...&#34;</span> },
+</span></span><span style="display:flex;"><span>    .pixels <span style="color:#f92672">=</span> .{ .url <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;...&#34;</span>, .hash <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;...&#34;</span> },
+</span></span><span style="display:flex;"><span>},
+</span></span><span style="display:flex;"><span>.third_party <span style="color:#f92672">=</span> .{
+</span></span><span style="display:flex;"><span>    .{ .name <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;pixels&#34;</span>, .license <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;CC0-1.0&#34;</span> },
+</span></span><span style="display:flex;"><span>    .{ .name <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;wuffs&#34;</span>, .license <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;Apache-2.0 OR MIT&#34;</span>, .version <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;0.4.0-alpha.10&#34;</span> },
+</span></span><span style="display:flex;"><span>},</span></span></code></pre></div>
+
+<p>這項稽核是由兩個階段的工具鏈共同完成：</p>
+<ol>
+<li><strong>第一階段：建置圖靜態追蹤</strong> - 執行 <code>zig build lib-vt-packages -Demit-lib-vt</code> 時，<code>LibVtPackages.zig</code> 會走訪（walk）<code>vt_c</code> 根模組的所有 import 與連結物件，保守估計並記錄各相依套件中依建置圖判定可能納入編譯的路徑（<code>linked_paths</code>），匯出單一目標的 <code>lib-vt-packages.json</code>。</li>
+<li><strong>第二階段：跨平台彙整與分類</strong> - 發布輔助腳本 <code>nix/build-support/gen-lib-vt-deps.sh</code> 會在各個支援的目標架構上執行此步驟，彙整各目標產生的清單，並依建置圖資訊標記 <code>&quot;use&quot;: &quot;linked&quot;</code> 或 <code>&quot;use&quot;: &quot;build&quot;</code>（此分類仍保留前述保守估計的限制；節錄自 <code>deps/libghostty-vt-third-party.json</code>，省略 <code>kind</code>、<code>commit</code> 等內部欄位）：</li>
+</ol>
+
+  <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;highway&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;version&#34;</span>: <span style="color:#e6db74">&#34;1.2.0&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;url&#34;</span>: <span style="color:#e6db74">&#34;https://deps.files.ghostty.org/highway-66486a10623fa0d72fe91260f96c892e41aceb06.tar.gz&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;hash&#34;</span>: <span style="color:#e6db74">&#34;N-V-__8AAGmZhABbsPJLfbqrh6JTHsXhY6qCaLAQyx25e0XE&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;license&#34;</span>: <span style="color:#e6db74">&#34;Apache-2.0 OR BSD-3-Clause&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;use&#34;</span>: <span style="color:#e6db74">&#34;linked&#34;</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+
+<h2 id="執行期依賴最小化與單檔範例ghostling">執行期依賴最小化與單檔範例（Ghostling）</h2>
+<p>最後一項常被現代軟體開發忽視的特質，是執行期依賴最小化與直觀的最小可用範例。</p>
+<p>在預設建置下，<code>libghostty-vt</code> 於執行期僅依賴標準 <code>libc</code>；所有 Unicode 處理、SIMD 加速與圖像解碼（<code>simdutf</code>、<code>Highway</code>、<code>Wuffs</code> 等第三方程式庫）預設皆以原始碼形式內嵌編譯，避免下游應用程式陷入繁雜的動態相依衝突（同時保留 <code>-fsys=</code> 選項供系統發行版按需改用系統套件）。</p>
+<p>為了讓所有打算整合的工程師迅速理解其運作方式，官方專案同步提供了一個名為 <code>Ghostling</code> 的開源範例。官方範例僅用一個 C 語言檔案（約 1,600 行，搭配開源輕量級繪圖庫 raylib），就組裝出了一個具備完整打字、畫面滾動、顏色渲染與 VT 序列支援的極簡終端機。</p>
+<p>這種「單檔即可完整看清生命週期與運作骨架」的設計方式，讓整合者能迅速摸清函式庫的呼叫紋理，大幅降低了採用門檻。</p>
+<h2 id="結語新世代系統函式庫的成熟標準">結語：新世代系統函式庫的成熟標準</h2>
+<p>回顧 Mitchell Hashimoto 這篇 1.0 宣告，它給技術社群帶來的啟發超越了「又出現了一個厲害的終端機核心」。</p>
+<p>近年來軟體界常見的論調是「C 語言已經過時，所有東西都該用新語言重寫」。然而，現實世界的工程架構是由複雜的跨語言系統交織而成的。Zig、Rust 等新興語言確實賦予了我們更安全、更高產能的實作手段，但當這些系統核心需要走向世界、成為無數生態系的共同基石時，最可靠的載體依然是經過深思熟慮的 C ABI。</p>
+<p><code>libghostty-vt</code> 展現了一條成熟的工程路徑：</p>
+<ul>
+<li><strong>用現代語言實作核心</strong> - 享受 Zig 帶來的效能、型別安全與編譯期優勢。</li>
+<li><strong>用嚴謹的 C ABI 面向世界</strong> - 以不透明控制代碼、列舉存取器、配置器注入與語意化 SONAME，保護每一個下游使用者的穩定性。</li>
+</ul>
+<p>無論未來你打算用 C、C++、Rust 還是 Zig 開發系統元件，<code>libghostty-vt</code> 的這些架構取捨，都是極具參考價值的現代範本。</p>
+
+      </div>
+
+      <hr>
+      <script src="https://utteranc.es/client.js"
+        repo="p47t/p47t.github.io"
+        issue-term="pathname"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+    </div>
+    <div class="col-md-3">
+      <aside class="toc">
+        
+
+
+
+
+
+
+<nav id="toc" data-toggle="toc">
+  
+  <ul class="nav">
+  </ul>
+</nav>
+
+      </aside>
+    </div>
+  </div>
+    </div>
+
+    <div class="row">
+    <div class="col-md-12">
+      <footer id="footer" class="text-center" data-pagefind-ignore>
+        © Patrick Tsai 2003-2026.
+        Proudly powered by <a href="http://gohugo.io/">Hugo</a>.
+      </footer>
+    </div>
+  </div>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+  <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+  <script src="/js/bootstrap-toc.min.js"></script>
+  <script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-73968064-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+  <script src="/js/prism.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    .mermaid foreignObject {
+      overflow: visible !important;
+    }
+  </style>
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        fontSize: '14.5px',
+        fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        padding: 15
+      },
+      sequence: {
+        useMaxWidth: true,
+        showSequenceNumbers: true,
+        noteMargin: 10,
+        messageMargin: 35
+      }
+    });
+
+    async function renderMermaidDiagrams() {
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const content = el.textContent.trim();
+        if (!content) continue;
+        const id = 'mermaid-chart-' + i;
+        try {
+          const { svg, bindFunctions } = await mermaid.render(id, content);
+          el.innerHTML = svg;
+          if (bindFunctions) {
+            bindFunctions(el);
+          }
+        } catch (err) {
+          console.error('Mermaid render error for chart ' + i, err);
+        }
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+    } else {
+      renderMermaidDiagrams();
+    }
+  </script>
+
+  
+
+</body>
+</html>

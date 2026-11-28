@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant JS as JavaScript (wasm-bindgen)
+    participant Mem as WASM 線性記憶體 (buffer)
+    participant Rust as Rust (pulldown-cmark)
+
+    JS->>Mem: 1. 編碼 UTF-8 字串寫入 buffer
+    JS->>Rust: 2. 呼叫 markdown_to_html(ptr, len)
+    Rust->>Rust: 3. 解析事件串流
+    Rust->>Mem: 4. 將 HTML 結果寫入記憶體
+    Rust->>JS: 5. 回傳結果指標與長度 [ret_ptr, ret_len]
+    JS->>Mem: 6. 解碼 UTF-8 結果 HTML 字串
+    JS->>Mem: 7. 呼叫 __wbindgen_free 釋放配置供重用
+    JS->>JS: 8. 應用程式更新 DOM (preview.innerHTML)

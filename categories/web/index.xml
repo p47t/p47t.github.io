@@ -1,0 +1,289 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/categories/web/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2015-07-04 00:00:00 &#43;0000 UTC</updated>
+    
+    <item>
+      <title>WebRTC 筆記</title>
+      <link>https://blog.simplypatrick.com/posts/2015/07-04-webrtc/</link>
+      <pubDate>Sat, 04 Jul 2015 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2015/07-04-webrtc/</guid>
+      <description>&lt;blockquote&gt;&lt;p&gt;&lt;strong&gt;作者註：&lt;/strong&gt; 這是一篇在 2015 年開了頭卻未能完成的草稿，於 2026 年藉由 AI 協作補齊內容，並保留了 2015 年當時的技術生態與時空視角。&lt;/p&gt;
+&lt;/blockquote&gt;&lt;p&gt;以往在瀏覽器中要做到即時音訊或視訊對話，通常必須依賴 Flash 外掛程式、Java applets，或是要求使用者安裝像 Skype 這樣的獨立桌面通訊軟體。這不僅帶來使用者體驗上的門檻，在安全性、效能與跨平台上也一直為人詬病。&lt;/p&gt;
+&lt;p&gt;自從 Google 在 2011 年開源 WebRTC（Web Real-Time Communication）專案，並與 W3C 和 IETF 攜手推動標準化以來，現代瀏覽器（Chrome 與 Firefox）已經原生具備了點對點（P2P）的即時音訊、視訊與資料傳輸能力。特別是今年 4 月 27 日，Facebook Messenger 正式宣布跨平台（iOS 與 Android）上線免費視訊通話功能，背後正是由 WebRTC 提供技術支援；此外 Ericsson 開源了基於 GStreamer 的 OpenWebRTC，Matrix.org 也在推廣去中心化通訊架構。&lt;/p&gt;
+&lt;p&gt;最近花了一些時間研讀 Ilya Grigorik 的著作《High Performance Browser Networking》（作者在 hpbn.co 提供免費線上閱讀版）中關於 WebRTC 的章節，以及社群裡探討底層實作的文章。這篇筆記嘗試整理 WebRTC 的核心架構、連線建立過程，以及最容易被忽略但極為關鍵的網路擁塞控制（congestion control）機制。&lt;/p&gt;
+&lt;h2 id=&#34;webrtc-的三大核心-api&#34;&gt;WebRTC 的三大核心 API&lt;/h2&gt;
+&lt;p&gt;對前端開發者來說，W3C 將複雜的底層網路與媒體處理封裝成三個主要的 JavaScript API：&lt;/p&gt;
+&lt;h3 id=&#34;mediastream-getusermedia&#34;&gt;MediaStream (getUserMedia)&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;MediaStream&lt;/code&gt; 負責存取使用者裝置的攝影機與麥克風。透過 &lt;code&gt;navigator.getUserMedia()&lt;/code&gt;，網頁可以向使用者請求授權，取得包含音訊軌（audio tracks）與視訊軌（video tracks）的串流物件。&lt;/p&gt;
+&lt;p&gt;這個 API 的重點在於本機端的音視訊採集、同步與本機預覽（例如直接指定給 &lt;code&gt;&amp;lt;video&amp;gt;&lt;/code&gt; 標籤的 &lt;code&gt;src&lt;/code&gt;）。它只處理本機媒體流的擷取，並不涉及網路傳輸。&lt;/p&gt;
+&lt;h3 id=&#34;rtcpeerconnection&#34;&gt;RTCPeerConnection&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;RTCPeerConnection&lt;/code&gt; 是 WebRTC 的靈魂核心。它負責管理整個 P2P 呼叫的完整生命週期，包含：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;影音編解碼器（codecs）的協商（透過 SDP 內容協商，由瀏覽器底層媒體引擎負責編解碼，如音訊 Opus、視訊 VP8 / H.264）&lt;/li&gt;
+&lt;li&gt;網路封包的發送與接收&lt;/li&gt;
+&lt;li&gt;聲學回音消除（AEC）、降噪（NS）與自動增益控制（AGC）&lt;/li&gt;
+&lt;li&gt;NAT 穿透與候選位址收集&lt;/li&gt;
+&lt;li&gt;即時網路頻寬估算與品質監控&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;所有端對端的影音串流傳輸，都是透過這個物件來建立與維護。&lt;/p&gt;
+&lt;h3 id=&#34;rtcdatachannel&#34;&gt;RTCDataChannel&lt;/h3&gt;
+&lt;p&gt;除了影音傳輸之外，WebRTC 另一個極具潛力的功能是 &lt;code&gt;RTCDataChannel&lt;/code&gt;。它允許兩個瀏覽器之間直接建立雙向、低延遲的任意二進位或文字資料傳輸通道。&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;RTCDataChannel&lt;/code&gt; 的 API 設計刻意模仿了 WebSocket，但最大的差異在於它是真正的 P2P 傳輸（不需經過中間伺服器繞行），而且底層採用了 SCTP 協定，讓開發者可以在「可靠傳送（reliable）」與「不可靠傳送（unreliable）」、「依序到達（ordered）」與「不依序到達（unordered）」之間彈性選擇。這對於網頁即時多人遊戲、P2P 檔案分享或是協同編輯工具來說非常實用。&lt;/p&gt;
+&lt;h2 id=&#34;網路傳輸架構與協定疊構&#34;&gt;網路傳輸架構與協定疊構&lt;/h2&gt;
+&lt;p&gt;WebRTC 之所以強大且複雜，是因為它不是跑在傳統的 HTTP 或單純的 TCP 協定之上，而是在 UDP 之上整合了多種既有的網際網路標準協定：&lt;/p&gt;
+
+  &lt;div class=&#34;mermaid&#34;&gt;flowchart TD
+    Sig[&amp;#34;&amp;lt;div style=&amp;#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&amp;#39;&amp;gt;&amp;lt;span style=&amp;#39;font-weight:bold;&amp;#39;&amp;gt;信令與連線協商 (Signaling and Session Control)&amp;lt;/span&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;span style=&amp;#39;font-weight:normal;&amp;#39;&amp;gt;帶外信令交換 SDP（RFC 7116 / JSEP 草案）與 ICE 候選位址&amp;lt;/span&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    style Sig width:580px;
+
+    ICE[&amp;#34;&amp;lt;div style=&amp;#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&amp;#39;&amp;gt;&amp;lt;span style=&amp;#39;font-weight:bold;&amp;#39;&amp;gt;連線建立與 NAT 穿透 (ICE Framework)&amp;lt;/span&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;span style=&amp;#39;font-weight:normal;&amp;#39;&amp;gt;STUN 探測公網位址 · TURN 中繼轉發 · 連線優先級檢測與提名&amp;lt;/span&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    style ICE width:580px;
+
+    subgraph DataPlane [&amp;#34;&amp;lt;div style=&amp;#39;font-size:14px; font-weight:bold; padding:2px 0;&amp;#39;&amp;gt;端對端資料傳輸 (P2P Data Plane)&amp;lt;/div&amp;gt;&amp;#34;]
+        direction LR
+        Media[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; max-width:100%; font-size:14px; font-weight:normal; line-height:1.5; padding:4px;&amp;#39;&amp;gt;&amp;lt;span style=&amp;#39;font-weight:bold;&amp;#39;&amp;gt;影音媒體串流&amp;lt;/span&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;span style=&amp;#39;font-weight:normal;&amp;#39;&amp;gt;SRTP / RTCP（音訊 Opus · 視訊 VP8 / H.264）&amp;lt;br/&amp;gt;金鑰由 DTLS-SRTP 交握導出&amp;lt;br/&amp;gt;擁塞控制：GCC 雙控制器 &amp;#43; REMB&amp;lt;/span&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+        Data[&amp;#34;&amp;lt;div style=&amp;#39;width:270px; max-width:100%; font-size:14px; font-weight:normal; line-height:1.5; padding:4px;&amp;#39;&amp;gt;&amp;lt;span style=&amp;#39;font-weight:bold;&amp;#39;&amp;gt;資料通道 (RTCDataChannel)&amp;lt;/span&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;span style=&amp;#39;font-weight:normal;&amp;#39;&amp;gt;SCTP 多串流傳輸&amp;lt;br/&amp;gt;DTLS 傳輸加密與認證&amp;lt;br/&amp;gt;可自訂可靠度與有序性&amp;lt;/span&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    end
+    style DataPlane fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px;
+
+    Network[&amp;#34;&amp;lt;div style=&amp;#39;width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;&amp;#39;&amp;gt;&amp;lt;span style=&amp;#39;font-weight:bold;&amp;#39;&amp;gt;底層傳輸與網路層 (Transport and Network)&amp;lt;/span&amp;gt;&amp;lt;br/&amp;gt;&amp;lt;span style=&amp;#39;font-weight:normal;&amp;#39;&amp;gt;UDP (User Datagram Protocol) over IPv4 / IPv6&amp;lt;/span&amp;gt;&amp;lt;/div&amp;gt;&amp;#34;]
+    style Network width:580px;
+
+    Sig --&amp;gt; ICE
+    ICE --&amp;gt; DataPlane
+    Media --&amp;gt; Network
+    Data --&amp;gt; Network&lt;/div&gt;
+
+&lt;h3 id=&#34;為什麼選擇-udp-而非-tcp&#34;&gt;為什麼選擇 UDP 而非 TCP？&lt;/h3&gt;
+&lt;p&gt;在網頁開發的世界裡，我們習慣了 TCP 帶來的可靠性。但在即時音訊與視訊通話的場景下，延遲（latency）是第一要務，封包遺失反而退居其次：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;避免隊頭阻塞 (Head-of-Line Blocking)&lt;/strong&gt;：TCP 必須嚴格按序遞送所有資料。一旦中間有封包遺失，TCP 會停止後續資料遞送並等待重傳，直到遺失的封包補齊為止。這在網頁載入檔案時很理想，但在視訊對話中，幾百毫秒前的畫面如果遺失，重傳回來早已毫無意義，使用者只會感受到嚴重的畫面凍結與語音延遲。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;即時性優於完整性&lt;/strong&gt;：UDP 沒有重傳機制與按序保證，任何封包抵達就立即交給解碼器處理。即使遺失少數封包，音訊可以透過 PLC（Packet Loss Concealment）做波形補償，視訊則可容忍輕微馬賽克，整體對話依然能保持即時流暢。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;因此，WebRTC 的影音傳輸採用了建立在 UDP 之上的 SRTP（Secure Real-time Transport Protocol），搭配 RTCP 傳遞控制資訊；而加密方面，雙方透過 DTLS 交握交換身分憑證並導出 SRTP 金鑰（DTLS-SRTP），資料通道則由 DTLS 直接進行傳輸加密，兼顧傳輸效率與安全性。&lt;/p&gt;
+&lt;h2 id=&#34;p2p-連線建立signalingnat-穿透與-ice&#34;&gt;P2P 連線建立：Signaling、NAT 穿透與 ICE&lt;/h2&gt;
+&lt;p&gt;建立 P2P 連線的最大難題在於真實世界的網路環境。絕大多數終端裝置都沒有獨立的公開 IP 位址，而是隱藏在路由器 NAT（Network Address Translation）與防火牆後方。&lt;/p&gt;
+&lt;p&gt;兩個瀏覽器要建立直接通訊，必須經歷以下連線建立流程：&lt;/p&gt;
+&lt;h3 id=&#34;信令機制-signaling&#34;&gt;信令機制 (Signaling)&lt;/h3&gt;
+&lt;p&gt;WebRTC 規範刻意不定義信令協定（signaling protocol）。開發者可以自由選擇任何現有機制（例如 WebSocket、SIP、XMPP 甚至是 HTTP POST）來讓雙方交換連線意向。&lt;/p&gt;
+&lt;p&gt;雙方需要交換的連線資訊包含：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SDP (Session Description Protocol)&lt;/strong&gt;：透過 Offer / Answer 模型交換雙方支援的影音編解碼格式、加密方式與傳輸參數。2015 年當時的規範依據為 RFC 7116，而負責將其抽象為 JavaScript 操作的 JSEP 當時仍為 IETF 草案。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;ICE 參數與候選位址&lt;/strong&gt;：在標準流程中，ICE 的認證資訊（&lt;code&gt;a=ice-ufrag&lt;/code&gt;、&lt;code&gt;a=ice-pwd&lt;/code&gt;）與候選位址（&lt;code&gt;a=candidate&lt;/code&gt;）會直接寫在 SDP 內。若採用 Trickle ICE（當時仍為 IETF 草案），雙方可先交換初期 SDP，待候選位址蒐集完成後再增量傳送，能大幅縮短通話建立的等待時間。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;nat-穿透三部曲stunturn-與-ice&#34;&gt;NAT 穿透三部曲：STUN、TURN 與 ICE&lt;/h3&gt;
+&lt;p&gt;當雙方交換了 SDP 後，需要透過以下三種機制打通連線：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;STUN (Session Traversal Utilities for NAT)&lt;/strong&gt;：客戶端向公開網路上的 STUN 伺服器發送請求，STUN 伺服器會將看到的來源公開 IP 與 Port 回傳。這樣客戶端就能得知自己在公網上的反射位址（reflexive candidate）。對於大多數錐型 NAT，只要雙方互相向對方的公開位址發送封包，就能成功穿透連線。不過若遇到對稱型（symmetric）NAT、NAT 不支援回送繞路（hairpinning），或是企業防火牆直接阻擋 UDP 流量，STUN 就無法穿透。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;TURN (Traversal Using Relays around NAT)&lt;/strong&gt;：若直接穿透失敗，連線會退回到 TURN 伺服器，由 TURN 伺服器作為第三方中繼節點轉發所有媒體與資料封包（必要時甚至可透過 TCP 443 埠繞過嚴格的防火牆）。雖然走 TURN 會增加伺服器頻寬負擔並稍微增加延遲，但它保證了通話的成功率。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;ICE (Interactive Connectivity Establishment)&lt;/strong&gt;：ICE 是一個整合框架（當時依循 RFC 5245 規範）。它會收集本機位址（host candidate）、STUN 反射位址（srflx candidate）以及 TURN 中繼位址（relay candidate），將兩端的候選位址配對，並依 candidate pair 的優先級（priority）排序逐組發送 STUN 連線檢查請求，第一組通過檢查的組合即被提名（nomination）為使用中的路徑；連線建立後，仍會持續發送 STUN binding request 作為 keepalive 探測。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;關鍵挑戰網路擁塞控制-congestion-control&#34;&gt;關鍵挑戰：網路擁塞控制 (Congestion Control)&lt;/h2&gt;
+&lt;p&gt;在研讀 WebRTC 時，最讓我感到精妙的是它的網路擁塞控制機制。&lt;/p&gt;
+&lt;h3 id=&#34;為什麼-udp-也需要擁塞控制&#34;&gt;為什麼 UDP 也需要擁塞控制？&lt;/h3&gt;
+&lt;p&gt;TCP 內建流量控制（接收視窗 rwnd）與壅塞控制（壅塞視窗 cwnd）兩套機制；後者從慢啟動（slow start，指數增加）起步，當偵測到網路丟包時改以 AIMD（加法增大、乘法遞減）收斂發送速率，避免網路發生擁塞崩潰（congestion collapse）。&lt;/p&gt;
+&lt;p&gt;但原生 UDP 完全沒有任何頻寬調節機制。如果 WebRTC 視訊以固定的高碼率（例如 2 Mbps）持續發送 UDP 封包，一旦途經網路瓶頸（例如家用 Wi-Fi 訊號減弱或行動網路切換基地台），發送端若毫無警覺繼續硬塞，封包就會在路由器佇列中堆積，導致延遲劇增、嚴重丟包，甚至將同一網路環境下的其他連線一併拖垮。&lt;/p&gt;
+&lt;p&gt;因此，如何在沒有 TCP 內建機制的 UDP 上，實現靈敏且平滑的動態擁塞控制，是 WebRTC 能夠實用的關鍵。&lt;/p&gt;
+&lt;h3 id=&#34;媒體串流的動態頻寬估算gcc-雙控制器架構與-remb&#34;&gt;媒體串流的動態頻寬估算：GCC 雙控制器架構與 REMB&lt;/h3&gt;
+&lt;p&gt;WebRTC（特別是 Google 的開放原始碼實作）採用了 Google Congestion Control（GCC）演算法（記錄於 IETF draft-ietf-rmcat-gcc 草案中）。GCC 的核心是「延遲型控制器」與「遺失型控制器」的分工協作：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;延遲型控制器 (Delay-based Controller)&lt;/strong&gt;：分析連續封包抵達時間間隔的變化趨勢，做為路徑排隊延遲的過載偵測器（over-use detector）。當路由器佇列開始積壓時，封包排隊延遲會逐漸上升。延遲型控制器能在實際丟包發生之前，就預先偵測到網路負載過重。此控制器可部署於接收端（透過 REMB 回傳估算上限），亦可部署於發送端。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;REMB (Receiver Estimated Maximum Bitrate)&lt;/strong&gt;：在接收端架構下，接收端依據延遲型控制器推估出這條路徑目前能承載的位元率上限，並透過 RTCP REMB 訊息回報給發送端。它是一個純粹的頻寬上限估計值，兩大訊號的共識融合主要在發送端完成。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;RTCP 統計回報與 RTT 計算&lt;/strong&gt;：發送端定期發送 RTCP Sender Report（SR）記錄發送時間戳；接收端則回傳 Receiver Report（RR）提供遺失率（fraction lost）與抖動（jitter），並夾帶前次 SR 的時間戳（LSR）與收受後的延遲（DLSR）。發送端收到 RR 後，即可計算出目前的 RTT（Round-Trip Time）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;遺失型控制器 (Loss-based Controller)&lt;/strong&gt;：執行於發送端，綜合考量封包遺失率、RTT 以及 REMB 所提供的頻寬上限，計算出最終建議的發送碼率。在早期 WebRTC 實作中，發送端速率還會受到 TFRC（TCP-Friendly Rate Control, RFC 3448）公式的調節與約束。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;動態編碼調整&lt;/strong&gt;：發送端在確定目標發送碼率後，會即時通知本機的視訊編碼器（如 VP8 或 H.264）。當頻寬吃緊時，編碼器會調高量化參數（QP）、降低輸出碼率、調降幀率，甚至在極端情況下降低解析度；當網路恢復暢通時，再逐步向上探測可用頻寬。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這種結合了「延遲偵測」與「遺失率回饋」的雙重控制，讓視訊對話既能充分利用可用頻寬，又不會因為網路波動而頻繁斷訊。&lt;/p&gt;
+&lt;h3 id=&#34;資料通道的擁塞控制sctp-over-dtls&#34;&gt;資料通道的擁塞控制：SCTP over DTLS&lt;/h3&gt;
+&lt;p&gt;在 &lt;code&gt;RTCDataChannel&lt;/code&gt; 方面，WebRTC 並沒有自己從頭發明一套協議，而是選擇將 SCTP（Stream Control Transmission Protocol）架構在 DTLS/UDP 之上，並由 DTLS 直接提供傳輸層加密。&lt;/p&gt;
+&lt;p&gt;SCTP 本身就定義了完整的流量控制（flow control）與類似 TCP 的擁塞控制（具備 slow start 與 congestion avoidance），但它比 TCP 更具彈性：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;支援多串流（multi-streaming），不同串流之間不會相互卡住。&lt;/li&gt;
+&lt;li&gt;可透過參數設定是否需要可靠傳送（&lt;code&gt;maxRetransmits&lt;/code&gt;、&lt;code&gt;maxPacketLifeTime&lt;/code&gt;）與是否嚴格保證順序（&lt;code&gt;ordered: false&lt;/code&gt;）。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這使得 DataChannel 既能享有標準的網路擁塞防護，不至於癱瘓網路，又能保有 UDP 敏捷彈性的傳輸特質。&lt;/p&gt;
+&lt;h2 id=&#34;2015-年的-webrtc-生態觀察&#34;&gt;2015 年的 WebRTC 生態觀察&lt;/h2&gt;
+&lt;p&gt;回顧目前的發展，WebRTC 的影響力已經從單純的瀏覽器實驗走向大規模商業應用：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;主流社交軟體的採用&lt;/strong&gt;：Facebook Messenger 在今年 4 月 27 日正式跨平台（iOS 與 Android）上線視訊通話功能（5 月底推廣至全球），並選擇 WebRTC 作為核心底層，證明了這套架構在大規模跨平台行動通訊中的穩定度。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;原生客戶端的新選擇&lt;/strong&gt;：除了 Google 主導的 &lt;code&gt;libwebrtc&lt;/code&gt; 程式庫之外，Ericsson 推出了開源的 OpenWebRTC。它以 GStreamer 為基底，架構簡潔且容易自訂擴充，為 iOS 與 Android 開發者提供了另一個不錯的選擇。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;去中心化通訊架構&lt;/strong&gt;：Matrix.org 正推動開放且去中心化的聯邦通訊標準，將 WebRTC 作為即時語音與視訊傳輸的協定層。今年 4 月他們首度展示了透過 OpenWebRTC 實現 iOS App 與網頁客戶端的互通，不過完整的 WebRTC 與 TURN 整合仍在積極完善中。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;尚未定案的 SDP 格式之爭&lt;/strong&gt;：多串流（multistream）該採用 Chrome 的 Plan B 還是標準化的 Unified Plan，是當前社群最大的分歧之一。Firefox 在今年 6 月剛完成 Unified Plan 的初步實作，而 Chrome 仍維持 Plan B，Jitsi 等團隊甚至必須自製 &lt;code&gt;sdp-interop&lt;/code&gt; 來跨瀏覽器轉譯。這段標準過渡期考驗著開發者的相容性處理。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;瀏覽器支援與規範演進&lt;/strong&gt;：Chrome 與 Firefox 已經提供相當成熟的原生支援；微軟在 2015 年 4 月的 Build 大會宣布 Windows 10 與全新的 Edge 瀏覽器將支援 ORTC（Object RTC）；Apple Safari 目前尚未跟進。需要強調的是，當前的 WebRTC 規範仍處於不斷修訂的編者草案（Editor&amp;rsquo;s Draft）階段，各項 API 與底層實作依舊處於「建構中（under active construction）」的演進狀態。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;結論&#34;&gt;結論&lt;/h2&gt;
+&lt;p&gt;WebRTC 不只是讓瀏覽器多了幾個 API，它本質上是將過去電信與 VoIP 領域累積數十年的複雜網路技術（NAT 穿透、SRTP 加密、SCTP 多串流、GCC 擁塞控制）進行了高度整合與標準化。&lt;/p&gt;
+&lt;p&gt;理解這些底層運作機制後，在除錯通話品質不佳、連線建立失敗或頻寬震盪時，才能有清楚的方向。&lt;/p&gt;
+&lt;h2 id=&#34;參考資料&#34;&gt;參考資料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://hpbn.co/webrtc/&#34;&gt;High Performance Browser Networking - Ch 18. WebRTC&lt;/a&gt;：Ilya Grigorik 撰寫的必讀經典，深入淺出地說明 WebRTC 網路架構（作者提供免費線上閱讀版）。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://matrix.org&#34;&gt;Matrix.org&lt;/a&gt;：開放去中心化即時通訊標準。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://web.archive.org/web/20150228073512/http://nschoe.com/articles/2015-02-14-Lets-Have-Fun-With-WebRTC-Part-1.html&#34;&gt;LET&amp;rsquo;S HAVE FUN WITH WEBRTC!&lt;/a&gt;：生動有趣的 WebRTC 基礎教學與實作（Wayback Machine 存檔）。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://web.archive.org/web/20150701192757/http://www.openwebrtc.io/&#34;&gt;OpenWebRTC&lt;/a&gt;：Ericsson 開發、基於 GStreamer 的開源 WebRTC 實作（Wayback Machine 存檔）。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://webrtchacks.com/own-phoneco-with-webrtc/&#34;&gt;Build your own phone company with WebRTC and a weekend&lt;/a&gt;：webrtcHacks 上的實戰範例。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://webrtchacks.com/facetime-decode/&#34;&gt;Facetime doesn’t face WebRTC&lt;/a&gt;：解析 Apple FaceTime 協定與 WebRTC 之異同。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://webrtchacks.com/facebook-webrtc/&#34;&gt;Facebook Messenger likes WebRTC&lt;/a&gt;：剖析 Facebook Messenger 為何選擇 WebRTC 與其架構特色。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.slideshare.net/victorpascual/webrtc-datachannels-demystified&#34;&gt;WebRTC DataChannels demystified&lt;/a&gt;：Victor Pascual 對 SCTP / DataChannel 底層機制的詳盡投影片。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://datatracker.ietf.org/doc/rfc7116/&#34;&gt;IETF RFC 7116 - SDP Offer/Answer for WebRTC&lt;/a&gt;：2015 年 3 月發布的 WebRTC SDP 協商規範。&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://datatracker.ietf.org/doc/html/draft-ietf-rmcat-gcc-00&#34;&gt;IETF draft-ietf-rmcat-gcc-00&lt;/a&gt;：Google Congestion Control 演算法原始草案規格。&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>OpenStreetMap</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-11-30-381/</link>
+      <pubDate>Thu, 30 Nov 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-11-30-381/</guid>
+      <description>&lt;p&gt;&lt;a title=&#34;Main Page - OpenStreetMap&#34; href=&#34;http://wiki.openstreetmap.org/index.php/Main_Page&#34;&gt;Main Page - OpenStreetMap&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;使用 GPS 其中的一個問題就是地圖資訊的更新太慢了，我之前就有想過是否可以用 Wikipedia   的模式來維護一份全世界街道圖，沒想到真的有&lt;a title=&#34;Main Page - OpenStreetMap&#34; href=&#34;http://wiki.openstreetmap.org/index.php/Main_Page&#34;&gt;這樣的 project&lt;/a&gt;，看來離這樣的理想並不遠了。&lt;/p&gt;
+&lt;p&gt;台灣這麼地小，應該集眾人之力很快就可以完成吧。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Microsoft iPod</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-11-01-360/</link>
+      <pubDate>Wed, 01 Nov 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-11-01-360/</guid>
+      <description>&lt;p&gt;從 &lt;a href=&#34;http://indigos.cn/archives/93&#34;&gt;Indigo&lt;/a&gt; 看來的：&lt;/p&gt;
+&lt;iframe width=&#34;420&#34; height=&#34;315&#34; src=&#34;//www.youtube.com/embed/EUXnJraKM3k&#34; frameborder=&#34;0&#34; allowfullscreen&gt;&lt;/iframe&gt;
+&lt;p&gt;有夠好笑！&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Windows 1.0</title>
+      <link>https://blog.simplypatrick.com/posts/2006/2006-10-31-358/</link>
+      <pubDate>Tue, 31 Oct 2006 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2006/2006-10-31-358/</guid>
+      <description>&lt;iframe width=&#34;420&#34; height=&#34;315&#34; src=&#34;//www.youtube.com/embed/W6YgZc5th6g&#34; frameborder=&#34;0&#34; allowfullscreen&gt;&lt;/iframe&gt;
+&lt;p&gt;這&amp;hellip; 真的是 &lt;a href=&#34;//www.microsoft.com/presspass/exec/steve/default.mspx&#34;&gt;Steve Ballmer&lt;/a&gt; 嗎？&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>MIT OCW 中文化</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-11-11-196/</link>
+      <pubDate>Thu, 11 Nov 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-11-11-196/</guid>
+      <description>&lt;p&gt;之前有提過 MIT OpenCourseWare，沒想到有人正在進行課程內容的中文化：&lt;/p&gt;
+&lt;p&gt;&lt;A href=&#34;http://www.mitocw.net&#34;&gt;&lt;a href=&#34;http://www.mitocw.net&#34;&gt;http://www.mitocw.net&lt;/a&gt;&lt;/A&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;P&gt;轉寄一個充實知識的好站, 不用到麻省理工學院就能上麻省理工學院之課程,且全部都是中文喔!
+希望各位能善加利用.......也感謝台灣還有這樣這些熱心的人.......&lt;/P&gt;
+&lt;P&gt;統合知識的力量勝於單一天才&lt;BR&gt;&lt;BR&gt;提到朱學恒，多數人會聯想到《魔戒》，因為他是魔戒小說中文版的譯者，而魔戒在台灣造成的瘋狂程度，朱學恒扮演了重要的推手。不過，現在他的最新職稱是麻省理工學院開放式課程中文翻譯計畫主持人，他找了幾位志同道合的朋友，將麻省理工學院（MIT）在網路上的７百多門公開課程，陸續翻譯為中文並架設網站，這個將美國名校課程中譯化的線上學習計畫，竟是在他不到幾坪的窄室內動員網路上看不到的近百位義工進行。目前，這套課程的中文化已完成約460門，每天約有2千多位上網者瀏覽，在不花任何學費的狀況下享受到常春藤名校的師資與課程。&lt;BR&gt;&lt;BR&gt;問：當初為何會參與此計畫？&lt;BR&gt;答：我很喜歡看《WIRED》雜誌，去年9月號有一篇文章談到，麻省理工學院花了
+3年多的時間將校內700多門課程全部公開上線，有的做成影音課程，有的是老師的研究報告，甚至連多年的考古題都放到網路上。我很好奇就上網去看，竟然看到我大學時代的「線性代數」教科書作者Gilbert
+Strang在網路上親自授課，這真是讓我大為震
+憾，有整整６個月的時間，我幾乎天天上網去看各種課程，我一直在想，這麼棒的線上教學一&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+定會有國內的學術單位把它中文化，可惜時間一點一點的過去，都沒有人有動靜於是，我決定自己搞吧，找了幾個懂電腦的朋友開始架設網站，把這套課程一點一點
+的貼上網，然候我開始將第一層資料，例如課程大綱等翻譯成中文。&lt;/P&gt;
+&lt;P&gt;問：如何取得麻省理工學院的同意？&lt;BR&gt;答：根本不需要他們同意，因為他們將這些課程公開在網路上時，就注明歡迎大家取用，但設定３個原則：不准用這些資料來謀利、引用資料之後不准佔為己有，最後是要註明出處，只要不違背以上３原則，任何國家都可以翻譯成自己的文字。據我了解，目前這套課程已有西班牙文、葡萄牙文、繁體與簡體中文。&lt;BR&gt;&lt;BR&gt;問：這麼龐大又專業的翻譯計畫，你如何在沒有人力與物力下進行？&lt;BR&gt;答：MIT的課程非常專業，我在前６個月天天上網時就在想，如果我要將這些內容中文化，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+要去哪裡才能找到夠專業的翻譯人才？我可以到中科院或中研院去找專業的教授，可是因為這個計畫不能營利，所以我不可能有錢付翻譯費或校稿費，於是我把腦筋動到網路上。&amp;nbsp;&amp;nbsp;&amp;nbsp;
+我先將英文版的課程公開，然後在網路上請求「認養」，我用認養而不是用翻 譯，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+就是因為這是個沒有報酬的工作，沒想到竟然有好多專業人士上門，有學者、有基金經理人甚至有專業魔術師&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+（因為其中有門課是劇劇管理），幾個月下來，700多門課已有460門課有人開始翻譯。&lt;/P&gt;
+&lt;P&gt;問：這些內容都是深奧的專業，你如何控制翻譯的品質？&lt;BR&gt;答：品質不是由我一人控制，所有的網友就是最好的監管者。我把這個系統設計&amp;nbsp;&amp;nbsp;&amp;nbsp;
+成一個有機體，認養者提供資訊，閱讀的人若覺得有任何不妥，可以立即回饋反應，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+我只要負責查證，如果真的錯了，我隔天就更正，不用像傳統教科書還要等到下一個版本。在這過程中我深深體會，統合知識的能力勝於單一的天才，因為即使我找該領域最厲害的教授來做，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+也不一定有這樣的品質，更何況我沒有花一毛錢，卻可以請到各行各業的專家來幫忙！&lt;/P&gt;
+&lt;P&gt;問：這個計畫既無法取得版權也不能營利，對你的意義是什麼？&lt;BR&gt;答：我在計畫進行到一半時，曾到美國拜訪麻省理工學院OCW計畫總監Anne
+Margulies，當他們知道我是在沒有任何學術團體贊助下完成中文版網站時，大吃一驚！因為這個翻譯計畫的簡體中文版目前由大陸的一個官方機構在做，他們動員&lt;BR&gt;的人力與物力比&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+我多很多，可是目前進度卻比我落後。我的這個計畫只是顛覆了很多人做事 情的方法。
+一般人做新事業總是要先找場地或是辦公室，再找人找錢，或是開會再開會，我認為這是一個網路時代，人可以在網路上找，資源也可以在網路上創造，只要善用整合還有知識分享的力量，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+就可以實踐看似不可能的夢想。請別小看這個創作共享的力量，我的這些譯者 都是不支薪的，&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+但為什麼願意花這麼多時間，因為他們發現將所學透過「知道、引用、分享」之後，自己反而是最大的受益者。&lt;BR&gt;&lt;BR&gt;問：MIT的開放式課程歡迎大家引用並且免費線上學習，似乎顛覆了傳統對智慧&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+財產權的觀念，難道不會引起MIT的老師或付了高學費才能上課的學生反彈？&lt;BR&gt;答：就我所知，多數老師反而歡迎這樣的作法，倒是學生家長有些意見，認為自己的孩子繳了學費才能進來，卻不能受到保障。MIT的理由是，線上學習開放的是知識，學費享受到的是受教育的權利，這個權利是可以用學校的設備，親自向老師問問題，以及學完後擁有證書的權利。但知識是不同的，知識要流通、要被引用才有用處。&lt;BR&gt;&lt;/P&gt;&lt;/blockquote&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Examining Google Desktop</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-10-16-187/</link>
+      <pubDate>Sat, 16 Oct 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-10-16-187/</guid>
+      <description>&lt;p&gt;下面是 Google Desktop 的一些觀察：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Index 儲存在 Documents and Settings\User\Local Settings\Application Data\Google\Google Desktop Search，體積似乎還不小 (1,941 items indexed so far)，可能要等到整個系統的索引做完才知道會佔用多少空間。&lt;/li&gt;
+&lt;li&gt;安裝目錄內有一個 gzlib.dll，因此這一版應該支援 ZIP 內的搜尋 (希望以後可以支援 RAR 內的搜尋) 。&lt;/li&gt;
+&lt;li&gt;安裝目錄內的有一個 GoogleDesktopAPI2.dll 但是看不到相關的內容，不知道 Google 是否會公開詳細的規格？&lt;/li&gt;
+&lt;li&gt;安裝目錄內的 GoogleDesktopNetwork1.dll 及 GoogleDesktopNetwork2.dll 似乎是個 &lt;A href=&#34;http://msdn.microsoft.com/library/default.asp?url=https://blog.simplypatrick.com/library/en-us/winsock/winsock/about_the_winsock_spi.asp&#34;&gt;Winsock SPI&lt;/A&gt; 的 DLL？&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Google Server On Your Machine</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-10-16-186/</link>
+      <pubDate>Sat, 16 Oct 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-10-16-186/</guid>
+      <description>&lt;p&gt;傳聞中的 &lt;A href=&#34;http://desktop.google.com/&#34;&gt;Google Desktop&lt;/A&gt; 搜尋工具終於出現，詳情可以參考 O&amp;rsquo;Reilly Network 上的&lt;A href=&#34;http://www.oreillynet.com/pub/a/network/2004/10/14/google_desktop.html&#34;&gt;介紹&lt;/A&gt;。&lt;/p&gt;
+&lt;p&gt;整個使用者介面仍然遵循 Google 一貫簡單而直覺的風格，用起來跟網頁的搜尋一樣的順暢。下面是我的一些疑問 (或者說是期待的功能)：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;可以搜尋 MSN Messenger 交談紀錄嗎？&lt;/li&gt;
+&lt;li&gt;可以搜尋我收集的一些 PDF 電子書嗎？&lt;/li&gt;
+&lt;li&gt;可以搜尋 ZIP 起來的檔案嗎？&lt;/li&gt;
+&lt;li&gt;可以搜尋我們公司那幾百萬行的程式碼嗎？&lt;/li&gt;
+&lt;li&gt;可以寫 plug-in 擴充可以搜尋的檔案類型嗎？&lt;/li&gt;
+&lt;li&gt;Google 產生的 index 會佔多少硬碟空間？&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>BitTorrent</title>
+      <link>https://blog.simplypatrick.com/posts/2004/2004-01-30-120/</link>
+      <pubDate>Fri, 30 Jan 2004 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2004/2004-01-30-120/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://bitconjurer.org/BitTorrent/introduction.html&#34;&gt;BitTorrent&lt;/a&gt; 是一種新的檔案傳播方式，看起來蠻適合在網路上用來下載一些大型檔案。我想一些免費下載的大型檔案 (如光碟的 ISO 檔) 應該會慢慢地換成用 BitTorrent 散佈。&lt;/p&gt;
+&lt;p&gt;不知道 &lt;a href=&#34;http://www.debian.org/&#34;&gt;Debian Linux&lt;/a&gt; 是否有打算從 &lt;a href=&#34;http://www.debian.org/CD/jigdo-cd/&#34;&gt;Jigdo&lt;/a&gt; 換成 BitTorrent 來 散佈 Debian DVD 光碟映像檔？Jigdo給我的使用經驗不是很好。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Flash Clock</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-10-10-81/</link>
+      <pubDate>Fri, 10 Oct 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-10-10-81/</guid>
+      <description>&lt;p&gt;在網路上亂逛找到的，這個 Flash Clock 也很酷: &lt;a title=&#34;INDUSTORIOUS CLOCK ||| MONO*CRAFTS&#34; href=&#34;http://www.lares.dti.ne.jp/%7Eyugo/storage/monocrafts_ver3/03/index.html&#34;&gt;INDUSTORIOUS CLOCK ||| MONO*CRAFTS&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;Flash 的多才多藝讓我聯想到 &lt;a href=&#34;http://www.google.com/search?hl=en&amp;amp;ie=UTF-8&amp;amp;oe=UTF-8&amp;amp;q=metaprogramming&amp;amp;btnG=Google+Search&amp;amp;lr=&#34;&gt;Metaprogramming&lt;/a&gt; 這個字，對我而言，軟體就是要夠“軟”才能稱的上軟體，也就是至少要符合 flexible, configurable,  及 extensible 這三個特性。軟體 (software) 這名字的由來是因為你可以輕而易舉地改變它，只要敲敲鍵盤、更改原始碼，重新編譯﹝甚至不用﹞就可完成想要的更改；&lt;/p&gt;
+&lt;p&gt;然而真正的事實是『軟體一點也不軟』，你需要付出相當的代價 - 細心的分析及設計，來讓它變軟。然而決定『那個部分要軟、那個部分要硬』就是一們很大的學問，因為太軟的軟體往往過於複雜，而太硬的軟體又缺乏實用性。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>MIT OpenCourseWare</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-10-04-79/</link>
+      <pubDate>Sat, 04 Oct 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-10-04-79/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://ocw.mit.edu/&#34;&gt;MIT OpenCourseWare&lt;/a&gt; 是麻省理工學院的公開線上課程，目前總共有五百門左右的課程開放，更重要的是這些課程完成是免費的，任何人都可以上網來自行進修。我對於這種『知識共享』的理念感到非常地敬佩，逛著上面的課程，不禁回想起以前在學校追求知識的那種熱情。你或許沒機會去 MIT 親臨教授上課的風采，但那並不能停止你對於學習的渴望，畢竟生於現代的我們有網際網路，不是嗎？&lt;/p&gt;
+&lt;p&gt;我打算利用閒暇的時間來研讀 &lt;a href=&#34;http://ocw.mit.edu/OcwWeb/Electrical-Engineering-and-Computer-Science/6-170Laboratory-in-Software-EngineeringFall2001/CourseHome/index.htm&#34;&gt;6.170 Laboratory in Software Engineering, Fall 2001&lt;/a&gt; 這們課程，有一些心得再與大家分享。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Google</title>
+      <link>https://blog.simplypatrick.com/posts/2003/2003-05-03-12/</link>
+      <pubDate>Sat, 03 May 2003 00:00:00 UTC</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2003/2003-05-03-12/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://www.google.com/addurl.html&#34;&gt;讓 Google 找到你&lt;/a&gt;以及&lt;a href=&#34;http://www.google.com/remove.html&#34;&gt;讓 Google 別再煩你&lt;/a&gt;。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

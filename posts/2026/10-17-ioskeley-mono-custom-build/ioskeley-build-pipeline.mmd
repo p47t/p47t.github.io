@@ -1,0 +1,29 @@
+flowchart TD
+    subgraph Stage1["第一階段：Iosevka v34.4.0 參數化幾何編譯管線 (Verda 614 Targets)"]
+        direction TB
+        S1["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>1. 建置藍圖與 Patel 原始碼 (private-build-plans.toml + 7.ptl)</span><br/><span style='font-weight:normal;'>設定 seven = &quot;straight-serifless-crossbar&quot;，由 IoskeleyMono、Term、NL、Web 四大家族繼承</span></div>"]
+        S2["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>2. Patel 編譯器與變體分派 (patel-c + SuffixCfg.weave)</span><br/><span style='font-weight:normal;'>將 Lisp 方言 7.ptl 轉譯為 7.mjs，拆解 [body]-[serif]-[crossbar] 綁定至 Unicode U+0037</span></div>"]
+        S3["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>3. 參數化幾何與 Spiro 曲線展開 (spiro + spiro-pen-expand)</span><br/><span style='font-weight:normal;'>代入 10 種字重 × 2 種字寬 × 斜體參數 (CAP=690, Stroke, SB=85)，將 1D 骨架展開為 2D 筆畫</span></div>"]
+        S4["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>4. 2D CSG 布林聯集與二次曲線擬合 (typo-geom + Quadify.auto)</span><br/><span style='font-weight:normal;'>計算頂部橫樑、斜向主幹與水平橫槓的布林聯集 (消除內部重疊)，並將三次曲線轉為 TrueType 二次貝茲曲線</span></div>"]
+        S5["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>5. OpenType 二進位序列化與自動微調 (ot-builder + ttfautohint)</span><br/><span style='font-weight:normal;'>寫入 glyf、loca、cmap、GSUB/GPOS 表格，每個家族產出 40 個 Hinted/Unhinted TTF 與 WOFF2</span></div>"]
+        S1 --> S2 --> S3 --> S4 --> S5
+    end
+
+    subgraph Stage2["第二階段：Nerd Font 圖示修補與 Linux 終端機部署"]
+        direction TB
+        P1["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>6. 平行批次注入 Nerd Font 圖示 (FontForge + FontPatcher v3.5.1)</span><br/><span style='font-weight:normal;'>透過 xargs -P 8 平行執行 --complete --careful --mono，將開發者圖示鎖定於單一字元格寬度</span></div>"]
+        P2["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>7. 修復等寬字體旗標 (Python fontTools: post.isFixedPitch = 1)</span><br/><span style='font-weight:normal;'>修正 FontForge 存檔時清除 isFixedPitch 的副作用，避免終端機將字體誤判為比例字體</span></div>"]
+        P3["<div style='width:580px; max-width:100%; font-size:15px; font-weight:normal; line-height:1.6; padding:4px 0;'><span style='font-weight:bold;'>8. 對齊 Term 家族安裝與 Fontconfig 驗證 (fc-cache -fv + fc-match)</span><br/><span style='font-weight:normal;'>同步更新 IoskeleyMono 與 IoskeleyMonoTerm 並清除舊檔，確保終端機載入新版帶橫槓 7 字形</span></div>"]
+        P1 --> P2 --> P3
+    end
+
+    S5 --> P1
+
+    style S1 width:580px;
+    style S2 width:580px;
+    style S3 width:580px;
+    style S4 width:580px;
+    style S5 width:580px;
+    style P1 width:580px;
+    style P2 width:580px;
+    style P3 width:580px;

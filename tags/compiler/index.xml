@@ -1,0 +1,411 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Simply Patrick </title>
+    <link>https://blog.simplypatrick.com/tags/compiler/</link>
+    <author>Patrick Tsai</author>
+    <rights>Copyright (c) 2003 - 2016, Patrick Tsai; all rights reserved.</rights>
+    <updated>2026-10-09 00:00:00 -0700 -0700</updated>
+    
+    <item>
+      <title>Python 3.15 的 Tail-Call Interpreter 架構與效能實證</title>
+      <link>https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/</link>
+      <pubDate>Fri, 09 Oct 2026 00:00:00 -0700</pubDate>
+      <author>Patrick Tsai</author>
+      <guid>https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/</guid>
+      <description>
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/featured.svg&#34; alt=&#34;featured.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;前陣子翻閱 Python 3.15 的 What&amp;rsquo;s New 文件時，官方安裝檔的一項底層變更引起了我的注意：在官方 64-bit Windows 安裝檔中，預設正式啟用了 Tail-Call Interpreter（尾呼叫直譯器）。&lt;/p&gt;
+&lt;p&gt;社群裡不少人的第一反應是：「哇！Python 終於支援尾遞迴最佳化（Tail Call Optimization, TCO）了嗎？以後寫深度遞迴不用再怕 &lt;code&gt;RecursionError&lt;/code&gt; 了？」&lt;/p&gt;
+&lt;p&gt;很可惜，答案是完全沒有。&lt;/p&gt;
+&lt;p&gt;如果你在 Python 3.15 裡寫了一個沒有終止條件的遞迴函式，它依然會在跑完第一千層時準時噴出熟悉的 &lt;code&gt;RecursionError: maximum recursion depth exceeded&lt;/code&gt;。Python 之父 Guido van Rossum 與核心開發團隊過去多次明確表示，為了保留完整的呼叫堆疊資訊（traceback）與除錯能力，Python 不會採用語言層級的尾遞迴消除。&lt;/p&gt;
+&lt;p&gt;那麼，官方所說的 Tail-Call Interpreter 究竟是什麼？&lt;/p&gt;
+&lt;p&gt;它不是提供給一般開發者的語言語法特性，而是 CPython 虛擬機核心在執行位元組碼（bytecode）時，在指令調度（opcode dispatch）架構上的一場精妙重構。這項機制最初在 Python 3.14 以選用編譯參數（&lt;code&gt;--with-tail-call-interp&lt;/code&gt;）亮相，到了 Python 3.15 則正式成為官方 Windows 64-bit 二進位發行版的預設架構。&lt;/p&gt;
+&lt;p&gt;這篇文章我們就來拆解：直譯器核心是如何執行位元組碼的？從經典的 &lt;code&gt;switch-case&lt;/code&gt; 迴圈到 computed goto，再到現在的 tail-call interpreter，底層發生了什麼改變？接著，我們會用 Rust 親手刻出兩套直譯器，透過真實的 A/B 效能評測與組合語言反組譯，看看尾呼叫調度究竟是憑藉哪些硬體機制跑出 15% 到 20% 的效能提升。&lt;/p&gt;
+&lt;h2 id=&#34;什麼是直譯器的指令調度opcode-dispatch&#34;&gt;什麼是直譯器的指令調度（Opcode Dispatch）？&lt;/h2&gt;
+&lt;p&gt;要理解尾呼叫直譯器，首先得先看看所有虛擬機的心臟地帶。&lt;/p&gt;
+&lt;p&gt;當我們把 Python 原始碼編譯成位元組碼後，程式會變成一連串緊湊的指令流。虛擬機的主要工作，就是一個無止境的調度迴圈：讀取下一個 opcode、執行它對應的邏輯、再讀取下一個。&lt;/p&gt;
+&lt;p&gt;在 CPython 歷史與大多數入門直譯器中，最直觀的寫法是 &lt;strong&gt;Switch Dispatch&lt;/strong&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 傳統的 switch 調度迴圈
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;while&lt;/span&gt; (true) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;switch&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; OP_ADD:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            acc &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; OP_SUB:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            acc &lt;span style=&#34;color:#f92672&#34;&gt;-=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;case&lt;/span&gt; OP_HALT:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; acc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這段程式碼看起來非常單純，但在現代超純量處理器（superscalar CPU）的硬體管線上，這樣的設計存在兩個嚴重的效能瓶頸：&lt;/p&gt;
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/switch-dispatch.svg&#34; alt=&#34;switch-dispatch.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;p&gt;每執行一條 bytecode，CPU 至少得承擔兩次跳躍：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;跳到目標 opcode&lt;/strong&gt;：從中央 &lt;code&gt;switch&lt;/code&gt; 跳躍表發起的間接跳躍（indirect branch）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;跳回迴圈頂端&lt;/strong&gt;：opcode 處理完後踩到 &lt;code&gt;break&lt;/code&gt;，無條件跳回 &lt;code&gt;while&lt;/code&gt; 迴圈開頭。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;更致命的是硬體分支預測器（branch predictor）的負擔。在中央 &lt;code&gt;switch&lt;/code&gt; 處，只有唯一一個間接跳躍指令位址。不管當前執行的位元組碼是加法、乘法還是屬性存取，全都必須通過這同一個跳躍點。現代處理器的分支目標緩衝區（Branch Target Buffer, BTB）很難在單一站點記錄高動態的跳躍規律，導致間接分支預測失誤（branch misprediction）頻繁發生。每次預測失誤，CPU 都得清空管線（pipeline flush），白白浪費 15 到 20 個時脈週期。&lt;/p&gt;
+&lt;h2 id=&#34;從-direct-threaded-code-到編譯器的極限&#34;&gt;從 Direct-Threaded Code 到編譯器的極限&lt;/h2&gt;
+&lt;p&gt;為了解決中央跳躍點的擁擠問題，直譯器領域多年前就發展出了 Direct-Threaded Code（直通線程代碼，常利用 C 語言的 computed goto 實現）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// GCC / Clang 的 Labels as Values 擴充
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; dispatch_table[] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; { &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt;do_add, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt;do_sub, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt;do_halt };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#define DISPATCH() goto *dispatch_table[*pc++]
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;do_add:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;DISPATCH&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;do_sub:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc &lt;span style=&#34;color:#f92672&#34;&gt;-=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;DISPATCH&lt;/span&gt;();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;do_halt:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; acc;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在 direct-threaded code 裡，不再有中央的 &lt;code&gt;while&lt;/code&gt; 迴圈與 &lt;code&gt;switch&lt;/code&gt;。每個 opcode 執行完後，直接抓取下一個 opcode 的位址並就地跳躍。&lt;/p&gt;
+&lt;p&gt;這個做法把間接跳躍點分散到各個 opcode 的末端。例如，&lt;code&gt;do_add&lt;/code&gt; 末尾有一個專屬的 &lt;code&gt;goto *&lt;/code&gt;，&lt;code&gt;do_sub&lt;/code&gt; 末尾也有自己的 &lt;code&gt;goto *&lt;/code&gt;。硬體分支預測器可以分別記錄不同 opcode 之後通常會接續哪些指令，分支預測命中率因此顯著上升。&lt;/p&gt;
+&lt;p&gt;自 2010 年前後起，CPython 在 Unix 平台（使用 GCC/Clang 編譯）就一直預設開啟 computed goto。但這個方案有兩個難以克服的痛點：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;非標準語法與平台碎片化&lt;/strong&gt;：Labels as values 是 GCC/Clang 的擴充功能，微軟的 MSVC 編譯器長期以來完全不支援。這意味著近二十年間，&lt;strong&gt;Windows 平台上的 Python 官方安裝檔只能退回最慢的 switch 迴圈&lt;/strong&gt;！&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;編譯器最佳化的惡夢&lt;/strong&gt;：CPython 的執行核心 &lt;code&gt;ceval.c&lt;/code&gt;（連同內嵌由 &lt;code&gt;Python/bytecodes.c&lt;/code&gt; DSL 產生的 &lt;code&gt;generated_cases.c.h&lt;/code&gt;）超過五千行，核心評估函式 &lt;code&gt;_PyEval_EvalFrameDefault&lt;/code&gt; 本身也有數千行。當一個函式裡塞入幾百個互相 &lt;code&gt;goto&lt;/code&gt; 的標籤時，編譯器的暫存器分配器（register allocator）會面臨嚴重的溢出（register spilling）。現代 LLVM/GCC 很難對這種錯綜複雜的控制流程圖（Control Flow Graph, CFG）進行激進的就地最佳化。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這就是為什麼 Faster CPython 團隊（包括 Mark Shannon、Brandt Bucher、Ken Jin 等人）開始探索新的調度架構：&lt;strong&gt;Tail-Call Interpreter&lt;/strong&gt;。&lt;/p&gt;
+&lt;h2 id=&#34;tail-call-interpreter-的運作機制&#34;&gt;Tail-Call Interpreter 的運作機制&lt;/h2&gt;
+&lt;p&gt;尾呼叫直譯器的核心概念非常純粹：&lt;strong&gt;將每一個 opcode 拆成一個獨立、專門的小函式，函式的最後一行直接尾呼叫（tail call）下一個 opcode 函式&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;在現代 C 語言中（仰賴 Clang 與 MSVC 提供的屬性）：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;typedef&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;void&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;OpHandler)(State&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; state, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; pc, &lt;span style=&#34;color:#66d9ef&#34;&gt;int64_t&lt;/span&gt; acc);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_add&lt;/span&gt;(State&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; state, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; pc, &lt;span style=&#34;color:#66d9ef&#34;&gt;int64_t&lt;/span&gt; acc) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    [[clang&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;musttail]] &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; state&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;table[next_op](state, pc, acc);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_sub&lt;/span&gt;(State&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; state, &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt; pc, &lt;span style=&#34;color:#66d9ef&#34;&gt;int64_t&lt;/span&gt; acc) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc &lt;span style=&#34;color:#f92672&#34;&gt;-=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;uint8_t&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    [[clang&lt;span style=&#34;color:#f92672&#34;&gt;::&lt;/span&gt;musttail]] &lt;span style=&#34;color:#66d9ef&#34;&gt;return&lt;/span&gt; state&lt;span style=&#34;color:#f92672&#34;&gt;-&amp;gt;&lt;/span&gt;table[next_op](state, pc, acc);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;這個結構看起來像是相互遞迴，直覺上會讓人擔心：「每執行一個指令就呼叫一個函式，呼叫堆疊（stack frame）不是幾千層就爆掉了嗎？」&lt;/p&gt;
+&lt;p&gt;這正是關鍵所在：&lt;strong&gt;&lt;code&gt;musttail&lt;/code&gt; 屬性會強制編譯器保證進行尾呼叫消除&lt;/strong&gt; (tail call elimination, TCE)。&lt;/p&gt;
+&lt;p&gt;當函式在 return 時直接呼叫另一個函式，且本身不再需要保留任何本地變數時，編譯器不需要分配新的堆疊框架，也不需要發出 &lt;code&gt;call&lt;/code&gt; 與 &lt;code&gt;ret&lt;/code&gt; 指令。它會直接重複使用當前的堆疊框架，並將呼叫改寫成單純的跳躍指令：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-nasm&#34; data-lang=&#34;nasm&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;jmp&lt;/span&gt;    rax                            &lt;span style=&#34;color:#75715e&#34;&gt;; 一條直接跳躍，堆疊深度永遠維持在 1！&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+
+
+  
+    &lt;img src=&#34;https://blog.simplypatrick.com/posts/2026/10-09-tail-call-interpreter/tail-call-dispatch.svg&#34; alt=&#34;tail-call-dispatch.svg&#34; class=&#34;img-responsive post-image&#34;&gt;
+  
+
+&lt;h3 id=&#34;關鍵利器preserve_none-呼叫慣例&#34;&gt;關鍵利器：preserve_none 呼叫慣例&lt;/h3&gt;
+&lt;p&gt;許多人不知道的是，單純依靠 &lt;code&gt;musttail&lt;/code&gt; 其實並不足以榨出直譯器的極致效能。在傳統 ABI 呼叫慣例（calling convention）下，跨函式呼叫依然必須維護被呼叫端保存暫存器（callee-saved registers）的序幕（prologue）與尾聲（epilogue）。&lt;/p&gt;
+&lt;p&gt;CPython 真正的關鍵突破，是結合了源自 GHC 風格的專屬呼叫慣例：&lt;code&gt;__attribute__((preserve_none))&lt;/code&gt;。&lt;/p&gt;
+&lt;h4 id=&#34;何謂-ghc-風格&#34;&gt;何謂 GHC 風格？&lt;/h4&gt;
+&lt;p&gt;這裡提到的 GHC，指的是純函數式程式語言 Haskell 最知名的旗艦編譯器——&lt;strong&gt;Glasgow Haskell Compiler&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;在純函數式語言的世界裡，語法層面完全沒有傳統的 &lt;code&gt;while&lt;/code&gt; 或 &lt;code&gt;for&lt;/code&gt; 迴圈。所有的重複運算、狀態移轉與控制流程，本質上都是透過高階函式與廣泛的尾遞迴呼叫來實現。這意味著 GHC 編譯出的二進位程式，每一秒鐘都在底層進行數以百萬計的尾呼叫與跳躍。&lt;/p&gt;
+&lt;p&gt;如果 GHC 遵循標準 C 語言的呼叫慣例（例如 x86-64 上的 System V AMD64 ABI 或 Windows x64 ABI），編譯器就必須在每次呼叫時為呼叫端保留一整批 callee-saved 暫存器（如 &lt;code&gt;rbx&lt;/code&gt;、&lt;code&gt;r12&lt;/code&gt;–&lt;code&gt;r15&lt;/code&gt;）。在無窮無盡的連續尾呼叫場景中，反覆把暫存器 &lt;code&gt;push&lt;/code&gt; 到記憶體堆疊、跳躍後再 &lt;code&gt;pop&lt;/code&gt; 還原，完全是在虛耗寶貴的 CPU 週期。&lt;/p&gt;
+&lt;p&gt;為了解決這個瓶頸，GHC 很久以前就為其內部虛擬機設計了專屬的呼叫慣例：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;零 callee-saved 暫存器&lt;/strong&gt;：沒有任何暫存器需要為呼叫端保留，所有一般暫存器全數視為拋棄式的暫時暫存器（scratch registers）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;狀態長駐暫存器&lt;/strong&gt;：核心狀態（如堆疊指標、當前指令指標、累加值）可以在暫存器之間自由直通傳遞，跳躍時不需要進出記憶體堆疊。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;這項設計在編譯器領域極為著名，甚至十多年前 LLVM 就特別為 GHC 內建了專屬呼叫慣例代碼 &lt;code&gt;ghccc&lt;/code&gt;（GHC Calling Convention）。&lt;/p&gt;
+&lt;h4 id=&#34;將-ghc-哲學帶入-cpython&#34;&gt;將 GHC 哲學帶入 CPython&lt;/h4&gt;
+&lt;p&gt;傳統上，這種高度客製化的呼叫慣例只存在於 GHC 等少數編譯器內部。但在位元組碼直譯器的場景中，問題本質其實與 GHC 如出一轍：每一個 opcode handler 執行完畢後，只會直接尾呼叫下一個 opcode handler，根本沒有返回原本呼叫端的需求。&lt;/p&gt;
+&lt;p&gt;現代 Clang 所引入的 &lt;code&gt;__attribute__((preserve_none))&lt;/code&gt;，本質上就是將 GHC 這種「零保留負擔」的設計哲學通用化引進 C 語言體系。&lt;/p&gt;
+&lt;p&gt;當我們為 opcode handler 加上這個屬性時，等於明確告訴編譯器「被呼叫的函式不需要為呼叫端保留任何一般暫存器」。這讓虛擬機能將當前評估堆疊指標（stack pointer）、位元組碼指標（program counter）與累加狀態長駐在 CPU 暫存器中，跳躍時不需要反覆在記憶體堆疊上存取與還原，大幅釋放了暫存器分配器（register allocator）的自由度，才真正實現了與 &lt;code&gt;musttail&lt;/code&gt; 完美搭配的極致調度效能。&lt;/p&gt;
+&lt;h3 id=&#34;跨平台編譯器支援clang-與-msvc-18&#34;&gt;跨平台編譯器支援：Clang 與 MSVC 18&lt;/h3&gt;
+&lt;p&gt;在編譯器支援層面上：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;[[clang::musttail]]&lt;/code&gt; 屬性早在 Clang 13（2021 年）就已支援；而 CPython 的尾呼叫直譯器之所以在規格上指定 Clang 19+，是因為結合了 &lt;code&gt;preserve_none&lt;/code&gt; 慣例與針對 tail call 的深度優化。&lt;/li&gt;
+&lt;li&gt;在 Windows 平台，微軟在 MSVC 18（Visual Studio 2026）中正式引入了 &lt;code&gt;[[msvc::musttail]]&lt;/code&gt;（見 CPython 相關 issue gh-143068 與 gh-139922）。這讓 Python 官方 Windows 64-bit 發行版在 Python 3.15 終於能原生啟用尾呼叫直譯器，徹底告別長年落後的 switch 迴圈！&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;nelson-elhage-的效能排錯與真實數據&#34;&gt;Nelson Elhage 的效能排錯與真實數據&lt;/h3&gt;
+&lt;p&gt;在 Python 3.14 開發初期，社群首次測試 &lt;code&gt;--with-tail-call-interp&lt;/code&gt; 時，曾傳出「效能暴增 10% 到 15%」的驚人數據。&lt;/p&gt;
+&lt;p&gt;知名系統工程師 Nelson Elhage 在其部落格文章中深入分析反組譯與編譯器行為後，揭開了有趣的真相：這項驚人的數據，很大一部分是因為當時主流的 LLVM 19 出現了針對 computed goto 的效能衰退（regression），導致作為對照組的基準直譯器異常變慢，才反襯出尾呼叫直譯器的巨大優勢。&lt;/p&gt;
+&lt;p&gt;當基準線修正回正常的編譯器設定後：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;在原本就有 computed goto 的 Linux/macOS 環境中，尾呼叫帶來的純效能增益大約是穩健的 &lt;strong&gt;1% 到 5%&lt;/strong&gt;。&lt;/li&gt;
+&lt;li&gt;但在原本只能跑 switch 迴圈的 Windows x86-64 平台，官方 What&amp;rsquo;s New 數據顯示，在 Visual Studio 18.1.1 編譯下獲得了高達 &lt;strong&gt;15% 到 20%&lt;/strong&gt; 的幾何平均吞吐量躍升（pyperformance geomean）！&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;用-rust-親手實作兩套直譯器&#34;&gt;用 Rust 親手實作兩套直譯器&lt;/h2&gt;
+&lt;p&gt;理論說得再漂亮，不如親手實作並觀察底層指令。我們用現代系統語言 Rust 來實作一個精簡的虛擬機，並同時打造 &lt;strong&gt;Switch Dispatch&lt;/strong&gt; 與 &lt;strong&gt;Tail-Call Dispatch&lt;/strong&gt; 兩個版本進行 A/B 評測。&lt;/p&gt;
+&lt;h3 id=&#34;指令集定義&#34;&gt;指令集定義&lt;/h3&gt;
+&lt;p&gt;我們定義一組包含算術、位元運算與控制流的典型指令：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[repr(C)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[derive(Copy, Clone, Debug)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;Instruction&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; op: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; arg: &lt;span style=&#34;color:#66d9ef&#34;&gt;i32&lt;/span&gt;,
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_ADD&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_SUB&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_MUL&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_XOR&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_INC&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_DEC&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;5&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_HALT&lt;/span&gt;: &lt;span style=&#34;color:#66d9ef&#34;&gt;u32&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;6&lt;/span&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;對照組經典-switch-直譯器&#34;&gt;對照組：經典 Switch 直譯器&lt;/h3&gt;
+&lt;p&gt;首先是大家最熟悉的中央迴圈版本：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run_switch&lt;/span&gt;(code: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[Instruction], &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;loop&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; instr &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; { &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;code.get_unchecked(pc) };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;match&lt;/span&gt; instr.op {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_ADD&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_add(instr.arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_SUB&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_sub(instr.arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_MUL&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_mul(instr.arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_XOR&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;^=&lt;/span&gt; instr.arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_INC&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_DEC&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_sub(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            &lt;span style=&#34;color:#66d9ef&#34;&gt;OP_HALT&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;                &lt;span style=&#34;color:#66d9ef&#34;&gt;break&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;            _ &lt;span style=&#34;color:#f92672&#34;&gt;=&amp;gt;&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;unreachable!&lt;/span&gt;(),
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        pc &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;實驗組tail-call-直譯器&#34;&gt;實驗組：Tail-Call 直譯器&lt;/h3&gt;
+&lt;p&gt;在 Tail-Call 版本中，我們定義一個函式指標簽名 &lt;code&gt;OpHandler&lt;/code&gt;。每個指令都是一個獨立函式，參數透過暫存器傳遞，最後一行抓出下一個指令並直接尾呼叫：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;struct&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; table: [OpHandler; &lt;span style=&#34;color:#ae81ff&#34;&gt;16&lt;/span&gt;],
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;type&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;OpHandler&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_add&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_add((&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc).arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_sub&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_sub((&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc).arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_mul&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_mul((&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc).arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_xor&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc &lt;span style=&#34;color:#f92672&#34;&gt;^&lt;/span&gt; ((&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc).arg &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_inc&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_dec&lt;/span&gt;(ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_acc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; acc.wrapping_sub(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; pc.add(&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;next_pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; next_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(next_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    next_fn(ctx, next_pc, next_acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_halt&lt;/span&gt;(_ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, _pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    acc
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;TABLE&lt;/span&gt;: [OpHandler; &lt;span style=&#34;color:#ae81ff&#34;&gt;16&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;mut&lt;/span&gt; t: [OpHandler; &lt;span style=&#34;color:#ae81ff&#34;&gt;16&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; [op_unreachable; &lt;span style=&#34;color:#ae81ff&#34;&gt;16&lt;/span&gt;];
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_ADD&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_add;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_SUB&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_sub;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_MUL&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_mul;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_XOR&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_xor;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_INC&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_inc;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_DEC&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_dec;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t[&lt;span style=&#34;color:#66d9ef&#34;&gt;OP_HALT&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;] &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; op_halt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    t
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;op_unreachable&lt;/span&gt;(_ctx: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;VmContext&lt;/span&gt;, _pc: &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;const&lt;/span&gt; Instruction, _acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;unreachable!&lt;/span&gt;()
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#[inline(never)]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;pub&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;fn&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;run_tail_call&lt;/span&gt;(code: &lt;span style=&#34;color:#66d9ef&#34;&gt;&amp;amp;&lt;/span&gt;[Instruction], acc: &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt;) -&amp;gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;i64&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; ctx &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; VmContext { table: &lt;span style=&#34;color:#a6e22e&#34;&gt;TABLE&lt;/span&gt; };
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; pc &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; code.as_ptr();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;unsafe&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; first_op &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; (&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;pc).op &lt;span style=&#34;color:#66d9ef&#34;&gt;as&lt;/span&gt; &lt;span style=&#34;color:#66d9ef&#34;&gt;usize&lt;/span&gt;;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#66d9ef&#34;&gt;let&lt;/span&gt; first_fn &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;ctx.table.get_unchecked(first_op);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        first_fn(&lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;ctx, pc, acc)
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;div class=&#34;markdown-alert markdown-alert-note&#34;&gt;
+  &lt;div class=&#34;markdown-alert-title&#34;&gt;&lt;i class=&#34;fa fa-info-circle&#34;&gt;&lt;/i&gt;&lt;span&gt;&amp;nbsp;Note&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class=&#34;markdown-alert-content&#34;&gt;&lt;p&gt;在 Rust 穩定的編譯器版本中，當函式末端的型別簽名與呼叫慣例完全契合時，LLVM 後端會自動將其最佳化為單一跳躍指令。在 Rust 的語言演進中，亦有專屬的 &lt;code&gt;become&lt;/code&gt; 關鍵字提案（RFC 3407 / &lt;code&gt;#![feature(explicit_tail_calls)]&lt;/code&gt;，追蹤於 issue #112788）正在推進，旨在讓開發者能在語言層級強制要求編譯器進行保證消除。&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id=&#34;組合語言對決為什麼尾呼叫能勝出&#34;&gt;組合語言對決：為什麼尾呼叫能勝出？&lt;/h2&gt;
+&lt;p&gt;我們使用 &lt;code&gt;objdump -d -M intel&lt;/code&gt; 將編譯出來的機器碼反組譯，答案立刻浮現眼前。&lt;/p&gt;
+&lt;h3 id=&#34;對照組run_switch-的反組譯機器碼&#34;&gt;對照組：&lt;code&gt;run_switch&lt;/code&gt; 的反組譯機器碼&lt;/h3&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-nasm&#34; data-lang=&#34;nasm&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; 中央 switch 迴圈的頭部 (位址 16fd0)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;.loop_head:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;mov&lt;/span&gt;    r8d, &lt;span style=&#34;color:#66d9ef&#34;&gt;DWORD&lt;/span&gt; PTR [rdi&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;rax&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;]     &lt;span style=&#34;color:#75715e&#34;&gt;; [16fd0] 讀取 code[pc].op&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;cmp&lt;/span&gt;    r8, &lt;span style=&#34;color:#ae81ff&#34;&gt;0x6&lt;/span&gt;                        &lt;span style=&#34;color:#75715e&#34;&gt;; [16fd4] 邊界檢查&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;ja&lt;/span&gt;     .out_of_bounds                 &lt;span style=&#34;color:#75715e&#34;&gt;; [16fd8] 超出範圍跳出 (1701e)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;movsxd&lt;/span&gt; rsi, &lt;span style=&#34;color:#66d9ef&#34;&gt;DWORD&lt;/span&gt; PTR [rdi&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;rax&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0x4&lt;/span&gt;] &lt;span style=&#34;color:#75715e&#34;&gt;; [16fda] 讀取 code[pc].arg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;movsxd&lt;/span&gt; r8, &lt;span style=&#34;color:#66d9ef&#34;&gt;DWORD&lt;/span&gt; PTR [rcx&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;r8&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;]       &lt;span style=&#34;color:#75715e&#34;&gt;; [16fdf] 查詢跳躍表&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;add&lt;/span&gt;    r8, rcx                        &lt;span style=&#34;color:#75715e&#34;&gt;; [16fe3]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;jmp&lt;/span&gt;    r8                             &lt;span style=&#34;color:#75715e&#34;&gt;; [16fe6] 【跳躍 1】間接跳躍到 handler&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;; OP_ADD 處理區塊 (位址 16fe9)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;.op_add:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;add&lt;/span&gt;    rdx, rsi                       &lt;span style=&#34;color:#75715e&#34;&gt;; [16fe9] acc += arg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;inc&lt;/span&gt;    rax                            &lt;span style=&#34;color:#75715e&#34;&gt;; [16fec] pc++&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;jmp&lt;/span&gt;    .loop_head                     &lt;span style=&#34;color:#75715e&#34;&gt;; [16fef] 【跳躍 2】無條件跳回迴圈頭部 (16fd0)！&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;看見問題了嗎？
+每執行一個指令，CPU 必須：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;執行運算並增加 &lt;code&gt;pc&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;執行一次無條件跳躍 &lt;code&gt;jmp .loop_head&lt;/code&gt;（位址 &lt;code&gt;16fd0&lt;/code&gt;）回到迴圈頭部。&lt;/li&gt;
+&lt;li&gt;執行 &lt;code&gt;cmp r8, 0x6&lt;/code&gt; 與條件分支 &lt;code&gt;ja&lt;/code&gt; 進行保護性檢查。&lt;/li&gt;
+&lt;li&gt;查表後執行間接跳躍 &lt;code&gt;jmp r8&lt;/code&gt; 進入下一個 opcode。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3 id=&#34;實驗組op_addtail-call的反組譯機器碼&#34;&gt;實驗組：&lt;code&gt;op_add&lt;/code&gt;（Tail Call）的反組譯機器碼&lt;/h3&gt;
+&lt;p&gt;再來看看 Tail Call 版本的 &lt;code&gt;op_add&lt;/code&gt;：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-nasm&#34; data-lang=&#34;nasm&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;op_add:
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;movsxd&lt;/span&gt; rax, &lt;span style=&#34;color:#66d9ef&#34;&gt;DWORD&lt;/span&gt; PTR [rsi&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0x4&lt;/span&gt;]       &lt;span style=&#34;color:#75715e&#34;&gt;; [18320] 讀取當前 arg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;add&lt;/span&gt;    rdx, rax                       &lt;span style=&#34;color:#75715e&#34;&gt;; [18324] acc += arg&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;mov&lt;/span&gt;    eax, &lt;span style=&#34;color:#66d9ef&#34;&gt;DWORD&lt;/span&gt; PTR [rsi&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;0x8&lt;/span&gt;]       &lt;span style=&#34;color:#75715e&#34;&gt;; [18327] 預先讀取下一個指令的 op&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;add&lt;/span&gt;    rsi, &lt;span style=&#34;color:#ae81ff&#34;&gt;0x8&lt;/span&gt;                       &lt;span style=&#34;color:#75715e&#34;&gt;; [1832a] pc++&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#a6e22e&#34;&gt;jmp&lt;/span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;QWORD&lt;/span&gt; PTR [rdi&lt;span style=&#34;color:#f92672&#34;&gt;+&lt;/span&gt;rax&lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;&lt;span style=&#34;color:#ae81ff&#34;&gt;8&lt;/span&gt;]          &lt;span style=&#34;color:#75715e&#34;&gt;; [1832e] 【唯一的跳躍】直接跳進下一個 handler！&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;整整&lt;strong&gt;只有 5 條組合語言指令&lt;/strong&gt;！&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;沒有第二個跳躍指令&lt;/strong&gt;：執行完運算後，直接一條 &lt;code&gt;jmp&lt;/code&gt; 跳到下一個 handler 的位址。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;免除熱路徑檢查&lt;/strong&gt;：不需要跳回迴圈頂端做 &lt;code&gt;cmp/ja&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;零堆疊框架&lt;/strong&gt;：沒有 &lt;code&gt;call&lt;/code&gt;、沒有 &lt;code&gt;ret&lt;/code&gt;、沒有 &lt;code&gt;push rbp&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;分散的分支預測目標&lt;/strong&gt;：&lt;code&gt;op_add&lt;/code&gt; 的間接跳躍位址固定在 &lt;code&gt;1832e&lt;/code&gt;，&lt;code&gt;op_sub&lt;/code&gt; 則在 &lt;code&gt;1834e&lt;/code&gt;，兩者各自建立獨立的分支歷史快取。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;ab-實測-benchmark-數據&#34;&gt;A/B 實測 Benchmark 數據&lt;/h2&gt;
+&lt;p&gt;我們寫了一個基準測試程式，隨機生成包含加法、減法、乘法、XOR、遞增、遞減等混合分佈的 &lt;strong&gt;2,000 萬條（20,000,000）bytecode 指令序列&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;為了避免編譯器 dead code elimination，我們使用 &lt;code&gt;std::hint::black_box&lt;/code&gt; 封裝輸入，並嚴格斷言兩種直譯器跑完 2,000 萬條指令後產生的數值完全一致：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-rust&#34; data-lang=&#34;rust&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 驗證運算結果正確性
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#a6e22e&#34;&gt;assert_eq!&lt;/span&gt;(res_switch, res_tail, &lt;span style=&#34;color:#e6db74&#34;&gt;&amp;#34;Results must match!&amp;#34;&lt;/span&gt;);&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;h3 id=&#34;實測數據對比&#34;&gt;實測數據對比&lt;/h3&gt;
+&lt;p&gt;在 x86-64 機器（Linux, Release Mode, &lt;code&gt;opt-level = 3&lt;/code&gt;）上執行 5 次運算取平均值：&lt;/p&gt;
+&lt;table&gt;
+	&lt;thead&gt;
+			&lt;tr&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;指令調度機制&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;2,000 萬條指令平均執行時間&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;指令吞吐量（Ops / sec）&lt;/th&gt;
+					&lt;th style=&#34;text-align: left&#34;&gt;效能表現&lt;/th&gt;
+			&lt;/tr&gt;
+	&lt;/thead&gt;
+	&lt;tbody&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Switch Dispatch&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;91.09 ms&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;219.6 M ops/sec&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;基準對照組&lt;/td&gt;
+			&lt;/tr&gt;
+			&lt;tr&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;Tail-Call Dispatch&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;&lt;strong&gt;74.86 ms&lt;/strong&gt;&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;267.1 M ops/sec&lt;/td&gt;
+					&lt;td style=&#34;text-align: left&#34;&gt;快 17.81%（1.22x 吞吐量）&lt;/td&gt;
+			&lt;/tr&gt;
+	&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;各輪次運算時間十分穩定：&lt;/p&gt;
+
+  &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-text&#34; data-lang=&#34;text&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[Switch]   Run 1: 91.25 ms | Run 2: 91.03 ms | Run 3: 90.93 ms | Run 4: 90.87 ms | Run 5: 91.38 ms
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;[TailCall] Run 1: 74.85 ms | Run 2: 74.82 ms | Run 3: 74.78 ms | Run 4: 74.89 ms | Run 5: 74.98 ms&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;在完全相同的指令流與相同的硬體環境下，&lt;strong&gt;Tail-Call Dispatch 跑出了整整 17.81% 的效能提升&lt;/strong&gt;！&lt;/p&gt;
+&lt;p&gt;這 17.8% 的差距正來自我們稍早在反組譯分析中所看見的三大優勢：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;指令跳躍次數減半&lt;/strong&gt;：每條 opcode 省下了跳回迴圈頂端的一道跳躍指令。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;省除熱路徑檢查&lt;/strong&gt;：省下了每輪迴圈的邊界比對。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;更友善的分支預測&lt;/strong&gt;：處理器 BTB 分散記錄跳躍歷史，管線空泡大幅減少。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;這個實測幅度，也正好落在 CPython 官方於 What&amp;rsquo;s New 中公布的 Windows（Visual Studio 18.1.1）15% 到 20% 增益區間。&lt;/p&gt;
+&lt;div class=&#34;markdown-alert markdown-alert-tip&#34;&gt;
+  &lt;div class=&#34;markdown-alert-title&#34;&gt;&lt;i class=&#34;fa fa-lightbulb-o&#34;&gt;&lt;/i&gt;&lt;span&gt;&amp;nbsp;Tip&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class=&#34;markdown-alert-content&#34;&gt;&lt;p&gt;&lt;strong&gt;線上即時體驗與組合語言對照&lt;/strong&gt;：本實驗的完整可重現程式碼已發布至 &lt;a href=&#34;https://godbolt.org/z/93Wxoq3fT&#34;&gt;Compiler Explorer (Godbolt)&lt;/a&gt;，包含兩種直譯器的完整實作與 2,000 萬次指令隨機測試。讀者可直接在瀏覽器中對照編譯後的 x86-64 組合語言，並點擊 Run 即時執行驗證。&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;&lt;h2 id=&#34;結語與技術省思&#34;&gt;結語與技術省思&lt;/h2&gt;
+&lt;p&gt;回過頭來看 Python 3.15 的變更：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Python 依然沒有尾遞迴最佳化&lt;/strong&gt;：使用者寫的遞迴函式行為完全沒變，依舊保留最完整的 traceback 偵錯堆疊（沒有語言層級的 TCO）。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Tail-Call 是直譯器核心的工程升級&lt;/strong&gt;：它藉由把 opcode 拆分為獨立函式、依賴編譯器的尾呼叫消除與 &lt;code&gt;preserve_none&lt;/code&gt; 慣例，在兼顧程式碼模組化與編譯器暫存器優化的同時，在硬體層級模擬出高效的分散式間接跳躍。&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Windows 使用者是最大受益者&lt;/strong&gt;：長期受限於 MSVC 無法支援 computed goto 的 Windows 版 Python，透過 MSVC 18 的 &lt;code&gt;[[msvc::musttail]]&lt;/code&gt; 終於補齊了近二十年的跳躍效能缺口。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;在軟體工程的世界裡，許多看似屬於高階語言語義的名詞，換到了編譯器與硬體管線的視角，往往展現出截然不同、卻又無比精妙的底層面貌。下次看見直譯器更新日誌中的「Tail-Call」，我們就能會心一笑：它不是讓你在程式碼裡寫無窮遞迴，而是悄悄替 CPU 的分支預測器卸下了一副沉重的枷鎖。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,24 @@
+flowchart TD
+    subgraph CaptureWorker ["1. Capture & CV Worker Thread (spawn_blocking)"]
+        direction TD
+        A["VideoCapture / Mock Radar Source"] --> B["CV imgproc Pipeline (FPS, Timestamp, Scan Laser)"]
+        B --> C["Worker JPEG imencode (85% Quality)"]
+        C --> D["Update Shared Memory & Trigger Watch Signal"]
+    end
+
+    subgraph StateBridge ["2. Thread-Safe State & Notification Bridge"]
+        direction TD
+        E["Shared Frame State: Arc<Mutex<Vec<u8>>>"]
+        F["Notification Channel: tokio::sync::watch"]
+    end
+
+    subgraph AxumServer ["3. Axum 0.7 Async Web Server (Tokio Event Loop)"]
+        direction TD
+        G["Client GET /stream Request"] --> H["watch_rx.changed().await (Async Sleep / Wake)"]
+        H --> I["Read JPEG Bytes from Shared Mutex"]
+        I --> J["futures_util stream::unfold"]
+        J --> K["Yield multipart/x-mixed-replace MJPEG Chunk"]
+    end
+
+    D -->|"1. Broadcast Frame Update"| StateBridge
+    StateBridge -->|"2. Wake Client Stream Task"| H

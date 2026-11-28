@@ -1,0 +1,18 @@
+graph TD
+    A["輸入照片 patrick-22.jpg"] --> B{"模式選擇"}
+    B -->|"單張照片"| C["MiDaS v2.1 ONNX 深度學習推理"]
+    B -->|"立體對 left/right"| D["StereoBM 視差匹配"]
+    C --> E["原始 2D 深度圖 Raw Depth"]
+    D --> E
+    E --> F["深度圖後處理管線 DepthPostProcessOptions"]
+    F --> F1["1. 分位數裁切 Quantile Clipping"]
+    F1 --> F2["2. Gamma 非線性對比擴充"]
+    F2 --> F3["3. 高頻照片細節融合 High-Pass Detail Fusion"]
+    F3 --> F4["4. 雙邊邊界保持平滑 Bilateral Filtering"]
+    F4 --> F5["5. 自適應直方圖等化 CLAHE"]
+    F5 --> G["匯出 8-bit Grayscale PNG 預覽圖"]
+    F5 --> H["3D 網格三角化 Triangulation"]
+    H --> I["計算頂點 Z 軸與法向量 Normal"]
+    I --> J["縫合 Top / Bottom / 4 側邊牆面"]
+    J --> K["匯出 Binary STL patrick-22.stl"]
+    K --> L["切片專案 patrick-22.3mf / OpenSCAD"]

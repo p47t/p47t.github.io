@@ -1,0 +1,37 @@
+flowchart TD
+    Client["📱 <b>Downstream Client</b><br/>OpenAI SDK / Agent CLI / curl"]
+    
+    subgraph Gateway["⚡ C++23 AI Gateway (Port 8080)"]
+        direction TB
+        EL["🔄 <b>Linux epoll EventLoop</b><br/>Task&lt;T&gt; 協程調度 · 最小堆定時器"]
+        Parser["⚡ <b>picohttpparser 零拷貝解析</b><br/>HTTP/1.1 Server · Chunked StreamWriter"]
+        Router["🧭 <b>Model Router &amp; Load Balancer</b><br/>std::expected · 萬用字元 · 加權輪詢 · 容錯重試"]
+        ClientCore["🌐 <b>Async HTTP Client</b><br/>即時 SSE Pass-Through · 16MB 緩衝防禦"]
+        
+        EL -->|非同步 I/O 排程| Parser
+        Parser -->|提取模型與路由請求| Router
+        Router -->|分發至目標上游節點| ClientCore
+    end
+    
+    subgraph Upstreams["🖥️ Upstream Inference Clusters"]
+        direction TB
+        Ollama["🦙 <b>Ollama (Local)</b><br/>127.0.0.1:11434 (gemma4:26b / llama3.3)"]
+        VLLM["🚀 <b>vLLM / TGI</b><br/>10.0.0.5:8000"]
+        Cloud["☁️ <b>Cloud API Fallback</b><br/>api.openai.com"]
+    end
+
+    Client ==>|POST /v1/chat/completions| Parser
+    ClientCore ==>|連線轉發請求| Upstreams
+    Upstreams -.->|SSE Token Chunks 串流| ClientCore
+    ClientCore -.->|即時 Pass-Through| Client
+
+    classDef clientNode fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e;
+    classDef gwNode fill:#f5f3ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
+    classDef upNode fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+
+    class Client clientNode;
+    class EL,Parser,Router,ClientCore gwNode;
+    class Ollama,VLLM,Cloud upNode;
+
+    style Gateway fill:#faf5ff,stroke:#a5b4fc,stroke-width:2px,stroke-dasharray:4 4,color:#312e81;
+    style Upstreams fill:#f0fdf4,stroke:#6ee7b7,stroke-width:2px,stroke-dasharray:4 4,color:#064e3b;
